@@ -1,0 +1,3 @@
+{"run": 1, "submission_id": "1996571651", "status_msg": "Accepted", "runtime_ms": 0.0, "memory_mb": 18.269, "runtime_percentile": 100, "memory_percentile": 88.2537, "total_correct": 34, "total_testcases": 34}
+{"run": 2, "submission_id": "1996571884", "status_msg": "Accepted", "runtime_ms": 0.0, "memory_mb": 18.425, "runtime_percentile": 100, "memory_percentile": 21.663899999999998, "total_correct": 34, "total_testcases": 34}
+{"run": 3, "submission_id": "1996572046", "status_msg": "Accepted", "runtime_ms": 0.0, "memory_mb": 18.314, "runtime_percentile": 100, "memory_percentile": 57.9901, "total_correct": 34, "total_testcases": 34}
