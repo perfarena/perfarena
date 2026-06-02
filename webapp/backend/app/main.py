@@ -189,6 +189,52 @@ def _startup() -> None:
     # (e.g. the existing qwen runs) needs a one-time sweep to surface them
     # on /models. Idempotent.
     _backfill_registered_model_stubs_from_submissions()
+    # First-boot admin bootstrap from env vars. Idempotent.
+    _seed_bootstrap_admin()
+
+
+def _seed_bootstrap_admin() -> None:
+    """First-boot admin bootstrap so a fresh container is reachable as
+    admin without docker-exec'ing into it.
+
+    Honoured env vars:
+      ARENA_BOOTSTRAP_ADMIN_EMAIL     (required to trigger anything)
+      ARENA_BOOTSTRAP_ADMIN_NAME      default "Admin"
+      ARENA_BOOTSTRAP_ADMIN_API_KEY   default = freshly generated
+      ARENA_BOOTSTRAP_ADMIN_PASSWORD  default = unset (no password login;
+                                      use the API key with Bearer auth)
+
+    Idempotent: if a user with the given email already exists we leave it
+    alone — we don't downgrade or rotate keys for existing rows. To rotate
+    after the fact, do it via the admin endpoints or directly in the DB.
+    The fresh API key is printed to stderr so a `docker logs` can recover
+    it when it was auto-generated."""
+    from sqlmodel import Session                                          # noqa: E402
+    email = os.environ.get("ARENA_BOOTSTRAP_ADMIN_EMAIL")
+    if not email:
+        return
+    with Session(engine) as s:
+        if s.exec(select(User).where(User.email == email)).first():
+            return
+        api_key = os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY") or generate_api_key()
+        password = os.environ.get("ARENA_BOOTSTRAP_ADMIN_PASSWORD")
+        u = User(
+            email=email,
+            display_name=os.environ.get("ARENA_BOOTSTRAP_ADMIN_NAME", "Admin"),
+            role=UserRole.admin,
+            status=UserStatus.approved,
+            api_key=api_key,
+            password_hash=hash_password(password) if password else None,
+        )
+        s.add(u); s.commit()
+        # Surface the credentials so `docker logs <container>` can read them
+        # back. Skip the api_key line if the operator supplied one — they
+        # already know it and re-printing it to logs is needless exposure.
+        print(f"[bootstrap] created admin user {email!r}", file=sys.stderr)
+        if not os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY"):
+            print(f"[bootstrap]   api_key = {api_key}", file=sys.stderr)
+        if password:
+            print(f"[bootstrap]   password login enabled (use /login)", file=sys.stderr)
 
 
 _DEFAULT_PROMPTS: list[dict] = [
