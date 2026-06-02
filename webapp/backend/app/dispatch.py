@@ -41,10 +41,30 @@ from .models import (
 
 LEETBOT = Path(__file__).parent.parent.parent.parent / "leetbot.py"
 
-INTER_DELAY = float(os.environ.get("ARENA_DISPATCH_INTER_DELAY", "12"))
+# Seconds to wait between dispatching attempts for DIFFERENT problems.
+# Empirically, LeetCode's anti-abuse heuristic fires on rapid breadth-first
+# switching between many problems (a scraper/bot fingerprint) while staying
+# permissive about repeat submissions to the same problem. 12s was the prior
+# default and reliably tripped the heuristic on multi-problem submissions —
+# 60s paces problem-hops at a slow-human cadence (read statement → submit)
+# and lets us run full 99-problem benchmark sweeps in ~100 min without
+# blanket 429s. Override via ARENA_DISPATCH_INTER_DELAY when needed (set to
+# ~120 for fresh accounts that LeetCode is still scrutinizing harder).
+INTER_DELAY = float(os.environ.get("ARENA_DISPATCH_INTER_DELAY", "60"))
 MAX_RETRIES = int(os.environ.get("ARENA_DISPATCH_MAX_RETRIES", "4"))
-SUBPROCESS_TIMEOUT = int(os.environ.get("ARENA_DISPATCH_SUBPROC_TIMEOUT", "600"))
+# Raised from 600 → 1200 to accommodate the TLE-retry worst case: a
+# genuinely-TLE solution can drive REPEATS × (1 + TLE_RETRIES) submissions,
+# each carrying judge time + retry/repeat delays. Normal cases finish in
+# well under a minute; this is just the ceiling before we declare the
+# leetbot subprocess hung.
+SUBPROCESS_TIMEOUT = int(os.environ.get("ARENA_DISPATCH_SUBPROC_TIMEOUT", "1200"))
 REPEATS = max(1, int(os.environ.get("ARENA_DISPATCH_REPEATS", "5")))
+# On a Time Limit Exceeded verdict, leetbot re-submits up to this many extra
+# times before accepting the TLE — TLE is judge-load-flaky and a borderline
+# solution often passes on retry. Applied per repeat (so the worst case is
+# REPEATS × (1 + TLE_RETRIES) LeetCode submissions for a genuinely-TLE
+# solution). Bumped SUBPROCESS_TIMEOUT may be needed if both are large.
+TLE_RETRIES = int(os.environ.get("ARENA_DISPATCH_TLE_RETRIES", "3"))
 
 
 def _parse_leetbot_stdout(stdout: str) -> dict | None:
@@ -156,6 +176,7 @@ def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats:
                         sys.executable, str(LEETBOT),
                         problem.title_slug, language, path,
                         "--repeat", str(repeats),
+                        "--tle-retries", str(TLE_RETRIES),
                     ],
                     capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
                     cwd=str(LEETBOT.parent),
@@ -194,14 +215,25 @@ def _fake_dispatch_repeated(repeats: int, language: str, code: str) -> list[dict
     code that isn't even a plausible attempt (stub/placeholder/garbage); for
     anything that passes that gate it fabricates a plausible verdict. Real
     correctness requires ARENA_DISPATCH_ENABLED=1 (dispatch to LeetCode).
+
+    Test hook: a `## fake_lang: <name>` comment in `code` makes the synthesized
+    runs report `lang=<name>` instead of `lang=<language>`. The
+    language-conformance guard downstream (dispatch_submission's lang
+    override) then trips, so test_dispatch.test_language_mismatch_marks_run
+    can exercise that path without touching LeetCode.
     """
+    import re
     from .validation import validate_code
+    m = re.search(r"##\s*fake_lang:\s*(\S+)", code or "")
+    judged_lang = m.group(1) if m else language
+
     reason = validate_code(language, code)
     if reason:
         return [{
             "status_msg": "Compile Error", "runtime_ms": None, "memory_mb": None,
             "runtime_percentile": None, "memory_percentile": None,
             "total_correct": 0, "total_testcases": 30,
+            "lang": judged_lang,
             "note": f"rejected by sanity check: {reason}",
         } for _ in range(repeats)]
     accepted = random.random() < 0.65
@@ -211,6 +243,7 @@ def _fake_dispatch_repeated(repeats: int, language: str, code: str) -> list[dict
             "status_msg": status, "runtime_ms": None, "memory_mb": None,
             "runtime_percentile": None, "memory_percentile": None,
             "total_correct": random.randint(0, 29), "total_testcases": 30,
+            "lang": judged_lang,
         } for _ in range(repeats)]
     base_rt = random.uniform(5, 180)
     base_mem = random.uniform(14, 22)
@@ -228,6 +261,7 @@ def _fake_dispatch_repeated(repeats: int, language: str, code: str) -> list[dict
             "runtime_percentile": round(min(100.0, max(0.0, base_rt_p * random.uniform(0.95, 1.05))), 2),
             "memory_percentile": round(min(100.0, max(0.0, base_mem_p * random.uniform(0.95, 1.05))), 2),
             "total_correct": 30, "total_testcases": 30,
+            "lang": judged_lang,
         })
     return out
 
@@ -310,7 +344,18 @@ def dispatch_submission(submission_id: int) -> None:
         for idx, a in enumerate(pending):
             problem = session.get(Problem, a.problem_id)
             try:
-                if real:
+                if a.prefailed_reason:
+                    # Client already flagged this response as malformed (wrong
+                    # language extracted, no code, etc.). We record one synthetic
+                    # failure run with the reason — no LeetCode quota burned,
+                    # no inter-problem delay charged, and the raw model output
+                    # stays in attempt.trace for analysis.
+                    runs = _failure_runs(
+                        1, a.prefailed_reason,
+                        "client-detected malformed response; "
+                        "raw model output preserved in attempt.trace",
+                    )
+                elif real:
                     if auth_error:
                         runs = _failure_runs(REPEATS, "Auth failed", auth_error)
                     else:
@@ -322,12 +367,35 @@ def dispatch_submission(submission_id: int) -> None:
             except Exception as e:  # noqa: BLE001
                 runs = _failure_runs(REPEATS, "Dispatch error", str(e))
 
+            # Language-conformance guard: applied PRE-aggregation so a
+            # smuggled-Java-as-python3 run counts as failed for pass@k and
+            # contributes nothing to runtime / memory baselines. We mutate the
+            # `runs` dict in place so both the Run-table write below AND
+            # `_aggregate_attempt` see the overridden status_msg. See the
+            # commit for the rectangle-overlap incident that motivated this.
+            for result in runs:
+                judged_lang = result.get("lang")
+                if judged_lang and judged_lang != sub.language:
+                    # Preserve the original verdict on the result so error logs
+                    # / debug tooling can see what LC really said before our
+                    # override.
+                    result["original_status_msg"] = result.get("status_msg")
+                    result["status_msg"] = "Language mismatch"
+
             for i, result in enumerate(runs, start=1):
+                status_msg = result.get("status_msg", "Unknown")
+                # leetbot stuffs LeetCode's verbatim /check/ payload under
+                # `leetcode_full_response`. Pull it out for its own column so
+                # the UI can render it on non-Accepted runs even when LC
+                # ships a field shape the parser doesn't enumerate. None in
+                # fake-mode / pre-flight-failure / language-mismatch
+                # synthetic results — those paths never talk to LC.
+                lc_full = result.get("leetcode_full_response")
                 session.add(Run(
                     attempt_id=a.id,
                     run_index=i,
                     submission_id_external=result.get("submission_id"),
-                    status_msg=result.get("status_msg", "Unknown"),
+                    status_msg=status_msg,
                     runtime_ms=result.get("runtime_ms"),
                     memory_mb=result.get("memory_mb"),
                     runtime_percentile=result.get("runtime_percentile"),
@@ -335,6 +403,7 @@ def dispatch_submission(submission_id: int) -> None:
                     total_correct=result.get("total_correct"),
                     total_testcases=result.get("total_testcases"),
                     raw_response=result,
+                    leetcode_full_response=lc_full,
                 ))
             _aggregate_attempt(a, runs)
             session.add(a)
@@ -362,19 +431,32 @@ def dispatch_submission(submission_id: int) -> None:
         avg_rt, best_rt, avg_mem, best_mem = [], [], [], []
         avg_rtp, avg_memp = [], []
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
-        # Per-problem unbiased pass@k numbers — averaged over ALL supported
-        # problems (missing problems contribute 0), so cross-submission
-        # comparison is fair even when only some problems were attempted.
+        # Per-submission pass metrics:
+        #   pass@1    — Chen unbiased estimator with k=1, i.e. c/n per problem,
+        #               averaged across ALL supported problems (unattempted
+        #               problems contribute 0). The classic single-shot rate.
+        #   pass@k    — simple fraction of accepted submitted samples. Computed
+        #               as total_accepted_attempts / total_submitted_attempts
+        #               (= the average of binary per-attempt outcomes). With
+        #               n == k samples per problem this is also equivalent to
+        #               the mean of per-problem acceptance fractions.
+        #               REPLACES the prior Chen estimator pass@k which, when
+        #               n = k, collapses to pass@full (1 iff any accepted) and
+        #               showed identical numbers — losing the fractional signal
+        #               we actually care about ("2 of 3 samples worked").
+        #   pass@full — at-least-one-accepted across the k samples for a
+        #               problem, averaged across all supported problems.
         k = max(1, sub.n_samples_per_problem or 1)
-        p1_sum = pk_sum = pfull_sum = 0.0
+        p1_sum = pfull_sum = 0.0
+        total_attempts = 0       # samples actually submitted across all problems
+        total_accepted = 0       # accepted samples across all problems
         for pid, atts in by_problem.items():
             n_samples = len(atts)
             n_accepted = sum(1 for a in atts if a.final_status == "Accepted")
-            # pass@1 = unbiased C(c,1)/C(n,1) = c/n; pass@k from the estimator;
-            # pass@full = at-least-one-accepted across all n samples.
             p1_sum    += pass_at_k_unbiased(n_samples, n_accepted, 1)
-            pk_sum    += pass_at_k_unbiased(n_samples, n_accepted, k)
             pfull_sum += (1.0 if n_accepted > 0 else 0.0)
+            total_attempts += n_samples
+            total_accepted += n_accepted
 
             accepted_atts = [a for a in atts if a.final_status == "Accepted"]
             if not accepted_atts:
@@ -410,7 +492,11 @@ def dispatch_submission(submission_id: int) -> None:
         sub.total_solved = solved
         denom = sub.total_problems or 1
         sub.pass_at_1    = p1_sum / denom
-        sub.pass_at_k    = pk_sum / denom
+        # New pass@k semantics (see comment above): mean over actually-submitted
+        # attempts of the binary accept/reject outcome. None when nothing's been
+        # submitted yet — distinguishes "not submitted" from "submitted 0/N
+        # accepted".
+        sub.pass_at_k    = (total_accepted / total_attempts) if total_attempts > 0 else None
         sub.pass_at_full = pfull_sum / denom
         sub.avg_runtime_ms = _mean(avg_rt)
         sub.best_runtime_ms = _mean(best_rt)
@@ -426,13 +512,15 @@ def dispatch_submission(submission_id: int) -> None:
         session.add(sub)
         session.commit()
 
-        # In real-dispatch mode, every batch may have yielded fresh accepted
-        # LeetCode submission_ids — exactly the anchors we need to refresh
-        # human baselines for. Triggers when ARENA_BASELINE_REFRESH_EVERY_N
-        # submissions have landed OR the time-since-last-refresh exceeds
-        # ARENA_BASELINE_REFRESH_HOURS, whichever fires first.
-        if real:
-            _maybe_refresh_baselines(session)
+        # Guarantee a baseline exists for every (problem, language) pair this
+        # submission just touched. Compute-once-if-missing: pairs that already
+        # have a real `leetcode-distribution` row are skipped; pairs without
+        # one get the real LeetCode distribution fetched now (anchored on this
+        # pair's freshest accepted external submission id), falling back to a
+        # synthetic placeholder when LeetCode is unreachable so the coefficient
+        # math is never blocked by a "missing" baseline. Runs in fake mode too
+        # (synthetic-only) so locally-generated pairs still get a baseline.
+        _ensure_baselines_for_submission(session, sub, real=real)
 
 
 # ---------- auto-refreshing baselines from real submissions -----------------
@@ -608,3 +696,391 @@ def _recompute_human_coefficients(session: Session, language: str) -> None:
         s.mem_human_expert  = _mean(m_h_exp)
         session.add(s)
     session.commit()
+
+
+# ---------- per-pair baseline guarantee (compute-once-if-missing) -----------
+
+def _latest_accepted_external(session: Session, problem_id: int,
+                              language: str) -> int | None:
+    """Most-recent accepted Run for (problem, language) that carries a stored
+    LeetCode submission_id_external — the anchor we feed submissionDetails to
+    pull that pair's real population histogram."""
+    row = session.exec(
+        select(Run.submission_id_external)
+        .join(Attempt, Attempt.id == Run.attempt_id)
+        .join(Submission, Submission.id == Attempt.submission_id)
+        .where(
+            Attempt.problem_id == problem_id,
+            Submission.language == language,
+            Submission.deleted_at.is_(None),
+            Run.status_msg == "Accepted",
+            Run.submission_id_external.is_not(None),
+        )
+        .order_by(Run.created_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    try:
+        return int(row)
+    except (TypeError, ValueError):
+        return None
+
+
+def _synthetic_baseline_row(problem: Problem, language: str) -> Baseline:
+    """A plausible placeholder distribution derived from difficulty + a
+    per-language efficiency multiplier (same model as `python -m app.baselines`).
+    Tagged `source="synthetic"` so the UI labels coefficients as estimates and
+    the refresher knows to upgrade it to real LeetCode data later."""
+    from . import baselines as _baselines  # lazy: avoids import cost at module load
+    level = problem.level if problem.level in _baselines.LEVEL_BASE_RUNTIME else "Medium"
+    seed = hash((problem.id, language)) & 0xFFFFFFFF
+    rt_avg, rt_exp, mem_avg, mem_exp = _baselines._baseline_for(level, language, seed)
+    return Baseline(
+        problem_id=problem.id, language=language,
+        runtime_ms_avg=round(rt_avg, 2), runtime_ms_expert=round(rt_exp, 2),
+        memory_mb_avg=round(mem_avg, 3), memory_mb_expert=round(mem_exp, 3),
+        source="synthetic",
+    )
+
+
+def _ensure_baseline(session: Session, problem_id: int, language: str, *,
+                     anchor_sid: int | None, client) -> str:
+    """Guarantee a Baseline row exists for one (problem, language) pair.
+
+    Returns the action taken:
+      "kept"      — already a fresh real `leetcode-distribution` row, untouched
+      "real"      — fetched/refreshed the real LeetCode histogram
+      "synthetic" — seeded a synthetic placeholder (no anchor/auth/fetch)
+      "skip"      — problem row not found (shouldn't happen)
+
+    Never leaves the pair as "missing" when a synthetic fallback is possible.
+    `client` may be None (auth unavailable) — we then go straight to synthetic.
+    """
+    existing = session.exec(
+        select(Baseline).where(
+            Baseline.problem_id == problem_id, Baseline.language == language,
+        )
+    ).first()
+    # Already real → nothing to do here (staleness handled by the global sweep).
+    if existing is not None and existing.source == "leetcode-distribution":
+        return "kept"
+
+    # Prefer the real LeetCode population distribution for this exact pair.
+    if anchor_sid is not None and client is not None:
+        details = None
+        try:
+            details = leetcode_dist.fetch_distribution(int(anchor_sid), client=client)
+        except Exception as e:                                          # noqa: BLE001
+            print(f"[baselines] fetch err pid={problem_id} lang={language} "
+                  f"sid={anchor_sid}: {e}", file=sys.stderr)
+        if details:
+            try:
+                d = leetcode_dist.derive(
+                    details["runtimeDistribution"], details["memoryDistribution"],
+                )
+            except Exception:                                           # noqa: BLE001
+                d = None
+            if d:
+                row = existing or Baseline(
+                    problem_id=problem_id, language=language,
+                    runtime_ms_avg=0, runtime_ms_expert=0,
+                    memory_mb_avg=0, memory_mb_expert=0,
+                )
+                row.runtime_ms_avg    = d["runtime_ms_avg"]
+                row.runtime_ms_expert = d["runtime_ms_expert"]
+                row.memory_mb_avg     = d["memory_mb_avg"]
+                row.memory_mb_expert  = d["memory_mb_expert"]
+                row.source = "leetcode-distribution"
+                row.fetched_at = datetime.utcnow()
+                session.add(row)
+                return "real"
+
+    # Fallback: only create a synthetic placeholder when nothing exists yet.
+    # An existing synthetic row is left in place for the global sweep to upgrade.
+    if existing is None:
+        problem = session.get(Problem, problem_id)
+        if problem is None:
+            return "skip"
+        session.add(_synthetic_baseline_row(problem, language))
+        return "synthetic"
+    return "kept"
+
+
+def _ensure_baselines_for_submission(session: Session, sub: Submission, *,
+                                     real: bool) -> None:
+    """Targeted, cheap per-submission baseline guarantee. For each (problem,
+    language) pair this submission attempted, ensure a baseline exists —
+    fetching real LeetCode data when an accepted anchor + auth are available,
+    otherwise a synthetic placeholder. Pairs already backed by real data are
+    skipped, so this is a no-op once a pair has been populated."""
+    if os.environ.get("ARENA_AUTO_REFRESH_BASELINES", "1") == "0":
+        return
+    pids = {
+        a.problem_id
+        for a in session.exec(select(Attempt).where(Attempt.submission_id == sub.id)).all()
+    }
+    if not pids:
+        return
+    # Which pairs still need anything? (Skip those already real.)
+    todo = [
+        pid for pid in pids
+        if not _has_real_baseline(session, pid, sub.language)
+    ]
+    if not todo:
+        return
+
+    # Build a LeetCode client once, only if real fetching is enabled + auth is
+    # present. Without it we still seed synthetic placeholders below.
+    client = None
+    if real:
+        try:
+            client = leetcode_dist.build_client()
+        except leetcode_dist.AuthMissing as e:
+            print(f"[baselines] auth missing — synthetic placeholders only: {e}",
+                  file=sys.stderr)
+
+    # Opportunistic upgrade: when we DO have a working client, this is also
+    # the cheapest moment to back-fill OTHER synthetic baselines in the same
+    # language whose previous auto-refresh attempts ran while auth was down.
+    # Capped to keep the per-submission hook fast; the admin "Refresh
+    # baselines now" button still does the global sweep when needed.
+    if client is not None:
+        cap = int(os.environ.get("ARENA_BASELINE_OPPORTUNISTIC_CAP", "8"))
+        extras = _other_synthetic_pids_with_anchor(session, sub.language, exclude=set(todo), limit=cap)
+        todo.extend(extras)
+
+    rate_sleep_s = float(os.environ.get("ARENA_BASELINE_REFRESH_RPS", "1.0"))
+    touched = False
+    try:
+        for pid in todo:
+            anchor = _latest_accepted_external(session, pid, sub.language) if client else None
+            action = _ensure_baseline(session, pid, sub.language,
+                                      anchor_sid=anchor, client=client)
+            if action in ("real", "synthetic"):
+                touched = True
+            if action == "real":
+                time.sleep(rate_sleep_s)   # be gentle on the LeetCode API
+        session.commit()
+    finally:
+        if client is not None:
+            client.close()
+
+    if touched:
+        _recompute_human_coefficients(session, sub.language)
+
+
+def _other_synthetic_pids_with_anchor(
+    session: Session, language: str, *, exclude: set[int], limit: int,
+) -> list[int]:
+    """Find synthetic baselines in `language` whose problem ALSO has an
+    accepted run carrying an external sid (so a real LeetCode fetch can
+    succeed). Used by the opportunistic-upgrade path on the per-submission
+    hook so a steady stream of submissions self-heals the language's
+    placeholders over time without needing the admin refresh button."""
+    rows = session.exec(
+        select(Baseline)
+        .where(Baseline.language == language)
+        .where(Baseline.source == "synthetic")
+    ).all()
+    out: list[int] = []
+    for b in rows:
+        if b.problem_id in exclude:
+            continue
+        if _latest_accepted_external(session, b.problem_id, language) is None:
+            continue          # no anchor → fetch would fail anyway, skip
+        out.append(b.problem_id)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _has_real_baseline(session: Session, problem_id: int, language: str) -> bool:
+    b = session.exec(
+        select(Baseline).where(
+            Baseline.problem_id == problem_id, Baseline.language == language,
+        )
+    ).first()
+    return b is not None and b.source == "leetcode-distribution"
+
+
+# Module-level state for the long-running baseline refresh job. The admin
+# "Refresh now" button POSTs and gets a 202 back IMMEDIATELY; the work
+# happens in a daemon thread that updates this dict as it goes. A separate
+# GET endpoint returns it so the UI can show progress + flip back to idle
+# when the job finishes.
+import threading                                                          # noqa: E402
+
+_REFRESH_STATE_LOCK = threading.Lock()
+_REFRESH_STATE: dict = {
+    "state": "idle",          # idle | running | done | error
+    "started_at": None,
+    "ended_at": None,
+    "processed": 0,
+    "total": 0,
+    "real": 0,
+    "synthetic": 0,
+    "kept": 0,
+    "current": None,           # last (pid, lang) the worker touched
+    "error": None,
+    "languages_touched": [],
+}
+
+
+def _set_refresh(**fields) -> None:
+    """Thread-safe progress update."""
+    with _REFRESH_STATE_LOCK:
+        _REFRESH_STATE.update(fields)
+
+
+def get_refresh_progress() -> dict:
+    """Read-out the background refresh state (for the admin UI to poll)."""
+    with _REFRESH_STATE_LOCK:
+        return dict(_REFRESH_STATE)
+
+
+def start_refresh_in_background() -> dict:
+    """Kick off a baseline refresh in a daemon thread. Returns the current
+    state right away — the UI keeps polling until `state == 'done'` (or
+    'error'). Safe to call again while a refresh is already running: the
+    second call is a no-op that just returns the current state."""
+    with _REFRESH_STATE_LOCK:
+        if _REFRESH_STATE["state"] == "running":
+            return dict(_REFRESH_STATE)
+        # Reset the counters for the new run.
+        _REFRESH_STATE.update({
+            "state": "running",
+            "started_at": datetime.utcnow().isoformat(),
+            "ended_at": None,
+            "processed": 0, "total": 0,
+            "real": 0, "synthetic": 0, "kept": 0,
+            "current": None, "error": None, "languages_touched": [],
+        })
+    threading.Thread(target=_refresh_worker, daemon=True,
+                     name="baseline-refresh").start()
+    return get_refresh_progress()
+
+
+def _refresh_worker() -> None:
+    """Daemon entry-point — opens its own Session (the request's session
+    closes when the response returns), runs the work, stamps the final
+    state. Exceptions bubble up into `state='error'` with the message."""
+    try:
+        with Session(engine) as session:
+            summary = _ensure_all_baselines(session, on_progress=_set_refresh)
+        _set_refresh(
+            state="done",
+            ended_at=datetime.utcnow().isoformat(),
+            real=summary["real"],
+            synthetic=summary["synthetic"],
+            kept=summary["kept"],
+            languages_touched=summary["languages_touched"],
+        )
+    except Exception as e:                                                # noqa: BLE001
+        _set_refresh(
+            state="error",
+            ended_at=datetime.utcnow().isoformat(),
+            error=str(e),
+        )
+
+
+def _ensure_all_baselines(
+    session: Session,
+    *,
+    on_progress: "callable | None" = None,
+) -> dict:
+    """Backfill: walk every (problem, language) pair that has at least one
+    accepted Run across all non-deleted submissions and guarantee a baseline
+    for each — real where an anchor + auth allow, synthetic placeholder
+    otherwise. This is what `POST /api/admin/baselines/refresh` runs, so a
+    single call cleans up pre-existing non-python pairs that were left
+    "missing", even when LeetCode auth is unavailable.
+
+    Returns a summary {real, synthetic, kept, languages_touched}.
+    """
+    # Collect candidate pairs from accepted runs (these are the pairs whose
+    # coefficients actually matter — the leaderboard only uses accepted ones).
+    #
+    # Anchor-selection rule: prefer ANY accepted run with a stored external
+    # submission_id over the most-recent-but-anchorless one. Walking newest
+    # first and bailing on `key in pairs` used to leave (lang, problem)
+    # pairs locked at `None` if the latest accepted run lacked an external
+    # sid — even when an older accepted run carried one. That's exactly the
+    # "synthetic stays forever" symptom for mixed-dispatch histories
+    # (e.g. fake-mode runs interleaved with real-mode ones).
+    pairs: dict[tuple[int, str], int | None] = {}   # (pid, lang) -> anchor sid
+    runs = session.exec(
+        select(Run)
+        .where(Run.status_msg == "Accepted")
+        .order_by(Run.created_at.desc())
+    ).all()
+    for r in runs:
+        a = session.get(Attempt, r.attempt_id)
+        if not a:
+            continue
+        s = session.get(Submission, a.submission_id)
+        if not s or s.deleted_at is not None:
+            continue
+        key = (a.problem_id, s.language)
+        # Already have a usable sid for this pair → done with it.
+        if pairs.get(key) is not None:
+            continue
+        sid: int | None = None
+        try:
+            sid = int(r.submission_id_external) if r.submission_id_external else None
+        except (TypeError, ValueError):
+            sid = None
+        # Update the map only when we either don't yet have an entry OR we
+        # found a non-None sid (upgrading the previously-recorded None).
+        if key not in pairs or sid is not None:
+            pairs[key] = sid
+
+    client = None
+    if pairs:
+        try:
+            client = leetcode_dist.build_client()
+        except leetcode_dist.AuthMissing as e:
+            print(f"[baselines] auth missing — synthetic placeholders only: {e}",
+                  file=sys.stderr)
+    rate_sleep_s = float(os.environ.get("ARENA_BASELINE_REFRESH_RPS", "1.0"))
+    tally = {"real": 0, "synthetic": 0, "kept": 0, "skip": 0}
+    langs_touched: set[str] = set()
+    total = len(pairs)
+    if on_progress is not None:
+        on_progress(total=total)
+    try:
+        for i, ((pid, lang), sid) in enumerate(pairs.items(), start=1):
+            action = _ensure_baseline(session, pid, lang,
+                                      anchor_sid=sid, client=client)
+            tally[action] = tally.get(action, 0) + 1
+            if action in ("real", "synthetic"):
+                langs_touched.add(lang)
+            if on_progress is not None:
+                # Stream progress so the admin UI can show "320 / 700"
+                # while the work runs — otherwise the only feedback was
+                # a 12-minute browser hang.
+                on_progress(
+                    processed=i, total=total,
+                    real=tally["real"], synthetic=tally["synthetic"],
+                    kept=tally["kept"],
+                    current=f"{lang}/{pid}",
+                )
+            if action == "real":
+                time.sleep(rate_sleep_s)
+        session.commit()
+    finally:
+        if client is not None:
+            client.close()
+
+    for lang in langs_touched:
+        _recompute_human_coefficients(session, lang)
+
+    state = session.get(BaselineRefreshState, 1) or BaselineRefreshState(id=1)
+    state.last_refresh_at = datetime.utcnow()
+    state.submissions_since_last = 0
+    session.add(state); session.commit()
+
+    return {
+        "real": tally["real"], "synthetic": tally["synthetic"],
+        "kept": tally["kept"], "languages_touched": sorted(langs_touched),
+    }

@@ -73,7 +73,10 @@ export const api = {
     return request<ProblemPublic[]>(`/api/problems${qs ? "?" + qs : ""}`);
   },
   problemDetail: (slug: string) => request<ProblemDetail>(`/api/problems/${slug}`),
-  rankings: (params: { language?: string; level?: string; sort?: string; k?: number; prompt_id?: number } = {}) => {
+  rankings: (params: {
+    language?: string; level?: string; sort?: string;
+    k?: number; prompt_id?: number; competition?: string;
+  } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => !!v) as [string, string][],
     ).toString();
@@ -90,8 +93,45 @@ export const api = {
 
   // Curated catalog ---------------------------------------------------------
   registeredModels: (includeRetired = false) =>
-    request<RegisteredModelPublic[]>(
+    request<RegisteredModelOverview[]>(
       `/api/registered-models${includeRetired ? "?include_retired=true" : ""}`),
+
+  // Competitions ------------------------------------------------------------
+  competitions: (includeRetired = false) =>
+    request<CompetitionPublic[]>(
+      `/api/competitions${includeRetired ? "?include_retired=true" : ""}`),
+  competition: (slug: string) =>
+    request<CompetitionDetail>(`/api/competitions/${encodeURIComponent(slug)}`),
+  addCompetition: (body: CompetitionIn) =>
+    request<CompetitionPublic>(`/api/admin/competitions`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  editCompetition: (id: number, body: CompetitionIn) =>
+    request<CompetitionPublic>(`/api/admin/competitions/${id}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }),
+  deleteCompetition: (id: number) =>
+    request<null>(`/api/admin/competitions/${id}`, { method: "DELETE" }),
+  setCompetitionProblems: (id: number, problem_slugs: string[]) =>
+    request<CompetitionPublic>(`/api/admin/competitions/${id}/problems`, {
+      method: "PUT", body: JSON.stringify({ problem_slugs }),
+    }),
+
+  // Blog --------------------------------------------------------------------
+  blogPosts: () => request<BlogPostCard[]>(`/api/blog`),
+  blogPost: (slug: string) =>
+    request<BlogPostPublic>(`/api/blog/${encodeURIComponent(slug)}`),
+  adminBlogPosts: () => request<BlogPostPublic[]>(`/api/admin/blog`),
+  addBlogPost: (body: BlogPostIn) =>
+    request<BlogPostPublic>(`/api/admin/blog`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  editBlogPost: (id: number, body: BlogPostIn) =>
+    request<BlogPostPublic>(`/api/admin/blog/${id}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }),
+  deleteBlogPost: (id: number) =>
+    request<null>(`/api/admin/blog/${id}`, { method: "DELETE" }),
   addRegisteredModel: (body: RegisteredModelIn) =>
     request<RegisteredModelPublic>(`/api/admin/registered-models`, {
       method: "POST", body: JSON.stringify(body),
@@ -116,13 +156,31 @@ export const api = {
     }),
   deletePrompt: (id: number) =>
     request<null>(`/api/admin/prompts/${id}`, { method: "DELETE" }),
-  compare: (params: { models: string[]; language?: string; problems?: string[] }) => {
+  compare: (params: {
+    models: string[]; language?: string; problems?: string[];
+    promptId?: number;
+  }) => {
     const qs = new URLSearchParams();
     params.models.forEach(m => qs.append("models", m));
     if (params.language) qs.set("language", params.language);
     if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
+    if (params.promptId != null) qs.set("prompt_id", String(params.promptId));
     return request<CompareResponse>(`/api/compare?${qs.toString()}`);
   },
+  comparePrompts: (params: {
+    modelName: string; modelVersion?: string; language?: string;
+    promptIds: number[]; problems?: string[];
+  }) => {
+    const qs = new URLSearchParams();
+    qs.set("model_name", params.modelName);
+    if (params.modelVersion) qs.set("model_version", params.modelVersion);
+    if (params.language) qs.set("language", params.language);
+    params.promptIds.forEach(id => qs.append("prompt_ids", String(id)));
+    if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
+    return request<ComparePromptsResponse>(`/api/compare/prompts?${qs.toString()}`);
+  },
+  analysis: () => request<AnalysisResponse>("/api/analysis"),
+  discrimination: () => request<DiscriminationResponse>("/api/discrimination"),
   submitterDetail: (slug: string) => request<SubmitterDetail>(`/api/submitters/${encodeURIComponent(slug)}`),
   datasetDownloadUrl: datasetDownloadUrl,
   downloadDataset: async (params: DatasetParams = {}) => {
@@ -172,10 +230,30 @@ export const api = {
   languages: () => request<LanguageListItem[]>(`/api/languages`),
   languageDetail: (name: string) => request<LanguageDetailPayload>(`/api/languages/${encodeURIComponent(name)}`),
   adminPending: () => request<PendingUser[]>(`/api/admin/pending`),
+  adminExportTables: () => request<{ tables: string[] }>(`/api/admin/export/tables`),
+  /** Builds the download URL with auth fold-in so the admin can just click. */
+  adminExportUrl: (tables: string[], format: "json" | "csv") => {
+    const qs = new URLSearchParams();
+    if (tables.length) qs.set("tables", tables.join(","));
+    qs.set("format", format);
+    // Many browsers can't attach an Authorization header to a plain <a download>
+    // click; the file is fetched via fetch() in the page and then turned into a
+    // blob URL there. This helper just returns the API path for that fetch.
+    return `/api/admin/export?${qs.toString()}`;
+  },
+  adminImport: (bundle: unknown) =>
+    request<{ counts: Record<string, { inserted: number; skipped: number; errored: number }>; bundle_version: number }>(
+      `/api/admin/import`, { method: "POST", body: JSON.stringify(bundle) },
+    ),
   adminApprove: (userId: number) =>
     request<{ api_key: string }>(`/api/admin/users/${userId}/approve`, { method: "POST" }),
   adminReject: (userId: number) =>
     request<{ status: string }>(`/api/admin/users/${userId}/reject`, { method: "POST" }),
+  refreshBaselines: () =>
+    request<{
+      real: number; synthetic_placeholders: number;
+      already_real: number; languages_touched: string[];
+    }>(`/api/admin/baselines/refresh`, { method: "POST" }),
   provenanceLog: (params: { limit?: number; offset?: number } = {}) => {
     const qs = new URLSearchParams();
     if (params.limit != null) qs.set("limit", String(params.limit));
@@ -206,11 +284,25 @@ export interface ProblemTopSolution {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
+  /* Mean across the 5 dispatch repeats (for noise-band context next to the
+   * `runtime_ms` headline which is the best of the 5). null on legacy rows
+   * where the per-run detail wasn't aggregated up. */
+  avg_runtime_ms?: number | null;
+  avg_memory_mb?: number | null;
+  avg_runtime_percentile?: number | null;
+  avg_memory_percentile?: number | null;
+  n_runs?: number | null;
+  n_accepted_runs?: number | null;
 }
 
 export interface ProblemDetail extends ProblemPublic {
   content: string;
   hints: string | null;
+  /** LeetCode-provided starter-code stubs per language (langSlug → code). The
+   * backend populates this via `app.fetch_code_snippets`; the keys are
+   * LeetCode's lang slugs (e.g. "python3", "cpp", "java"). Empty dict when
+   * the fetcher hasn't run yet for this problem. */
+  code_snippets: Record<string, string>;
   testcases: number | null;
   n_attempts: number;
   n_accepted: number;
@@ -281,6 +373,25 @@ export interface SubmissionPublic {
   leaderboard_reason: "eligible" | "incomplete" | "pass-rate-too-low" | "not-judged" | null;
   prompt_id: number | null;
   prompt_name: string | null;
+  /* Experiment-cell knobs (see app/main.py::_DEFAULT_PROMPTS for templates that
+   * consume them). Two submissions that differ on any of these are different
+   * experimental cells — submit_with_local_model.py's --append-if-existing
+   * lookup matches on all three. */
+  n_rounds: number;
+  include_hints: boolean;
+  optimization_target: "latency" | "memory" | null;
+  /* Cost + token totals across all attempts (k samples × N problems × rounds).
+   * null = not reported (e.g. pre-feature submissions); 0 = genuinely free
+   * (all-Ollama). */
+  total_cost_usd: number | null;
+  total_response_tokens: number | null;
+  /* Total generation wall-clock (ms) summed across all attempts. null =
+   * not reported (pre-feature submissions). */
+  total_generation_ms: number | null;
+  /* Total generation energy (Joules) summed across all attempts. null when
+   * no attempt reported one (LeetCode never reports it) — the UI omits the
+   * column / stat in that case. */
+  total_generation_energy_j: number | null;
 }
 
 export interface ModelDetailLanguageStat {
@@ -316,8 +427,20 @@ export interface RegisteredModelPublic {
   endpoint: string | null;
   params: Record<string, unknown> | null;
   notes: string | null;
-  status: string;
+  description: string | null;
+  model_type: string | null;     // chat | instruct | reasoning | coder | …
+  family: string | null;         // qwen | llama | gpt | claude | …
+  provenance: string | null;     // model-card URL, citation, source links (markdown)
+  status: string;                // active | retired | unverified
   added_at: string;
+}
+/** GET /api/registered-models — adds activity stats per row. */
+export interface RegisteredModelOverview extends RegisteredModelPublic {
+  n_submissions: number;
+  n_judged: number;
+  last_submitted_at: string | null;
+  languages: string[];
+  best_pass_at_1: number | null;
 }
 export interface RegisteredModelIn {
   name: string;
@@ -326,6 +449,63 @@ export interface RegisteredModelIn {
   endpoint?: string | null;
   params?: Record<string, unknown> | null;
   notes?: string | null;
+  description?: string | null;
+  model_type?: string | null;
+  family?: string | null;
+  provenance?: string | null;
+  status?: string;
+}
+
+export interface CompetitionPublic {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  kind: string;                    // leetcode | humaneval | mbpp | custom | …
+  status: string;                  // active | retired
+  created_at: string;
+  n_problems: number;
+  n_submissions: number;
+  n_models: number;
+}
+export interface CompetitionDetail extends CompetitionPublic {
+  problems: ProblemPublic[];
+  languages: string[];
+  top_models: {
+    model_name: string; model_version: string;
+    best_pass_at_1: number; n_submissions: number;
+  }[];
+}
+export interface CompetitionIn {
+  slug: string;
+  name: string;
+  description?: string | null;
+  kind?: string;
+  status?: string;
+}
+
+export interface BlogPostCard {
+  id: number;
+  slug: string;
+  title: string;
+  summary: string | null;
+  cover_image_url: string | null;
+  author_name: string | null;
+  status: string;                  // draft | published | retired
+  published_at: string | null;
+  created_at: string;
+}
+export interface BlogPostPublic extends BlogPostCard {
+  body: string;                    // markdown
+  updated_at: string;
+}
+export interface BlogPostIn {
+  slug: string;
+  title: string;
+  summary?: string | null;
+  body?: string;
+  cover_image_url?: string | null;
+  author_name?: string | null;
   status?: string;
 }
 
@@ -364,6 +544,10 @@ export interface CompareModelOnProblem {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
+  /** Generation energy of the best attempt (Joules). null for the LC-only
+   *  data path; surfaced so the comparison histogram can render an energy
+   *  bar when both models in scope report it. */
+  generation_energy_j: number | null;
 }
 
 export interface CompareProblemRow {
@@ -417,6 +601,107 @@ export interface CompareResponse {
   winners: CompareWinners;
 }
 
+/* Prompt-strategy comparison response shape — mirrors CompareResponse but
+ * keyed off prompts rather than models, scoped to ONE (model, version, lang)
+ * cell so the comparison is a clean apples-to-apples. */
+export interface ComparePromptRow {
+  prompt_id: number;
+  prompt_name: string;
+  status: string;
+  n_submissions: number;
+  n_problems_accepted: number;
+  n_problems_attempted: number;
+  pass_at_1_max: number | null;
+  pass_at_k_max: number | null;
+  pass_at_full_max: number | null;
+  avg_runtime_ms: number | null;
+  best_runtime_ms: number | null;
+  avg_memory_mb: number | null;
+  best_memory_mb: number | null;
+  avg_runtime_percentile: number | null;
+  avg_memory_percentile: number | null;
+  time_human_avg: number | null;
+  time_human_expert: number | null;
+  mem_human_avg: number | null;
+  mem_human_expert: number | null;
+  leading_submission_id: number | null;
+}
+export interface ComparePromptsWinners {
+  best_pass_at_1: string | null;
+  best_pass_at_k: string | null;
+  best_pass_at_full: string | null;
+  most_problems_solved: string | null;
+  fastest_avg_runtime: string | null;
+  leanest_avg_memory: string | null;
+  best_runtime_percentile: string | null;
+  best_memory_percentile: string | null;
+  overall: string | null;
+  overall_wins_by_prompt: Record<string, number>;
+}
+export interface ComparePromptsResponse {
+  model_name: string;
+  model_version: string | null;
+  language: string | null;
+  problem_slugs: string[] | null;
+  prompt_ids: number[];
+  rows: ComparePromptRow[];
+  winners: ComparePromptsWinners;
+}
+
+export interface LangAnalysisRow {
+  language: string;
+  n_submissions: number;
+  n_models: number;
+  mean_pass_at_1: number | null;
+  best_pass_at_1: number | null;
+  mean_pass_at_k: number | null;
+  mean_runtime_percentile: number | null;
+  mean_memory_percentile: number | null;
+  pass1_runtime_corr: number | null;
+}
+
+export interface AnalysisPoint {
+  submission_id: number;
+  model_name: string;
+  language: string;
+  pass_at_1: number | null;
+  pass_at_k: number | null;
+  avg_runtime_percentile: number | null;
+  avg_memory_percentile: number | null;
+}
+
+export interface AnalysisResponse {
+  by_language: LangAnalysisRow[];
+  points: AnalysisPoint[];
+  n_points: number;
+  pass1_vs_runtime_corr: number | null;
+  pass1_vs_memory_corr: number | null;
+  passk_vs_runtime_corr: number | null;
+}
+
+export interface DiscriminationLangSummary {
+  language: string;
+  n_measured: number;
+  n_discriminative: number;
+  pct_discriminative: number;
+  mean_mode_share: number | null;
+  median_spread_ratio: number | null;
+  mode_share_histogram: number[];   // 10 buckets [0-10)…[90-100]
+}
+
+export interface DiscriminationCrossRow {
+  title_slug: string;
+  level: string | null;
+  by_language: Record<string, { mode_share: number | null; discriminative: boolean; spread_ratio: number | null }>;
+  flips: boolean;
+}
+
+export interface DiscriminationResponse {
+  languages: DiscriminationLangSummary[];
+  cross_language: DiscriminationCrossRow[];
+  n_cross_language: number;
+}
+
 export interface SnapshotSummary {
   id: number;
   label: string;
@@ -441,6 +726,11 @@ export interface SnapshotTopModel {
   total_solved: number;
   total_problems: number;
   submission_id: number;
+  /* Prompt-template attribution. Optional because pre-existing snapshots
+   * (captured before this field was added) won't have them — the frontend
+   * falls back to "ad-hoc" rendering. */
+  prompt_id?: number | null;
+  prompt_name?: string | null;
 }
 
 export interface SnapshotDetail {
@@ -631,6 +921,10 @@ export interface AttemptRunDetail {
   total_correct: number | null;
   total_testcases: number | null;
   error_log?: RunErrorLog | null;
+  /** Verbatim LeetCode /check/ response — present on non-Accepted runs so
+   *  the UI can show whatever LC returned, even fields the enumerated
+   *  RunErrorLog doesn't cover. null on the happy path. */
+  leetcode_full_response?: Record<string, unknown> | null;
 }
 
 export interface AttemptResultPayload {
@@ -640,6 +934,17 @@ export interface AttemptResultPayload {
   level: string;
   status: string;
   accepted: boolean;
+  round_index?: number;
+  previous_attempt_id?: number | null;
+  cost_usd?: number | null;
+  response_tokens?: number | null;
+  wall_clock_ms?: number | null;
+  /* Generation energy of this attempt (Joules). null when not measured. */
+  generation_energy_j?: number | null;
+  /* When set, the client detected the model's response wasn't a valid
+   * solution (wrong language, no code, etc.) and recorded it as failed
+   * without LeetCode dispatch. The raw response is still in trace. */
+  prefailed_reason?: string | null;
   n_runs: number;
   n_accepted_runs: number;
   avg_runtime_ms: number | null;
@@ -704,6 +1009,10 @@ export interface LanguageTopModel {
   avg_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /* Prompt-template attribution — server adds these so the per-language
+   * leaderboard can show which prompt produced each row. */
+  prompt_id: number | null;
+  prompt_name: string | null;
 }
 
 export interface LanguageDetailPayload {

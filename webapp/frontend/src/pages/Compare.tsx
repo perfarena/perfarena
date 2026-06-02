@@ -1,35 +1,122 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   api, CompareResponse, CompareSummaryRow, CompareWinners,
-  ModelListEntry, ProblemPublic,
+  ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
+  ModelListEntry, ProblemPublic, PromptTemplatePublic,
 } from "../lib/api";
+import CompareBars, {
+  MODEL_COLOURS, shouldShowEnergyColumn,
+} from "../components/CompareHistogram";
 import LanguageLink from "../components/LanguageLink";
 import LevelBadge from "../components/LevelBadge";
+import PromptName from "../components/PromptName";
 import {
   formatCoefficient, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
   coefficientClass,
 } from "../lib/format";
+import CorrectnessVsPerformance from "./CorrectnessVsPerformance";
 
 const LANGS = [
   "python3","cpp","c","rust","java","csharp","javascript","typescript",
   "golang","kotlin","swift","scala","ruby","php",
 ];
 
+type Tab = "models" | "prompts" | "perf-vs-correctness";
+
+const VALID_TABS: ReadonlySet<Tab> = new Set([
+  "models", "prompts", "perf-vs-correctness",
+]);
+
+/* /compare hosts three sibling views that share the same audience (someone
+ * trying to read one model vs another, one prompt strategy vs another, or
+ * the cross-language landscape):
+ *   - Models                    — head-to-head model comparison + per-problem
+ *                                  overlap bars. Optional prompt filter.
+ *   - Prompt strategies         — head-to-head prompt-template comparison
+ *                                  within ONE model+version+language cell.
+ *   - Correctness vs Performance— per-language scatter + filterable model
+ *                                  multi-select (the old "Analysis" tab).
+ *
+ * Active tab persists in ?tab= so links are shareable; the legacy /analysis
+ * URL — and the older ?tab=analysis query — redirect onto the renamed
+ * "perf-vs-correctness" key. */
 export default function Compare() {
+  const [params, setParams] = useSearchParams();
+  const raw = params.get("tab") ?? "models";
+  // Back-compat: the old key was `analysis`. Map it onto the new key so
+  // bookmarks and external links keep landing on the right tab.
+  const normalised: Tab = raw === "analysis"
+    ? "perf-vs-correctness"
+    : (VALID_TABS.has(raw as Tab) ? (raw as Tab) : "models");
+  const tab: Tab = normalised;
+
+  function setTab(next: Tab) {
+    // Preserve other params (filter state could grow into the URL later)
+    // while flipping the tab.
+    const p = new URLSearchParams(params);
+    if (next === "models") p.delete("tab");
+    else p.set("tab", next);
+    setParams(p, { replace: false });
+  }
+
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <div className="row" style={{ gap: 4, borderBottom: "1px solid var(--border)" }}>
+        <TabBtn active={tab === "models"}             onClick={() => setTab("models")}>Models</TabBtn>
+        <TabBtn active={tab === "prompts"}            onClick={() => setTab("prompts")}>Prompt strategies</TabBtn>
+        <TabBtn active={tab === "perf-vs-correctness"} onClick={() => setTab("perf-vs-correctness")}>Correctness vs Performance</TabBtn>
+      </div>
+      {tab === "models"             && <CompareView />}
+      {tab === "prompts"            && <PromptStrategiesView />}
+      {tab === "perf-vs-correctness" && <CorrectnessVsPerformance />}
+    </div>
+  );
+}
+
+function TabBtn({
+  active, onClick, children,
+}: {
+  active: boolean; onClick: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={active ? undefined : "secondary"}
+      style={{
+        borderRadius: "8px 8px 0 0",
+        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+        background: active ? "var(--accent-soft)" : "transparent",
+        color: active ? "var(--fg)" : "var(--fg-dim)",
+        fontWeight: active ? 700 : 500,
+        padding: "8px 16px",
+        border: active ? undefined : "none",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function CompareView() {
   const [models, setModels] = useState<ModelListEntry[]>([]);
   const [problems, setProblems] = useState<ProblemPublic[]>([]);
+  const [prompts, setPrompts] = useState<PromptTemplatePublic[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [modelQuery, setModelQuery] = useState<string>("");
   const [language, setLanguage] = useState<string>("");
+  // "" = any prompt; numeric string = a specific PromptTemplate id. Filters
+  // the comparison to submissions made with that template only — useful for
+  // an apples-to-apples model vs model when the same prompt was used.
+  const [promptIdSel, setPromptIdSel] = useState<string>("");
   const [problemFilter, setProblemFilter] = useState<string[]>([]);
   const [data, setData] = useState<CompareResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    Promise.all([api.models(), api.problems()])
-      .then(([m, p]) => { setModels(m); setProblems(p); })
+    Promise.all([api.models(), api.problems(), api.prompts()])
+      .then(([m, p, pr]) => { setModels(m); setProblems(p); setPrompts(pr); })
       .catch((e: unknown) => setErr(String(e)));
   }, []);
 
@@ -40,6 +127,7 @@ export default function Compare() {
         models: picked,
         language: language || undefined,
         problems: problemFilter.length ? problemFilter : undefined,
+        promptId: promptIdSel ? Number(promptIdSel) : undefined,
       });
       setData(r);
     } catch (e: unknown) {
@@ -127,15 +215,31 @@ export default function Compare() {
               {langOptions.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
           </label>
+          <label className="col" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>prompt</span>
+            <select value={promptIdSel} onChange={e => setPromptIdSel(e.target.value)}
+                    title="Restrict the comparison to submissions made with this prompt template">
+              <option value="">any prompt</option>
+              {prompts.map(p => (
+                <option key={p.id} value={String(p.id)}>{p.name}</option>
+              ))}
+            </select>
+          </label>
           <button onClick={run} disabled={loading || picked.length < 2}>
             {loading ? "Comparing…" : `Compare ${picked.length || ""} model${picked.length === 1 ? "" : "s"}`}
           </button>
-          {picked.length > 0 && (
-            <button className="secondary" onClick={() => { setPicked([]); setProblemFilter([]); setData(null); }}>
+          {(picked.length > 0 || promptIdSel) && (
+            <button className="secondary" onClick={() => { setPicked([]); setProblemFilter([]); setPromptIdSel(""); setData(null); }}>
               Clear
             </button>
           )}
         </div>
+        {promptIdSel && (
+          <div className="muted" style={{ fontSize: "0.85rem", marginTop: -8 }}>
+            Filter: prompt = <PromptName id={Number(promptIdSel)} name={prompts.find(p => p.id === Number(promptIdSel))?.name ?? null} />.
+            Submissions made with any other prompt are excluded from the comparison.
+          </div>
+        )}
       </section>
 
       <section className="col">
@@ -276,10 +380,10 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
             <th title="Mean per-problem best memory">Best mem</th>
             <th title="Mean LeetCode runtime percentile">RT %ile</th>
             <th title="Mean LeetCode memory percentile">Mem %ile</th>
-            <th title="Speedup vs avg human (>1 = faster than avg)">t/avg</th>
-            <th title="Speedup vs expert human (>1 = matches top humans)">t/exp</th>
-            <th title="Memory ratio vs avg human (>1 = uses less)">m/avg</th>
-            <th title="Memory ratio vs expert human">m/exp</th>
+            <th title="Speedup vs the average LeetCode submission (>1 = faster than avg)">t/avg</th>
+            <th title="Speedup vs the expert LeetCode cohort (>1 = matches top performers)">t/exp</th>
+            <th title="Memory ratio vs the average LeetCode submission (>1 = uses less)">m/avg</th>
+            <th title="Memory ratio vs the expert LeetCode cohort">m/exp</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -320,6 +424,16 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
 }
 
 function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("../lib/api").CompareProblemRow[] }) {
+  // The overlapping-bar comparison column is only meaningful when exactly
+  // TWO models are being compared (it's a head-to-head visual). With 3+
+  // models the column is omitted and the matrix falls back to the plain
+  // per-model cells.
+  // The overlapping-bar comparison column appears as soon as we have a
+  // head-to-head set (≥ 2 models). For 3+ models the bars stack N-wise
+  // within each metric, sorted largest-first so the smallest bar stays
+  // visible in front.
+  const showBars = models.length >= 2;
+  const showEnergy = showBars && shouldShowEnergyColumn(rows, models);
   return (
     <section className="col">
       <h2 style={{ marginBottom: 4 }}>Per-problem head-to-head ({rows.length})</h2>
@@ -328,11 +442,47 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
         then fastest). <b>—</b> means the model didn't attempt this problem in
         the filter scope.
       </p>
+      {showBars && (
+        /* Colour-key banner — identifies which overlapping bar belongs to
+         * which model, sticky above the table so it's visible while
+         * scrolling the long per-problem list. */
+        <div className="card" style={{
+          padding: 10,
+          background: "var(--accent-soft)",
+          borderColor: "var(--accent)",
+          fontSize: "0.9rem",
+        }}>
+          <div className="row" style={{ gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+            <b style={{ fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Comparison legend
+            </b>
+            {models.map((m, i) => (
+              <span key={m} className="row" style={{ gap: 6, alignItems: "center" }}>
+                <span style={{
+                  display: "inline-block", width: 22, height: 12,
+                  // Modulo matches the histogram's palette cycling for
+                  // models past the palette's natural length.
+                  background: MODEL_COLOURS[i % MODEL_COLOURS.length],
+                  borderRadius: 3, opacity: 0.85,
+                  border: "1px solid var(--border)",
+                }} />
+                <code style={{ fontSize: "0.9rem" }}>{m}</code>
+              </span>
+            ))}
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              · Bar width shows each model's rank on the metric within the
+              problem (lower ms / MB{showEnergy ? " / J" : ""} = better);
+              {" "}<b>bigger bar = better</b> model (the winner takes the full bar).
+            </span>
+          </div>
+        </div>
+      )}
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
           <thead><tr>
             <th>Problem</th><th>Level</th>
             {models.map(m => <th key={m}>{m}</th>)}
+            {showBars && <th title="Overlapping bars per metric. The lowest ms/MB/J in the row (= best model) fills the track; others scale down by ratio. BIGGER bar = better model. Same convention in every row, so the winner always has the longest bar regardless of which metric.">Comparison</th>}
           </tr></thead>
           <tbody>
             {rows.map(p => {
@@ -387,9 +537,278 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
                       </td>
                     );
                   })}
+                  {showBars && (
+                    <td style={{ verticalAlign: "middle", paddingLeft: 8 }}>
+                      <CompareBars
+                        models={models}
+                        cells={models.map(m => p.per_model[m])}
+                        showEnergy={showEnergy}
+                      />
+                    </td>
+                  )}
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+
+/* Prompt-strategy comparison view — pick one model + version + language, pick
+ * 2+ prompt templates, and read off which prompt buys more correctness or
+ * performance within that experiment cell. Mirrors CompareView's UX but the
+ * axis on the result table is the prompt rather than the model. */
+function PromptStrategiesView() {
+  // (name, version) pairs come from /api/registered-models — that's the
+  // canonical pair the rest of the platform keys off.
+  const [pairs, setPairs] = useState<{ name: string; version: string; languages: string[] }[]>([]);
+  const [prompts, setPrompts] = useState<PromptTemplatePublic[]>([]);
+  const [pairKey, setPairKey] = useState<string>("");   // "name|version"
+  const [language, setLanguage] = useState<string>("");
+  const [pickedPrompts, setPickedPrompts] = useState<number[]>([]);
+  const [data, setData] = useState<ComparePromptsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    Promise.all([api.registeredModels(true), api.prompts()])
+      .then(([rms, ps]) => {
+        setPairs(rms.map(r => ({
+          name: r.name, version: r.version, languages: r.languages,
+        })));
+        setPrompts(ps);
+      })
+      .catch((e: unknown) => setErr(String(e)));
+  }, []);
+
+  const selectedPair = useMemo(
+    () => pairs.find(p => `${p.name}|${p.version}` === pairKey) ?? null,
+    [pairs, pairKey],
+  );
+  const langOptions = selectedPair?.languages ?? [];
+
+  function togglePrompt(id: number) {
+    setPickedPrompts(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  }
+
+  async function run() {
+    if (!selectedPair) return;
+    setErr(""); setLoading(true);
+    try {
+      const r = await api.comparePrompts({
+        modelName: selectedPair.name,
+        modelVersion: selectedPair.version,
+        language: language || undefined,
+        promptIds: pickedPrompts,
+      });
+      setData(r);
+    } catch (e: unknown) {
+      setErr(String(e));
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div className="col">
+      <div className="hero">
+        <h1>Compare prompt strategies</h1>
+        <p>
+          Hold a model + version + language fixed, then pick 2+ prompt
+          templates. The summary aggregates each prompt's <i>best</i> attempt
+          per problem in that cell — so you can read off whether richer
+          prompts (e.g. <code>explain-then-code</code>) buy correctness OR
+          performance over the plain template.
+        </p>
+      </div>
+
+      <section className="col">
+        <h2 style={{ marginBottom: 4 }}>Model / version</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
+          Comparison is scoped to one (model, version) so the only variable is
+          the prompt. Pick from any model the platform has seen submit answers.
+        </p>
+        <select value={pairKey} onChange={e => {
+          setPairKey(e.target.value);
+          // Reset language when the model changes — its language set differs.
+          setLanguage("");
+          setData(null);
+        }}
+                style={{ minWidth: 320 }}>
+          <option value="">— pick a model —</option>
+          {pairs.map(p => {
+            const key = `${p.name}|${p.version}`;
+            return (
+              <option key={key} value={key}>
+                {p.name} · {p.version}{p.languages.length ? `  ·  ${p.languages.length} lang` : ""}
+              </option>
+            );
+          })}
+        </select>
+      </section>
+
+      <section className="col">
+        <h2 style={{ marginBottom: 4 }}>Prompts</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
+          Click to add / remove. Need at least 2 to compare.
+          {pickedPrompts.length > 0 && <> Picked: <b>{pickedPrompts.length}</b>.</>}
+        </p>
+        <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+          {prompts.length === 0
+            ? <span className="muted">no prompts in the registry yet</span>
+            : prompts.map(p => (
+              <button key={p.id}
+                      className={pickedPrompts.includes(p.id) ? "" : "secondary"}
+                      onClick={() => togglePrompt(p.id)}>
+                <b>{p.name}</b>
+                <span className="muted">
+                  {" "}· <span style={{ textTransform: "uppercase", fontSize: "0.75em" }}>{p.status}</span>
+                </span>
+              </button>
+            ))}
+        </div>
+      </section>
+
+      <section className="col">
+        <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label className="col" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>language</span>
+            <select value={language} onChange={e => setLanguage(e.target.value)} disabled={!selectedPair}>
+              <option value="">all languages this model has used</option>
+              {langOptions.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </label>
+          <button onClick={run}
+                  disabled={loading || !selectedPair || pickedPrompts.length < 2}>
+            {loading ? "Comparing…" : `Compare ${pickedPrompts.length || ""} prompt${pickedPrompts.length === 1 ? "" : "s"}`}
+          </button>
+          {(pickedPrompts.length > 0 || pairKey || language) && (
+            <button className="secondary"
+                    onClick={() => {
+                      setPickedPrompts([]); setPairKey("");
+                      setLanguage(""); setData(null);
+                    }}>Clear</button>
+          )}
+        </div>
+        {!selectedPair && (
+          <div className="muted" style={{ fontSize: "0.85rem" }}>
+            Pick a model first; its language set populates the language picker.
+          </div>
+        )}
+      </section>
+
+      {err && (
+        <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>
+          {err}
+        </div>
+      )}
+
+      {data && (
+        <>
+          <PromptWinnersBanner winners={data.winners} />
+          <PromptSummaryTable rows={data.rows} winners={data.winners} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function PromptWinnersBanner({ winners }: { winners: ComparePromptsWinners }) {
+  const fields: { label: string; key: keyof ComparePromptsWinners; tip: string }[] = [
+    { label: "best pass@1",        key: "best_pass_at_1",        tip: "highest pass@1 across the prompts" },
+    { label: "best pass@k",        key: "best_pass_at_k",        tip: "highest pass@k" },
+    { label: "most problems",      key: "most_problems_solved",  tip: "most distinct problems accepted" },
+    { label: "fastest avg runtime",key: "fastest_avg_runtime",   tip: "lowest mean LeetCode runtime (ms) across accepted attempts" },
+    { label: "leanest avg memory", key: "leanest_avg_memory",    tip: "lowest mean LeetCode memory (MB) across accepted attempts" },
+    { label: "best runtime %ile",  key: "best_runtime_percentile", tip: "highest mean LeetCode runtime percentile" },
+    { label: "best memory %ile",   key: "best_memory_percentile",  tip: "highest mean LeetCode memory percentile" },
+  ];
+  return (
+    <section className="col">
+      <h2 style={{ marginBottom: 4 }}>Winners</h2>
+      {winners.overall && (
+        <div className="card" style={{
+          borderColor: "var(--accent)", background: "var(--accent-soft)",
+          padding: 12, fontSize: "0.95rem",
+        }}>
+          <b>Overall winner:</b> <code>{winners.overall}</code>
+          <span className="muted" style={{ marginLeft: 8 }}>
+            (most metric wins; pass@1 tie-break)
+          </span>
+        </div>
+      )}
+      <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+        {fields.map(f => (
+          <div key={String(f.key)} className="card"
+               style={{ padding: 10, minWidth: 180 }} title={f.tip}>
+            <div className="muted" style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{f.label}</div>
+            <div style={{ fontFamily: "ui-monospace, Menlo, monospace" }}>
+              {(winners[f.key] as string | null) ?? <span className="muted">—</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PromptSummaryTable({
+  rows, winners,
+}: { rows: ComparePromptRow[]; winners?: ComparePromptsWinners }) {
+  function mark(metricKey: keyof ComparePromptsWinners, name: string): React.CSSProperties | undefined {
+    if (!winners) return undefined;
+    return winners[metricKey] === name ? WIN_STYLE : undefined;
+  }
+  return (
+    <section className="col">
+      <h2 style={{ marginBottom: 4 }}>Summary</h2>
+      <div className="card tbl-scroll" style={{ padding: 0 }}>
+        <table className="tbl">
+          <thead><tr>
+            <th>Prompt</th>
+            <th title="number of judged submissions in scope">Subs</th>
+            <th title="distinct problems accepted">Solved</th>
+            <th title="best pass@1 across the submissions in scope">pass@1</th>
+            <th title="best pass@k">pass@k</th>
+            <th title="best pass@full">pass@full</th>
+            <th title="mean of accepted-best avg runtime (ms)">Avg runtime</th>
+            <th title="mean of accepted-best best runtime (ms)">Best runtime</th>
+            <th title="mean of accepted-best avg memory (MB)">Avg memory</th>
+            <th title="mean of accepted-best avg runtime percentile">RT %ile</th>
+            <th title="mean of accepted-best avg memory percentile">Mem %ile</th>
+            <th title="time-vs-LeetCode-avg coefficient (>1 = faster than the LeetCode population)">t vs avg</th>
+            <th title="memory-vs-LeetCode-avg coefficient">m vs avg</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.prompt_id}>
+                <td>
+                  <PromptName id={r.prompt_id} name={r.prompt_name} />
+                  <span className="muted" style={{ fontSize: "0.75em", marginLeft: 6 }}>{r.status}</span>
+                </td>
+                <td className="metric">{r.n_submissions}</td>
+                <td className="metric" style={mark("most_problems_solved", r.prompt_name)}>
+                  {r.n_problems_accepted} / {r.n_problems_attempted}
+                </td>
+                <td className="metric" style={mark("best_pass_at_1", r.prompt_name)}>{formatPassAt1(r.pass_at_1_max)}</td>
+                <td className="metric" style={mark("best_pass_at_k", r.prompt_name)}>{formatPassAt1(r.pass_at_k_max)}</td>
+                <td className="metric" style={mark("best_pass_at_full", r.prompt_name)}>{formatPassAt1(r.pass_at_full_max)}</td>
+                <td className="metric" style={mark("fastest_avg_runtime", r.prompt_name)}>{formatRuntime(r.avg_runtime_ms)}</td>
+                <td className="metric">{formatRuntime(r.best_runtime_ms)}</td>
+                <td className="metric" style={mark("leanest_avg_memory", r.prompt_name)}>{formatMemory(r.avg_memory_mb)}</td>
+                <td className="metric" style={mark("best_runtime_percentile", r.prompt_name)}>{formatPercentile(r.avg_runtime_percentile)}</td>
+                <td className="metric" style={mark("best_memory_percentile", r.prompt_name)}>{formatPercentile(r.avg_memory_percentile)}</td>
+                <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>
+                <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>
+                <td>
+                  {r.leading_submission_id != null && (
+                    <Link to={`/submissions/${r.leading_submission_id}`}>top run →</Link>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

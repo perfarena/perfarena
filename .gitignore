@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+# LeetCode credential pool (session cookies for the multi-account rotator).
+data/leetcode_accounts.json
+data/leetcode_accounts.json.tmp

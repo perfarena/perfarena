@@ -1,14 +1,4655 @@
 {
+  "01-matrix": {
+    "python3": 2012686820
+  },
+  "1-bit-and-2-bit-characters": {
+    "python3": 2013559190
+  },
+  "132-pattern": {
+    "python3": 2012577366
+  },
+  "2-keys-keyboard": {
+    "python3": 2012602931
+  },
+  "24-game": {
+    "python3": 2013512163
+  },
+  "3sum": {
+    "python3": 2012601091
+  },
+  "3sum-closest": {
+    "python3": 2012574274
+  },
+  "3sum-with-multiplicity": {
+    "python3": 2012624543
+  },
+  "4sum": {
+    "python3": 2012650091
+  },
+  "4sum-ii": {
+    "python3": 2012683866
+  },
+  "a-number-after-a-double-reversal": {
+    "python3": 2013623092
+  },
+  "abbreviating-the-product-of-a-range": {
+    "python3": 2013620999
+  },
+  "accounts-merge": {
+    "python3": 2013501968
+  },
+  "add-binary": {
+    "python3": 2012629188
+  },
+  "add-digits": {
+    "python3": 2012581333
+  },
+  "add-minimum-number-of-rungs": {
+    "python3": 2013501370
+  },
+  "add-one-row-to-tree": {
+    "python3": 2013516303
+  },
+  "add-strings": {
+    "python3": 2012615975
+  },
+  "add-to-array-form-of-integer": {
+    "python3": 2012686295
+  },
+  "add-two-integers": {
+    "python3": 2013635638
+  },
+  "add-two-numbers": {
+    "python3": 2012641738
+  },
+  "add-two-numbers-ii": {
+    "python3": 2012594156
+  },
+  "adding-spaces-to-a-string": {
+    "python3": 2013622142
+  },
+  "adding-two-negabinary-numbers": {
+    "python3": 2013561271
+  },
+  "additive-number": {
+    "python3": 2013494549
+  },
+  "advantage-shuffle": {
+    "python3": 2013539547
+  },
+  "airplane-seat-assignment-probability": {
+    "python3": 2013494198
+  },
+  "alert-using-same-key-card-three-or-more-times-in-a-one-hour-period": {
+    "python3": 2012645791
+  },
+  "all-divisions-with-the-highest-score-of-a-binary-array": {
+    "python3": 2013626131
+  },
+  "all-elements-in-two-binary-search-trees": {
+    "python3": 2013531016
+  },
+  "all-nodes-distance-k-in-binary-tree": {
+    "python3": 2012597736
+  },
+  "all-oone-data-structure": {
+    "python3": 2012736615
+  },
+  "all-paths-from-source-to-target": {
+    "python3": 2012694205
+  },
+  "all-possible-full-binary-trees": {
+    "python3": 2012627758
+  },
+  "allocate-mailboxes": {
+    "python3": 2013556322
+  },
+  "ambiguous-coordinates": {
+    "python3": 2012628089
+  },
+  "angle-between-hands-of-a-clock": {
+    "python3": 2012634626
+  },
+  "append-k-integers-with-minimal-sum": {
+    "python3": 2013631773
+  },
+  "apply-discount-every-n-orders": {
+    "python3": 2014275660
+  },
+  "arithmetic-slices": {
+    "python3": 2012585207
+  },
+  "arithmetic-slices-ii-subsequence": {
+    "python3": 2012675493
+  },
+  "arithmetic-subarrays": {
+    "python3": 2012646692
+  },
+  "arranging-coins": {
+    "python3": 2012661292
+  },
+  "array-nesting": {
+    "python3": 2012615458
+  },
+  "array-of-doubled-pairs": {
+    "python3": 2013522305
+  },
+  "array-partition": {
+    "python3": 2014253888
+  },
+  "array-with-elements-not-equal-to-average-of-neighbors": {
+    "python3": 2012648261
+  },
+  "as-far-from-land-as-possible": {
+    "python3": 2013568131
+  },
+  "assign-cookies": {
+    "python3": 2012664350
+  },
+  "asteroid-collision": {
+    "python3": 2012590592
+  },
+  "available-captures-for-rook": {
+    "python3": 2013493476
+  },
+  "average-of-levels-in-binary-tree": {
+    "python3": 2012630367
+  },
+  "average-salary-excluding-the-minimum-and-maximum-salary": {
+    "python3": 2012711506
+  },
+  "average-waiting-time": {
+    "python3": 2012715087
+  },
+  "avoid-flood-in-the-city": {
+    "python3": 2012642743
+  },
+  "bag-of-tokens": {
+    "python3": 2012724904
+  },
+  "balance-a-binary-search-tree": {
+    "python3": 2014268108
+  },
+  "balanced-binary-tree": {
+    "python3": 2012612605
+  },
+  "base-7": {
+    "python3": 2012684914
+  },
+  "baseball-game": {
+    "python3": 2013517833
+  },
+  "basic-calculator": {
+    "python3": 2012608948
+  },
+  "basic-calculator-ii": {
+    "python3": 2012583773
+  },
+  "basic-calculator-iii": {
+    "python3": 2013552297
+  },
+  "battleships-in-a-board": {
+    "python3": 2012636577
+  },
+  "beautiful-arrangement": {
+    "python3": 2012731645
+  },
+  "beautiful-arrangement-ii": {
+    "python3": 2013509535
+  },
+  "beautiful-array": {
+    "python3": 2013512391
+  },
+  "best-position-for-a-service-centre": {
+    "python3": 2013550948
+  },
+  "best-sightseeing-pair": {
+    "python3": 2013545560
+  },
+  "best-team-with-no-conflicts": {
+    "python3": 2012677715
+  },
+  "best-time-to-buy-and-sell-stock": {
+    "python3": 2012696182
+  },
+  "best-time-to-buy-and-sell-stock-ii": {
+    "python3": 2012642586
+  },
+  "best-time-to-buy-and-sell-stock-iii": {
+    "python3": 2012608313
+  },
+  "best-time-to-buy-and-sell-stock-iv": {
+    "python3": 2012680831
+  },
+  "best-time-to-buy-and-sell-stock-with-cooldown": {
+    "python3": 2012620969
+  },
+  "best-time-to-buy-and-sell-stock-with-transaction-fee": {
+    "python3": 2013492296
+  },
+  "binary-gap": {
+    "python3": 2013536570
+  },
+  "binary-number-with-alternating-bits": {
+    "python3": 2012607341
+  },
+  "binary-prefix-divisible-by-5": {
+    "python3": 2013557270
+  },
+  "binary-search-tree-iterator": {
+    "python3": 2013487536
+  },
+  "binary-search-tree-to-greater-sum-tree": {
+    "python3": 2012680458
+  },
+  "binary-subarrays-with-sum": {
+    "python3": 2012612418
+  },
+  "binary-tree-cameras": {
+    "python3": 2012635973
+  },
+  "binary-tree-inorder-traversal": {
+    "python3": 2012601969
+  },
+  "binary-tree-level-order-traversal": {
+    "python3": 2012589496
+  },
+  "binary-tree-level-order-traversal-ii": {
+    "python3": 2012659423
+  },
+  "binary-tree-maximum-path-sum": {
+    "python3": 2012604545
+  },
+  "binary-tree-paths": {
+    "python3": 2012693951
+  },
+  "binary-tree-postorder-traversal": {
+    "python3": 2012635080
+  },
+  "binary-tree-preorder-traversal": {
+    "python3": 2012592394
+  },
+  "binary-tree-pruning": {
+    "python3": 2012711091
+  },
+  "binary-tree-right-side-view": {
+    "python3": 2012621502
+  },
+  "binary-tree-tilt": {
+    "python3": 2012613956
+  },
+  "binary-tree-zigzag-level-order-traversal": {
+    "python3": 2012572973
+  },
+  "binary-trees-with-factors": {
+    "python3": 2012626424
+  },
+  "binary-watch": {
+    "python3": 2013498023
+  },
+  "bitwise-and-of-numbers-range": {
+    "python3": 2012572528
+  },
+  "bitwise-ors-of-subarrays": {
+    "python3": 2012665632
+  },
+  "boats-to-save-people": {
+    "python3": 2012574104
+  },
+  "brace-expansion": {
+    "python3": 2012731250
+  },
+  "brace-expansion-ii": {
+    "python3": 2013553797
+  },
+  "brick-wall": {
+    "python3": 2013506783
+  },
+  "bricks-falling-when-hit": {
+    "python3": 2012712092
+  },
+  "broken-calculator": {
+    "python3": 2012684462
+  },
+  "buddy-strings": {
+    "python3": 2013495920
+  },
+  "build-an-array-with-stack-operations": {
+    "python3": 2013496469
+  },
+  "build-array-from-permutation": {
+    "python3": 2012596597
+  },
+  "building-boxes": {
+    "python3": 2013533474
+  },
+  "buildings-with-an-ocean-view": {
+    "python3": 2012713456
+  },
+  "bulb-switcher": {
+    "python3": 2012691191
+  },
+  "bulb-switcher-ii": {
+    "python3": 2012648799
+  },
+  "bulls-and-cows": {
+    "python3": 2012668167
+  },
+  "burst-balloons": {
+    "python3": 2012670637
+  },
+  "bus-routes": {
+    "python3": 2012697139
+  },
+  "calculate-money-in-leetcode-bank": {
+    "python3": 2012572343
+  },
+  "camelcase-matching": {
+    "python3": 2013536403
+  },
+  "campus-bikes": {
+    "python3": 2012676017
+  },
+  "can-i-win": {
+    "python3": 2013513267
+  },
+  "can-make-arithmetic-progression-from-sequence": {
+    "python3": 2012731446
+  },
+  "can-place-flowers": {
+    "python3": 2012717388
+  },
+  "can-you-eat-your-favorite-candy-on-your-favorite-day": {
+    "python3": 2013514943
+  },
+  "candy": {
+    "python3": 2012709294
+  },
+  "capacity-to-ship-packages-within-d-days": {
+    "python3": 2012648983
+  },
+  "capitalize-the-title": {
+    "python3": 2013622731
+  },
+  "car-fleet": {
+    "python3": 2012703277
+  },
+  "car-fleet-ii": {
+    "python3": 2012682583
+  },
+  "car-pooling": {
+    "python3": 2012574829
+  },
+  "card-flipping-game": {
+    "python3": 2013555454
+  },
+  "cat-and-mouse": {
+    "python3": 2013544626
+  },
+  "cat-and-mouse-ii": {
+    "python3": 2013561622
+  },
+  "cells-in-a-range-on-an-excel-sheet": {
+    "python3": 2013631596
+  },
+  "cells-with-odd-values-in-a-matrix": {
+    "python3": 2014271658
+  },
+  "chalkboard-xor-game": {
+    "python3": 2012719427
+  },
+  "champagne-tower": {
+    "python3": 2012672305
+  },
+  "change-minimum-characters-to-satisfy-one-of-three-conditions": {
+    "python3": 2013510242
+  },
+  "cheapest-flights-within-k-stops": {
+    "python3": 2012615316
+  },
+  "check-completeness-of-a-binary-tree": {
+    "python3": 2012613106
+  },
+  "check-if-a-parentheses-string-can-be-valid": {
+    "python3": 2013620807
+  },
+  "check-if-a-string-can-break-another-string": {
+    "python3": 2013528524
+  },
+  "check-if-a-string-contains-all-binary-codes-of-size-k": {
+    "python3": 2012589017
+  },
+  "check-if-a-word-occurs-as-a-prefix-of-any-word-in-a-sentence": {
+    "python3": 2012650783
+  },
+  "check-if-all-1s-are-at-least-length-k-places-away": {
+    "python3": 2012706944
+  },
+  "check-if-all-as-appears-before-all-bs": {
+    "python3": 2013623622
+  },
+  "check-if-all-characters-have-equal-number-of-occurrences": {
+    "python3": 2013500285
+  },
+  "check-if-all-the-integers-in-a-range-are-covered": {
+    "python3": 2014321468
+  },
+  "check-if-an-original-string-exists-given-two-encoded-strings": {
+    "python3": 2013615632
+  },
+  "check-if-array-is-sorted-and-rotated": {
+    "python3": 2012634439
+  },
+  "check-if-binary-string-has-at-most-one-segment-of-ones": {
+    "python3": 2012692204
+  },
+  "check-if-every-row-and-column-contains-all-numbers": {
+    "python3": 2013625303
+  },
+  "check-if-it-is-a-good-array": {
+    "python3": 2013527659
+  },
+  "check-if-it-is-a-straight-line": {
+    "python3": 2012620345
+  },
+  "check-if-move-is-legal": {
+    "python3": 2014331415
+  },
+  "check-if-n-and-its-double-exist": {
+    "python3": 2013534029
+  },
+  "check-if-numbers-are-ascending-in-a-sentence": {
+    "python3": 2013612947
+  },
+  "check-if-string-is-a-prefix-of-array": {
+    "python3": 2012572684
+  },
+  "check-if-string-is-decomposable-into-value-equal-substrings": {
+    "python3": 2013532617
+  },
+  "check-if-string-is-transformable-with-substring-sort-operations": {
+    "python3": 2013551099
+  },
+  "check-if-the-sentence-is-pangram": {
+    "python3": 2012659043
+  },
+  "check-if-two-expression-trees-are-equivalent": {
+    "python3": 2012735967
+  },
+  "check-if-two-string-arrays-are-equivalent": {
+    "python3": 2012718884
+  },
+  "check-if-word-can-be-placed-in-crossword": {
+    "python3": 2013609950
+  },
+  "check-if-word-equals-summation-of-two-words": {
+    "python3": 2012614495
+  },
+  "check-if-word-is-valid-after-substitutions": {
+    "python3": 2012589988
+  },
+  "check-whether-two-strings-are-almost-equivalent": {
+    "python3": 2013614376
+  },
+  "cherry-pickup": {
+    "python3": 2013542259
+  },
+  "cherry-pickup-ii": {
+    "python3": 2014261769
+  },
+  "cinema-seat-allocation": {
+    "python3": 2013524102
+  },
+  "circle-and-rectangle-overlapping": {
+    "python3": 2012711327
+  },
+  "circular-array-loop": {
+    "python3": 2013561776
+  },
+  "circular-permutation-in-binary-representation": {
+    "python3": 2012721548
+  },
+  "climbing-stairs": {
+    "python3": 2012590438
+  },
+  "clone-graph": {
+    "python3": 2012653801
+  },
+  "closest-divisors": {
+    "python3": 2013503865
+  },
+  "closest-leaf-in-a-binary-tree": {
+    "python3": 2013558348
+  },
+  "closest-subsequence-sum": {
+    "python3": 2013518599
+  },
+  "clumsy-factorial": {
+    "python3": 2014262507
+  },
+  "coin-change": {
+    "python3": 2012580022
+  },
+  "coin-change-ii": {
+    "python3": 2014253400
+  },
+  "coloring-a-border": {
+    "python3": 2013558181
+  },
+  "combination-sum": {
+    "python3": 2012575719
+  },
+  "combination-sum-ii": {
+    "python3": 2012626912
+  },
+  "combination-sum-iii": {
+    "python3": 2012637143
+  },
+  "combination-sum-iv": {
+    "python3": 2012584552
+  },
+  "combinations": {
+    "python3": 2012685727
+  },
+  "compare-strings-by-frequency-of-the-smallest-character": {
+    "python3": 2013498211
+  },
+  "compare-version-numbers": {
+    "python3": 2012731073
+  },
+  "complement-of-base-10-integer": {
+    "python3": 2012675838
+  },
+  "complete-binary-tree-inserter": {
+    "python3": 2013547183
+  },
+  "complex-number-multiplication": {
+    "python3": 2012620018
+  },
+  "concatenated-words": {
+    "python3": 2012655529
+  },
+  "concatenation-of-array": {
+    "python3": 2012651389
+  },
+  "concatenation-of-consecutive-binary-numbers": {
+    "python3": 2012581687
+  },
+  "confusing-number": {
+    "python3": 2013492879
+  },
+  "consecutive-characters": {
+    "python3": 2013519188
+  },
+  "consecutive-numbers-sum": {
+    "python3": 2013538694
+  },
+  "construct-binary-search-tree-from-preorder-traversal": {
+    "python3": 2013565988
+  },
+  "construct-binary-tree-from-inorder-and-postorder-traversal": {
+    "python3": 2012607517
+  },
+  "construct-binary-tree-from-preorder-and-inorder-traversal": {
+    "python3": 2012643519
+  },
+  "construct-binary-tree-from-preorder-and-postorder-traversal": {
+    "python3": 2013538332
+  },
+  "construct-k-palindrome-strings": {
+    "python3": 2012716364
+  },
+  "construct-string-from-binary-tree": {
+    "python3": 2014255450
+  },
+  "construct-string-with-repeat-limit": {
+    "python3": 2013631209
+  },
+  "construct-target-array-with-multiple-sums": {
+    "python3": 2013494955
+  },
+  "construct-the-rectangle": {
+    "python3": 2013529792
+  },
+  "contain-virus": {
+    "python3": 2013561446
+  },
+  "container-with-most-water": {
+    "python3": 2012600803
+  },
+  "contains-duplicate": {
+    "python3": 2012616282
+  },
+  "contains-duplicate-ii": {
+    "python3": 2012710401
+  },
+  "contains-duplicate-iii": {
+    "python3": 2013493822
+  },
+  "contiguous-array": {
+    "python3": 2013515892
+  },
+  "continuous-subarray-sum": {
+    "python3": 2012598222
+  },
+  "convert-1d-array-into-2d-array": {
+    "python3": 2013608372
+  },
+  "convert-a-number-to-hexadecimal": {
+    "python3": 2013530496
+  },
+  "convert-binary-number-in-a-linked-list-to-integer": {
+    "python3": 2012654166
+  },
+  "convert-bst-to-greater-tree": {
+    "python3": 2013500828
+  },
+  "convert-integer-to-the-sum-of-two-no-zero-integers": {
+    "python3": 2012662017
+  },
+  "convert-sorted-array-to-binary-search-tree": {
+    "python3": 2012660156
+  },
+  "convert-sorted-list-to-binary-search-tree": {
+    "python3": 2012724062
+  },
+  "convert-to-base-2": {
+    "python3": 2013532256
+  },
+  "coordinate-with-maximum-network-quality": {
+    "python3": 2013548751
+  },
+  "copy-list-with-random-pointer": {
+    "python3": 2012593650
+  },
+  "correct-a-binary-tree": {
+    "python3": 2012682774
+  },
+  "count-all-possible-routes": {
+    "python3": 2013499370
+  },
+  "count-all-valid-pickup-and-delivery-options": {
+    "python3": 2012654784
+  },
+  "count-and-say": {
+    "python3": 2013491517
+  },
+  "count-array-pairs-divisible-by-k": {
+    "python3": 2013631415
+  },
+  "count-binary-substrings": {
+    "python3": 2013508973
+  },
+  "count-collisions-on-a-road": {
+    "python3": 2013633200
+  },
+  "count-common-words-with-one-occurrence": {
+    "python3": 2013616484
+  },
+  "count-complete-tree-nodes": {
+    "python3": 2012644079
+  },
+  "count-different-palindromic-subsequences": {
+    "python3": 2013563702
+  },
+  "count-elements-with-strictly-smaller-and-greater-elements": {
+    "python3": 2013626985
+  },
+  "count-equal-and-divisible-pairs-in-an-array": {
+    "python3": 2013628199
+  },
+  "count-fertile-pyramids-in-a-land": {
+    "python3": 2013616820
+  },
+  "count-good-meals": {
+    "python3": 2014261513
+  },
+  "count-good-nodes-in-binary-tree": {
+    "python3": 2012722507
+  },
+  "count-good-numbers": {
+    "python3": 2014328373
+  },
+  "count-good-triplets": {
+    "python3": 2013526935
+  },
+  "count-good-triplets-in-an-array": {
+    "python3": 2013628755
+  },
+  "count-hills-and-valleys-in-an-array": {
+    "python3": 2013633029
+  },
+  "count-integers-with-even-digit-sum": {
+    "python3": 2013630861
+  },
+  "count-items-matching-a-rule": {
+    "python3": 2013483670
+  },
+  "count-largest-group": {
+    "python3": 2014278583
+  },
+  "count-negative-numbers-in-a-sorted-matrix": {
+    "python3": 2012672726
+  },
+  "count-nice-pairs-in-an-array": {
+    "python3": 2013484821
+  },
+  "count-nodes-with-the-highest-score": {
+    "python3": 2013614020
+  },
+  "count-number-of-homogenous-substrings": {
+    "python3": 2014316547
+  },
+  "count-number-of-maximum-bitwise-or-subsets": {
+    "python3": 2013613321
+  },
+  "count-number-of-nice-subarrays": {
+    "python3": 2012592547
+  },
+  "count-number-of-pairs-with-absolute-difference-k": {
+    "python3": 2013606286
+  },
+  "count-number-of-special-subsequences": {
+    "python3": 2012737403
+  },
+  "count-number-of-teams": {
+    "python3": 2012719629
+  },
+  "count-numbers-with-unique-digits": {
+    "python3": 2012701721
+  },
+  "count-odd-numbers-in-an-interval-range": {
+    "python3": 2012587466
+  },
+  "count-of-range-sum": {
+    "python3": 2013528369
+  },
+  "count-of-smaller-numbers-after-self": {
+    "python3": 2012584109
+  },
+  "count-pairs-of-equal-substrings-with-minimum-difference": {
+    "python3": 2013495727
+  },
+  "count-pairs-of-nodes": {
+    "python3": 2013555628
+  },
+  "count-pairs-with-xor-in-a-range": {
+    "python3": 2014317249
+  },
+  "count-primes": {
+    "python3": 2012586729
+  },
+  "count-servers-that-communicate": {
+    "python3": 2012712484
+  },
+  "count-square-submatrices-with-all-ones": {
+    "python3": 2012681034
+  },
+  "count-square-sum-triples": {
+    "python3": 2014326318
+  },
+  "count-sub-islands": {
+    "python3": 2013505829
+  },
+  "count-submatrices-with-all-ones": {
+    "python3": 2014283570
+  },
+  "count-substrings-that-differ-by-one-character": {
+    "python3": 2013537749
+  },
+  "count-subtrees-with-max-distance-between-cities": {
+    "python3": 2013552867
+  },
+  "count-the-hidden-sequences": {
+    "python3": 2013624624
+  },
+  "count-the-number-of-consistent-strings": {
+    "python3": 2012580864
+  },
+  "count-the-repetitions": {
+    "python3": 2013554907
+  },
+  "count-triplets-that-can-form-two-arrays-of-equal-xor": {
+    "python3": 2012618237
+  },
+  "count-unhappy-friends": {
+    "python3": 2012690061
+  },
+  "count-unique-characters-of-all-substrings-of-a-given-string": {
+    "python3": 2012697903
+  },
+  "count-vowel-substrings-of-a-string": {
+    "python3": 2013615839
+  },
+  "count-vowels-permutation": {
+    "python3": 2013534566
+  },
+  "count-ways-to-build-rooms-in-an-ant-colony": {
+    "python3": 2013525073
+  },
+  "count-words-obtained-after-adding-a-letter": {
+    "python3": 2013625761
+  },
+  "counting-bits": {
+    "python3": 2012629511
+  },
+  "counting-words-with-a-given-prefix": {
+    "python3": 2013630143
+  },
+  "couples-holding-hands": {
+    "python3": 2013564397
+  },
+  "course-schedule": {
+    "python3": 2012593343
+  },
+  "course-schedule-ii": {
+    "python3": 2012698107
+  },
+  "course-schedule-iii": {
+    "python3": 2013499191
+  },
+  "course-schedule-iv": {
+    "python3": 2012611445
+  },
+  "cousins-in-binary-tree": {
+    "python3": 2013487160
+  },
+  "cracking-the-safe": {
+    "python3": 2013547025
+  },
+  "create-binary-tree-from-descriptions": {
+    "python3": 2013631956
+  },
+  "create-maximum-number": {
+    "python3": 2012700300
+  },
+  "create-sorted-array-through-instructions": {
+    "python3": 2012701504
+  },
+  "cut-off-trees-for-golf-event": {
+    "python3": 2013496112
+  },
+  "cyclically-rotating-a-grid": {
+    "python3": 2014327365
+  },
+  "daily-temperatures": {
+    "python3": 2012578193
+  },
+  "data-stream-as-disjoint-intervals": {
+    "python3": 2014258892
+  },
+  "day-of-the-week": {
+    "python3": 2013527273
+  },
+  "decode-string": {
+    "python3": 2012667200
+  },
+  "decode-the-slanted-ciphertext": {
+    "python3": 2013617342
+  },
+  "decode-ways": {
+    "python3": 2012592883
+  },
+  "decode-ways-ii": {
+    "python3": 2013556509
+  },
+  "decode-xored-array": {
+    "python3": 2012591951
+  },
+  "decode-xored-permutation": {
+    "python3": 2012676400
+  },
+  "decoded-string-at-index": {
+    "python3": 2012672902
+  },
+  "decompress-run-length-encoded-list": {
+    "python3": 2013573902
+  },
+  "decrypt-string-from-alphabet-to-integer-mapping": {
+    "python3": 2012734936
+  },
+  "deepest-leaves-sum": {
+    "python3": 2013491930
+  },
+  "defanging-an-ip-address": {
+    "python3": 2013572399
+  },
+  "defuse-the-bomb": {
+    "python3": 2013544936
+  },
+  "degree-of-an-array": {
+    "python3": 2014261069
+  },
+  "delete-and-earn": {
+    "python3": 2012574993
+  },
+  "delete-characters-to-make-fancy-string": {
+    "python3": 2012718167
+  },
+  "delete-columns-to-make-sorted": {
+    "python3": 2012688395
+  },
+  "delete-columns-to-make-sorted-iii": {
+    "python3": 2013536049
+  },
+  "delete-duplicate-folders-in-system": {
+    "python3": 2013502749
+  },
+  "delete-leaves-with-a-given-value": {
+    "python3": 2013506958
+  },
+  "delete-node-in-a-bst": {
+    "python3": 2012678649
+  },
+  "delete-node-in-a-linked-list": {
+    "python3": 2012632213
+  },
+  "delete-operation-for-two-strings": {
+    "python3": 2013535325
+  },
+  "delete-the-middle-node-of-a-linked-list": {
+    "python3": 2013619934
+  },
+  "delivering-boxes-from-storage-to-ports": {
+    "python3": 2014315304
+  },
+  "depth-of-bst-given-insertion-order": {
+    "python3": 2013551664
+  },
+  "describe-the-painting": {
+    "python3": 2014329165
+  },
+  "design-a-stack-with-increment-operation": {
+    "python3": 2013508604
+  },
+  "design-add-and-search-words-data-structure": {
+    "python3": 2012614148
+  },
+  "design-an-ordered-stream": {
+    "python3": 2012707176
+  },
+  "design-authentication-manager": {
+    "python3": 2013552145
+  },
+  "design-bitset": {
+    "python3": 2013629289
+  },
+  "design-front-middle-back-queue": {
+    "python3": 2013542612
+  },
+  "design-most-recently-used-queue": {
+    "python3": 2013548386
+  },
+  "design-movie-rental-system": {
+    "python3": 2013516895
+  },
+  "design-parking-system": {
+    "python3": 2012647569
+  },
+  "design-skiplist": {
+    "python3": 2012630178
+  },
+  "design-twitter": {
+    "python3": 2013493093
+  },
+  "design-underground-system": {
+    "python3": 2012626585
+  },
+  "destination-city": {
+    "python3": 2012680306
+  },
+  "destroying-asteroids": {
+    "python3": 2013623988
+  },
+  "detect-capital": {
+    "python3": 2012633206
+  },
+  "detect-cycles-in-2d-grid": {
+    "python3": 2013554361
+  },
+  "detect-pattern-of-length-m-repeated-k-or-more-times": {
+    "python3": 2013502557
+  },
+  "detect-squares": {
+    "python3": 2013609282
+  },
+  "determine-color-of-a-chessboard-square": {
+    "python3": 2012573482
+  },
+  "determine-if-string-halves-are-alike": {
+    "python3": 2012604696
+  },
+  "determine-if-two-strings-are-close": {
+    "python3": 2013495141
+  },
+  "determine-whether-matrix-can-be-obtained-by-rotation": {
+    "python3": 2013523189
+  },
+  "di-string-match": {
+    "python3": 2012714900
+  },
+  "diagonal-traverse": {
+    "python3": 2012653307
+  },
+  "diagonal-traverse-ii": {
+    "python3": 2013538521
+  },
+  "diameter-of-binary-tree": {
+    "python3": 2013537925
+  },
+  "dice-roll-simulation": {
+    "python3": 2013540413
+  },
+  "different-ways-to-add-parentheses": {
+    "python3": 2012735120
+  },
+  "dinner-plate-stacks": {
+    "python3": 2014266787
+  },
+  "display-table-of-food-orders-in-a-restaurant": {
+    "python3": 2014280489
+  },
+  "distance-between-bus-stops": {
+    "python3": 2012719828
+  },
+  "distant-barcodes": {
+    "python3": 2013570308
+  },
+  "distinct-subsequences": {
+    "python3": 2012595750
+  },
+  "distinct-subsequences-ii": {
+    "python3": 2013502167
+  },
+  "distribute-candies": {
+    "python3": 2013494005
+  },
+  "distribute-candies-to-people": {
+    "python3": 2013572178
+  },
+  "distribute-coins-in-binary-tree": {
+    "python3": 2012640815
+  },
+  "divide-a-string-into-groups-of-size-k": {
+    "python3": 2013625955
+  },
+  "divide-array-in-sets-of-k-consecutive-numbers": {
+    "python3": 2013504062
+  },
+  "divide-array-into-equal-pairs": {
+    "python3": 2013632318
+  },
+  "divide-two-integers": {
+    "python3": 2012695022
+  },
+  "divisor-game": {
+    "python3": 2012577025
+  },
+  "domino-and-tromino-tiling": {
+    "python3": 2012730343
+  },
+  "dota2-senate": {
+    "python3": 2013549884
+  },
+  "dungeon-game": {
+    "python3": 2012619229
+  },
+  "edit-distance": {
+    "python3": 2012597242
+  },
+  "egg-drop-with-2-eggs-and-n-floors": {
+    "python3": 2012605145
+  },
+  "element-appearing-more-than-25-in-sorted-array": {
+    "python3": 2012586242
+  },
+  "eliminate-maximum-number-of-monsters": {
+    "python3": 2014328195
+  },
+  "elimination-game": {
+    "python3": 2012653980
+  },
+  "employee-free-time": {
+    "python3": 2013507604
+  },
+  "employee-importance": {
+    "python3": 2013541593
+  },
+  "encode-and-decode-tinyurl": {
+    "python3": 2013507396
+  },
+  "equal-rational-numbers": {
+    "python3": 2013559341
+  },
+  "equal-sum-arrays-with-minimum-number-of-operations": {
+    "python3": 2012648078
+  },
+  "erect-the-fence": {
+    "python3": 2012676598
+  },
+  "escape-a-large-maze": {
+    "python3": 2013508206
+  },
+  "escape-the-ghosts": {
+    "python3": 2013504464
+  },
+  "evaluate-division": {
+    "python3": 2012594764
+  },
+  "evaluate-reverse-polish-notation": {
+    "python3": 2013492101
+  },
+  "evaluate-the-bracket-pairs-of-a-string": {
+    "python3": 2013501767
+  },
+  "even-odd-tree": {
+    "python3": 2014288574
+  },
+  "exam-room": {
+    "python3": 2013488255
+  },
+  "excel-sheet-column-number": {
+    "python3": 2012589655
+  },
+  "excel-sheet-column-title": {
+    "python3": 2012669897
+  },
+  "exclusive-time-of-functions": {
+    "python3": 2012658481
+  },
+  "execution-of-all-suffix-instructions-staying-in-a-grid": {
+    "python3": 2013623272
+  },
+  "expression-add-operators": {
+    "python3": 2012679228
+  },
+  "expressive-words": {
+    "python3": 2013550799
+  },
+  "factorial-trailing-zeroes": {
+    "python3": 2012652640
+  },
+  "fair-candy-swap": {
+    "python3": 2012713100
+  },
+  "falling-squares": {
+    "python3": 2013556129
+  },
+  "fancy-sequence": {
+    "python3": 2013514420
+  },
+  "faulty-sensor": {
+    "python3": 2013539718
+  },
+  "filter-restaurants-by-vegan-friendly-price-and-distance": {
+    "python3": 2013547875
+  },
+  "final-prices-with-a-special-discount-in-a-shop": {
+    "python3": 2012674247
+  },
+  "final-value-of-variable-after-performing-operations": {
+    "python3": 2013608953
+  },
+  "find-a-corresponding-node-of-a-binary-tree-in-a-clone-of-that-tree": {
+    "python3": 2013530666
+  },
+  "find-a-peak-element-ii": {
+    "python3": 2014327765
+  },
+  "find-a-value-of-a-mysterious-function-closest-to-target": {
+    "python3": 2014284891
+  },
+  "find-all-anagrams-in-a-string": {
+    "python3": 2012573331
+  },
+  "find-all-duplicates-in-an-array": {
+    "python3": 2012585058
+  },
+  "find-all-groups-of-farmland": {
+    "python3": 2014334558
+  },
+  "find-all-k-distant-indices-in-an-array": {
+    "python3": 2013633732
+  },
+  "find-all-lonely-numbers-in-the-array": {
+    "python3": 2013627158
+  },
+  "find-all-numbers-disappeared-in-an-array": {
+    "python3": 2012686470
+  },
+  "find-all-people-with-secret": {
+    "python3": 2013619541
+  },
+  "find-all-possible-recipes-from-given-supplies": {
+    "python3": 2013620578
+  },
+  "find-and-replace-in-string": {
+    "python3": 2013514224
+  },
+  "find-and-replace-pattern": {
+    "python3": 2012710015
+  },
+  "find-array-given-subset-sums": {
+    "python3": 2013605354
+  },
+  "find-bottom-left-tree-value": {
+    "python3": 2012655871
+  },
+  "find-center-of-star-graph": {
+    "python3": 2012579266
+  },
+  "find-common-characters": {
+    "python3": 2012667977
+  },
+  "find-critical-and-pseudo-critical-edges-in-minimum-spanning-tree": {
+    "python3": 2014283307
+  },
+  "find-distance-in-a-binary-tree": {
+    "python3": 2013552675
+  },
+  "find-duplicate-file-in-system": {
+    "python3": 2012715838
+  },
+  "find-duplicate-subtrees": {
+    "python3": 2013562799
+  },
+  "find-elements-in-a-contaminated-binary-tree": {
+    "python3": 2013540049
+  },
+  "find-eventual-safe-states": {
+    "python3": 2012597573
+  },
+  "find-first-and-last-position-of-element-in-sorted-array": {
+    "python3": 2012573954
+  },
+  "find-first-palindromic-string-in-the-array": {
+    "python3": 2013621961
+  },
+  "find-good-days-to-rob-the-bank": {
+    "python3": 2013618635
+  },
+  "find-greatest-common-divisor-of-array": {
+    "python3": 2013604829
+  },
+  "find-if-path-exists-in-graph": {
+    "python3": 2012701290
+  },
+  "find-in-mountain-array": {
+    "python3": 2012616443
+  },
+  "find-k-closest-elements": {
+    "python3": 2012702859
+  },
+  "find-k-pairs-with-smallest-sums": {
+    "python3": 2012699942
+  },
+  "find-k-th-smallest-pair-distance": {
+    "python3": 2013535675
+  },
+  "find-kth-bit-in-nth-binary-string": {
+    "python3": 2014264452
+  },
+  "find-kth-largest-xor-coordinate-value": {
+    "python3": 2012726139
+  },
+  "find-largest-value-in-each-tree-row": {
+    "python3": 2012732677
+  },
+  "find-latest-group-of-size-m": {
+    "python3": 2012649331
+  },
+  "find-longest-awesome-substring": {
+    "python3": 2012599376
+  },
+  "find-median-from-data-stream": {
+    "python3": 2012732861
+  },
+  "find-minimum-in-rotated-sorted-array": {
+    "python3": 2012651899
+  },
+  "find-minimum-in-rotated-sorted-array-ii": {
+    "python3": 2012587096
+  },
+  "find-minimum-time-to-finish-all-jobs": {
+    "python3": 2013522832
+  },
+  "find-missing-observations": {
+    "python3": 2013611153
+  },
+  "find-mode-in-binary-search-tree": {
+    "python3": 2012586390
+  },
+  "find-n-unique-integers-sum-up-to-zero": {
+    "python3": 2012633379
+  },
+  "find-numbers-with-even-number-of-digits": {
+    "python3": 2013531709
+  },
+  "find-original-array-from-doubled-array": {
+    "python3": 2013606465
+  },
+  "find-peak-element": {
+    "python3": 2012634262
+  },
+  "find-pivot-index": {
+    "python3": 2012604832
+  },
+  "find-right-interval": {
+    "python3": 2014258210
+  },
+  "find-smallest-letter-greater-than-target": {
+    "python3": 2012644631
+  },
+  "find-subsequence-of-length-k-with-the-largest-sum": {
+    "python3": 2014334743
+  },
+  "find-substring-with-given-hash-value": {
+    "python3": 2013627853
+  },
+  "find-target-indices-after-sorting-array": {
+    "python3": 2013619002
+  },
+  "find-the-closest-palindrome": {
+    "python3": 2013562298
+  },
+  "find-the-difference": {
+    "python3": 2012703069
+  },
+  "find-the-difference-of-two-arrays": {
+    "python3": 2014272449
+  },
+  "find-the-duplicate-number": {
+    "python3": 2013488433
+  },
+  "find-the-highest-altitude": {
+    "python3": 2012572200
+  },
+  "find-the-index-of-the-first-occurrence-in-a-string": {
+    "python3": 2014253626
+  },
+  "find-the-kth-largest-integer-in-the-array": {
+    "python3": 2013493641
+  },
+  "find-the-longest-substring-containing-vowels-in-even-counts": {
+    "python3": 2013556876
+  },
+  "find-the-longest-valid-obstacle-course-at-each-position": {
+    "python3": 2014333908
+  },
+  "find-the-middle-index-in-array": {
+    "python3": 2013604108
+  },
+  "find-the-minimum-and-maximum-number-of-nodes-between-critical-points": {
+    "python3": 2013615250
+  },
+  "find-the-minimum-number-of-fibonacci-numbers-whose-sum-is-k": {
+    "python3": 2013497635
+  },
+  "find-the-shortest-superstring": {
+    "python3": 2012671002
+  },
+  "find-the-smallest-divisor-given-a-threshold": {
+    "python3": 2013505431
+  },
+  "find-the-student-that-will-replace-the-chalk": {
+    "python3": 2012694616
+  },
+  "find-the-winner-of-an-array-game": {
+    "python3": 2013519757
+  },
+  "find-the-winner-of-the-circular-game": {
+    "python3": 2014318503
+  },
+  "find-three-consecutive-integers-that-sum-to-a-given-number": {
+    "python3": 2013628370
+  },
+  "find-triangular-sum-of-an-array": {
+    "python3": 2013634238
+  },
+  "find-two-non-overlapping-sub-arrays-each-with-target-sum": {
+    "python3": 2012584283
+  },
+  "find-unique-binary-string": {
+    "python3": 2013605001
+  },
+  "find-valid-matrix-given-row-and-column-sums": {
+    "python3": 2012735325
+  },
+  "find-winner-on-a-tic-tac-toe-game": {
+    "python3": 2012658132
+  },
+  "find-words-that-can-be-formed-by-characters": {
+    "python3": 2013567469
+  },
+  "find-xor-sum-of-all-pairs-bitwise-and": {
+    "python3": 2012682952
+  },
+  "finding-3-digit-even-numbers": {
+    "python3": 2013619740
+  },
+  "finding-mk-average": {
+    "python3": 2013519386
+  },
+  "finding-pairs-with-a-certain-sum": {
+    "python3": 2014320642
+  },
+  "finding-the-users-active-minutes": {
+    "python3": 2012628732
+  },
+  "first-bad-version": {
+    "python3": 2012716554
+  },
+  "first-day-where-you-have-been-in-all-the-rooms": {
+    "python3": 2013607313
+  },
+  "first-missing-positive": {
+    "python3": 2012585481
+  },
+  "first-unique-character-in-a-string": {
+    "python3": 2012603531
+  },
+  "fixed-point": {
+    "python3": 2013561112
+  },
+  "fizz-buzz": {
+    "python3": 2012640109
+  },
+  "flatten-binary-tree-to-linked-list": {
+    "python3": 2012663132
+  },
+  "flatten-nested-list-iterator": {
+    "python3": 2012618076
+  },
+  "flip-binary-tree-to-match-preorder-traversal": {
+    "python3": 2012659944
+  },
+  "flip-columns-for-maximum-number-of-equal-rows": {
+    "python3": 2013543120
+  },
+  "flip-equivalent-binary-trees": {
+    "python3": 2013523730
+  },
+  "flip-string-to-monotone-increasing": {
+    "python3": 2012679598
+  },
+  "flipping-an-image": {
+    "python3": 2012713653
+  },
+  "flood-fill": {
+    "python3": 2012716744
+  },
+  "flower-planting-with-no-adjacent": {
+    "python3": 2012603078
+  },
+  "form-array-by-concatenating-subarrays-of-another-array": {
+    "python3": 2013555805
+  },
+  "form-largest-integer-with-digits-that-add-up-to-target": {
+    "python3": 2013533284
+  },
+  "four-divisors": {
+    "python3": 2013490061
+  },
+  "fraction-addition-and-subtraction": {
+    "python3": 2013562625
+  },
+  "fraction-to-recurring-decimal": {
+    "python3": 2013532763
+  },
+  "freedom-trail": {
+    "python3": 2012715474
+  },
+  "frequency-of-the-most-frequent-element": {
+    "python3": 2014318894
+  },
+  "friends-of-appropriate-ages": {
+    "python3": 2012580210
+  },
+  "frog-jump": {
+    "python3": 2012639941
+  },
+  "fruit-into-baskets": {
+    "python3": 2012627933
+  },
+  "furthest-building-you-can-reach": {
+    "python3": 2012647742
+  },
+  "game-of-life": {
+    "python3": 2012603808
+  },
+  "game-of-nim": {
+    "python3": 2013531540
+  },
+  "gas-station": {
+    "python3": 2012598831
+  },
+  "gcd-sort-of-an-array": {
+    "python3": 2013607505
+  },
+  "generate-a-string-with-characters-that-have-odd-counts": {
+    "python3": 2014278083
+  },
+  "generate-parentheses": {
+    "python3": 2012608790
+  },
+  "get-biggest-three-rhombus-sums-in-a-grid": {
+    "python3": 2014320197
+  },
+  "get-equal-substrings-within-budget": {
+    "python3": 2012734388
+  },
+  "get-maximum-in-generated-array": {
+    "python3": 2012607189
+  },
+  "get-the-maximum-score": {
+    "python3": 2012673838
+  },
+  "get-watched-videos-by-your-friends": {
+    "python3": 2013546700
+  },
+  "global-and-local-inversions": {
+    "python3": 2012674409
+  },
+  "goal-parser-interpretation": {
+    "python3": 2012581848
+  },
+  "goat-latin": {
+    "python3": 2012669712
+  },
+  "graph-connectivity-with-threshold": {
+    "python3": 2012707950
+  },
+  "gray-code": {
+    "python3": 2012652990
+  },
+  "greatest-common-divisor-of-strings": {
+    "python3": 2013570670
+  },
+  "greatest-sum-divisible-by-three": {
+    "python3": 2012615169
+  },
+  "grid-game": {
+    "python3": 2013609785
+  },
+  "grid-illumination": {
+    "python3": 2012690780
+  },
+  "group-anagrams": {
+    "python3": 2012712302
+  },
+  "group-the-people-given-the-group-size-they-belong-to": {
+    "python3": 2012671191
+  },
+  "groups-of-special-equivalent-strings": {
+    "python3": 2012617584
+  },
+  "groups-of-strings": {
+    "python3": 2013628015
+  },
+  "grumpy-bookstore-owner": {
+    "python3": 2013570004
+  },
+  "guess-number-higher-or-lower": {
+    "python3": 2012573643
+  },
+  "guess-number-higher-or-lower-ii": {
+    "python3": 2013546236
+  },
+  "guess-the-word": {
+    "python3": 2012739445
+  },
+  "h-index": {
+    "python3": 2012596766
+  },
+  "h-index-ii": {
+    "python3": 2012606708
+  },
+  "hamming-distance": {
+    "python3": 2013513633
+  },
+  "happy-number": {
+    "python3": 2012677319
+  },
+  "heaters": {
+    "python3": 2012583274
+  },
+  "height-checker": {
+    "python3": 2013569834
+  },
+  "high-five": {
+    "python3": 2013522490
+  },
+  "house-robber": {
+    "python3": 2012588388
+  },
+  "house-robber-ii": {
+    "python3": 2012629996
+  },
+  "house-robber-iii": {
+    "python3": 2012652080
+  },
+  "how-many-apples-can-you-put-into-the-basket": {
+    "python3": 2013521325
+  },
+  "image-overlap": {
+    "python3": 2012637664
+  },
+  "image-smoother": {
+    "python3": 2013483860
+  },
+  "implement-magic-dictionary": {
+    "python3": 2013557437
+  },
+  "implement-queue-using-stacks": {
+    "python3": 2012577531
+  },
+  "implement-rand10-using-rand7": {
+    "python3": 2013565314
+  },
+  "implement-stack-using-queues": {
+    "python3": 2012672124
+  },
+  "implement-trie-prefix-tree": {
+    "python3": 2012589184
+  },
+  "increasing-decreasing-string": {
+    "python3": 2014276639
+  },
+  "increasing-order-search-tree": {
+    "python3": 2012622968
+  },
+  "increasing-triplet-subsequence": {
+    "python3": 2012588238
+  },
+  "incremental-memory-leak": {
+    "python3": 2013494736
+  },
+  "index-pairs-of-a-string": {
+    "python3": 2012727892
+  },
+  "insert-delete-getrandom-o1": {
+    "python3": 2012643713
+  },
+  "insert-delete-getrandom-o1-duplicates-allowed": {
+    "python3": 2013533830
+  },
+  "insert-interval": {
+    "python3": 2012737608
+  },
+  "insertion-sort-list": {
+    "python3": 2012631054
+  },
+  "insufficient-nodes-in-root-to-leaf-paths": {
+    "python3": 2013571363
+  },
+  "integer-break": {
+    "python3": 2012579101
+  },
+  "integer-replacement": {
+    "python3": 2012589333
+  },
+  "integer-to-english-words": {
+    "python3": 2012591493
+  },
+  "integer-to-roman": {
+    "python3": 2012665082
+  },
+  "interleaving-string": {
+    "python3": 2012628238
+  },
+  "intersection-of-two-arrays": {
+    "python3": 2012584715
+  },
+  "intersection-of-two-arrays-ii": {
+    "python3": 2012588071
+  },
+  "intersection-of-two-linked-lists": {
+    "python3": 2012698302
+  },
+  "interval-list-intersections": {
+    "python3": 2012681686
+  },
+  "intervals-between-identical-elements": {
+    "python3": 2013623454
+  },
+  "invalid-transactions": {
+    "python3": 2012722125
+  },
+  "invert-binary-tree": {
+    "python3": 2012729641
+  },
+  "ipo": {
+    "python3": 2012690989
+  },
+  "is-subsequence": {
+    "python3": 2012612744
+  },
+  "island-perimeter": {
+    "python3": 2012633571
+  },
+  "isomorphic-strings": {
+    "python3": 2012691964
+  },
+  "iterator-for-combination": {
+    "python3": 2013572718
+  },
+  "jump-game": {
+    "python3": 2012650973
+  },
+  "jump-game-ii": {
+    "python3": 2013487348
+  },
+  "jump-game-iii": {
+    "python3": 2012703865
+  },
+  "jump-game-v": {
+    "python3": 2012620823
+  },
+  "jump-game-vi": {
+    "python3": 2012596268
+  },
+  "jump-game-vii": {
+    "python3": 2013525500
+  },
+  "k-closest-points-to-origin": {
+    "python3": 2012625070
+  },
+  "k-diff-pairs-in-an-array": {
+    "python3": 2012612250
+  },
+  "k-highest-ranked-items-within-a-price-range": {
+    "python3": 2013624813
+  },
+  "k-inverse-pairs-array": {
+    "python3": 2014256487
+  },
+  "k-radius-subarray-averages": {
+    "python3": 2013619185
+  },
+  "k-similar-strings": {
+    "python3": 2012672514
+  },
+  "k-th-smallest-in-lexicographical-order": {
+    "python3": 2012687619
+  },
+  "k-th-symbol-in-grammar": {
+    "python3": 2012583945
+  },
+  "keep-multiplying-found-values-by-two": {
+    "python3": 2013627697
+  },
+  "keyboard-row": {
+    "python3": 2012724697
+  },
+  "keys-and-rooms": {
+    "python3": 2012656249
+  },
+  "kids-with-the-greatest-number-of-candies": {
+    "python3": 2013520364
+  },
+  "knight-dialer": {
+    "python3": 2012602349
+  },
+  "knight-probability-in-chessboard": {
+    "python3": 2012723695
+  },
+  "koko-eating-bananas": {
+    "python3": 2012643879
+  },
+  "kth-ancestor-of-a-tree-node": {
+    "python3": 2012710846
+  },
+  "kth-distinct-string-in-an-array": {
+    "python3": 2013612312
+  },
+  "kth-largest-element-in-an-array": {
+    "python3": 2012592714
+  },
+  "kth-missing-positive-number": {
+    "python3": 2012662192
+  },
+  "kth-smallest-element-in-a-bst": {
+    "python3": 2012646897
+  },
+  "kth-smallest-element-in-a-sorted-matrix": {
+    "python3": 2012658308
+  },
   "kth-smallest-instructions": {
-    "python3": 2011504120
+    "python3": 2012641263
+  },
+  "kth-smallest-number-in-multiplication-table": {
+    "python3": 2013522128
+  },
+  "kth-smallest-product-of-two-sorted-arrays": {
+    "python3": 2013610597
+  },
+  "kth-smallest-subarray-sum": {
+    "python3": 2013488077
+  },
+  "largest-component-size-by-common-factor": {
+    "python3": 2012655697
+  },
+  "largest-divisible-subset": {
+    "python3": 2012610922
+  },
+  "largest-magic-square": {
+    "python3": 2012726519
+  },
+  "largest-number": {
+    "python3": 2012690588
+  },
+  "largest-number-after-digit-swaps-by-parity": {
+    "python3": 2013634768
+  },
+  "largest-number-after-mutating-substring": {
+    "python3": 2013523364
+  },
+  "largest-number-at-least-twice-of-others": {
+    "python3": 2013550260
+  },
+  "largest-odd-number-in-string": {
+    "python3": 2014325493
+  },
+  "largest-palindrome-product": {
+    "python3": 2013555079
+  },
+  "largest-perimeter-triangle": {
+    "python3": 2012650261
+  },
+  "largest-plus-sign": {
+    "python3": 2013518798
+  },
+  "largest-rectangle-in-histogram": {
+    "python3": 2012588699
+  },
+  "largest-submatrix-with-rearrangements": {
+    "python3": 2012595233
+  },
+  "largest-sum-of-averages": {
+    "python3": 2012708710
+  },
+  "largest-time-for-given-digits": {
+    "python3": 2012627082
+  },
+  "largest-triangle-area": {
+    "python3": 2014258695
+  },
+  "last-day-where-you-can-still-cross": {
+    "python3": 2013546870
+  },
+  "last-moment-before-all-ants-fall-out-of-a-plank": {
+    "python3": 2012603955
+  },
+  "last-stone-weight": {
+    "python3": 2012581189
+  },
+  "last-stone-weight-ii": {
+    "python3": 2013527099
+  },
+  "last-substring-in-lexicographical-order": {
+    "python3": 2013569647
+  },
+  "leaf-similar-trees": {
+    "python3": 2012627612
+  },
+  "lemonade-change": {
+    "python3": 2012730888
+  },
+  "length-of-last-word": {
+    "python3": 2012667602
+  },
+  "length-of-longest-fibonacci-subsequence": {
+    "python3": 2013558856
+  },
+  "letter-case-permutation": {
+    "python3": 2013565156
+  },
+  "letter-combinations-of-a-phone-number": {
+    "python3": 2012574456
+  },
+  "letter-tile-possibilities": {
+    "python3": 2013500656
+  },
+  "lexicographical-numbers": {
+    "python3": 2013485226
+  },
+  "lexicographically-smallest-equivalent-string": {
+    "python3": 2013566159
+  },
+  "lexicographically-smallest-string-after-applying-operations": {
+    "python3": 2014289052
+  },
+  "lfu-cache": {
+    "python3": 2012586085
+  },
+  "license-key-formatting": {
+    "python3": 2013489852
+  },
+  "linked-list-components": {
+    "python3": 2014257985
+  },
+  "linked-list-cycle": {
+    "python3": 2012661491
+  },
+  "linked-list-cycle-ii": {
+    "python3": 2012665280
+  },
+  "linked-list-in-binary-tree": {
+    "python3": 2013492474
+  },
+  "linked-list-random-node": {
+    "python3": 2012623444
+  },
+  "logical-or-of-two-binary-grids-represented-as-quad-trees": {
+    "python3": 2013564556
+  },
+  "long-pressed-name": {
+    "python3": 2013527466
+  },
+  "longer-contiguous-segments-of-ones-than-zeros": {
+    "python3": 2014320834
+  },
+  "longest-absolute-file-path": {
+    "python3": 2012622473
+  },
+  "longest-arithmetic-subsequence": {
+    "python3": 2012623747
+  },
+  "longest-arithmetic-subsequence-of-given-difference": {
+    "python3": 2012708510
+  },
+  "longest-chunked-palindrome-decomposition": {
+    "python3": 2014265576
+  },
+  "longest-common-prefix": {
+    "python3": 2014257516
+  },
+  "longest-common-subpath": {
+    "python3": 2012662950
+  },
+  "longest-consecutive-sequence": {
+    "python3": 2012600030
+  },
+  "longest-continuous-increasing-subsequence": {
+    "python3": 2012632556
+  },
+  "longest-continuous-subarray-with-absolute-diff-less-than-or-equal-to-limit": {
+    "python3": 2014281405
+  },
+  "longest-duplicate-substring": {
+    "python3": 2013568813
+  },
+  "longest-harmonious-subsequence": {
+    "python3": 2013498414
+  },
+  "longest-increasing-path-in-a-matrix": {
+    "python3": 2012617084
+  },
+  "longest-increasing-subsequence": {
+    "python3": 2012693734
+  },
+  "longest-nice-substring": {
+    "python3": 2014316141
+  },
+  "longest-palindrome": {
+    "python3": 2012596421
+  },
+  "longest-palindromic-subsequence": {
+    "python3": 2012629044
+  },
+  "longest-palindromic-substring": {
+    "python3": 2012578503
+  },
+  "longest-repeating-character-replacement": {
+    "python3": 2012639408
+  },
+  "longest-repeating-substring": {
+    "python3": 2012707746
+  },
+  "longest-string-chain": {
+    "python3": 2013569322
+  },
+  "longest-subarray-of-1s-after-deleting-one-element": {
+    "python3": 2014282821
+  },
+  "longest-subsequence-repeated-k-times": {
+    "python3": 2013609464
+  },
+  "longest-substring-of-all-vowels-in-order": {
+    "python3": 2014263033
+  },
+  "longest-substring-of-one-repeating-character": {
+    "python3": 2013633549
+  },
+  "longest-substring-with-at-least-k-repeating-characters": {
+    "python3": 2012642086
+  },
+  "longest-substring-without-repeating-characters": {
+    "python3": 2012589818
+  },
+  "longest-turbulent-subarray": {
+    "python3": 2013540213
+  },
+  "longest-uncommon-subsequence-i": {
+    "python3": 2013543616
+  },
+  "longest-uncommon-subsequence-ii": {
+    "python3": 2013494387
+  },
+  "longest-univalue-path": {
+    "python3": 2012599530
+  },
+  "longest-valid-parentheses": {
+    "python3": 2013490259
+  },
+  "longest-word-in-dictionary": {
+    "python3": 2013504256
+  },
+  "longest-word-in-dictionary-through-deleting": {
+    "python3": 2013496844
+  },
+  "longest-word-with-all-prefixes": {
+    "python3": 2013544146
+  },
+  "longest-zigzag-path-in-a-binary-tree": {
+    "python3": 2014276881
+  },
+  "loud-and-rich": {
+    "python3": 2012730542
+  },
+  "lowest-common-ancestor-of-a-binary-search-tree": {
+    "python3": 2012693288
+  },
+  "lowest-common-ancestor-of-a-binary-tree": {
+    "python3": 2012680138
+  },
+  "lowest-common-ancestor-of-a-binary-tree-ii": {
+    "python3": 2012667382
+  },
+  "lowest-common-ancestor-of-a-binary-tree-iv": {
+    "python3": 2013535499
+  },
+  "lru-cache": {
+    "python3": 2012576361
+  },
+  "lucky-numbers-in-a-matrix": {
+    "python3": 2012728286
+  },
+  "magical-string": {
+    "python3": 2013557985
+  },
+  "magnetic-force-between-two-balls": {
+    "python3": 2013549729
+  },
+  "majority-element": {
+    "python3": 2012706230
+  },
+  "majority-element-ii": {
+    "python3": 2012711688
+  },
+  "make-array-strictly-increasing": {
+    "python3": 2012593824
+  },
+  "make-the-string-great": {
+    "python3": 2014285583
+  },
+  "make-the-xor-of-all-segments-equal-to-zero": {
+    "python3": 2013554167
+  },
+  "make-two-arrays-equal-by-reversing-subarrays": {
+    "python3": 2012717601
+  },
+  "making-a-large-island": {
+    "python3": 2013511951
+  },
+  "making-file-names-unique": {
+    "python3": 2013559716
+  },
+  "map-of-highest-peak": {
+    "python3": 2012621960
+  },
+  "map-sum-pairs": {
+    "python3": 2012663638
+  },
+  "masking-personal-information": {
+    "python3": 2013495546
+  },
+  "matchsticks-to-square": {
+    "python3": 2012612923
+  },
+  "matrix-block-sum": {
+    "python3": 2013574090
+  },
+  "matrix-cells-in-distance-order": {
+    "python3": 2013486040
+  },
+  "matrix-diagonal-sum": {
+    "python3": 2012593487
+  },
+  "max-area-of-island": {
+    "python3": 2013488834
+  },
+  "max-chunks-to-make-sorted": {
+    "python3": 2013559009
+  },
+  "max-chunks-to-make-sorted-ii": {
+    "python3": 2013524512
+  },
+  "max-consecutive-ones": {
+    "python3": 2012604247
+  },
+  "max-consecutive-ones-iii": {
+    "python3": 2012700504
+  },
+  "max-dot-product-of-two-subsequences": {
+    "python3": 2012669536
+  },
+  "max-increase-to-keep-city-skyline": {
+    "python3": 2012656428
+  },
+  "max-number-of-k-sum-pairs": {
+    "python3": 2012638159
+  },
+  "max-points-on-a-line": {
+    "python3": 2012577875
+  },
+  "max-sum-of-rectangle-no-larger-than-k": {
+    "python3": 2012615801
+  },
+  "max-value-of-equation": {
+    "python3": 2014263543
+  },
+  "maximal-network-rank": {
+    "python3": 2012701073
+  },
+  "maximal-rectangle": {
+    "python3": 2012704646
+  },
+  "maximal-square": {
+    "python3": 2012632408
+  },
+  "maximize-number-of-nice-divisors": {
+    "python3": 2012578804
+  },
+  "maximize-palindrome-length-from-subsequences": {
+    "python3": 2014254890
+  },
+  "maximize-score-after-n-operations": {
+    "python3": 2012573791
+  },
+  "maximize-sum-of-array-after-k-negations": {
+    "python3": 2013510448
+  },
+  "maximize-the-beauty-of-the-garden": {
+    "python3": 2013560085
+  },
+  "maximum-alternating-subsequence-sum": {
+    "python3": 2013531880
+  },
+  "maximum-and-sum-of-array": {
+    "python3": 2013629971
+  },
+  "maximum-area-of-a-piece-of-cake-after-horizontal-and-vertical-cuts": {
+    "python3": 2012691765
+  },
+  "maximum-ascending-subarray-sum": {
+    "python3": 2012597390
+  },
+  "maximum-average-pass-ratio": {
+    "python3": 2014317450
+  },
+  "maximum-average-subarray-i": {
+    "python3": 2012688767
+  },
+  "maximum-binary-string-after-change": {
+    "python3": 2014315523
+  },
+  "maximum-binary-tree": {
+    "python3": 2013548992
+  },
+  "maximum-binary-tree-ii": {
+    "python3": 2014262015
+  },
+  "maximum-building-height": {
+    "python3": 2013535867
+  },
+  "maximum-candies-you-can-get-from-boxes": {
+    "python3": 2013518010
+  },
+  "maximum-compatibility-score-sum": {
+    "python3": 2012692411
+  },
+  "maximum-depth-of-binary-tree": {
+    "python3": 2012700131
+  },
+  "maximum-difference-between-increasing-elements": {
+    "python3": 2013609626
+  },
+  "maximum-difference-between-node-and-ancestor": {
+    "python3": 2012595926
+  },
+  "maximum-distance-in-arrays": {
+    "python3": 2013505622
+  },
+  "maximum-earnings-from-taxi": {
+    "python3": 2013606633
+  },
+  "maximum-employees-to-be-invited-to-a-meeting": {
+    "python3": 2013624216
+  },
+  "maximum-equal-frequency": {
+    "python3": 2013555267
+  },
+  "maximum-erasure-value": {
+    "python3": 2014255212
+  },
+  "maximum-frequency-stack": {
+    "python3": 2012687803
+  },
+  "maximum-fruits-harvested-after-at-most-k-steps": {
+    "python3": 2013621774
+  },
+  "maximum-gap": {
+    "python3": 2012721759
+  },
+  "maximum-genetic-difference-query": {
+    "python3": 2012634107
+  },
+  "maximum-good-people-based-on-statements": {
+    "python3": 2013627514
+  },
+  "maximum-ice-cream-bars": {
+    "python3": 2012614328
+  },
+  "maximum-length-of-a-concatenated-string-with-unique-characters": {
+    "python3": 2012673461
+  },
+  "maximum-length-of-pair-chain": {
+    "python3": 2013497451
+  },
+  "maximum-length-of-repeated-subarray": {
+    "python3": 2013498620
+  },
+  "maximum-length-of-subarray-with-positive-product": {
+    "python3": 2013497816
+  },
+  "maximum-matrix-sum": {
+    "python3": 2013485634
+  },
+  "maximum-number-of-accepted-invitations": {
+    "python3": 2012651169
   },
   "maximum-number-of-balls-in-a-box": {
-    "python3": 2011503763
+    "python3": 2013508770
+  },
+  "maximum-number-of-coins-you-can-get": {
+    "python3": 2012624213
+  },
+  "maximum-number-of-consecutive-values-you-can-make": {
+    "python3": 2012681280
+  },
+  "maximum-number-of-eaten-apples": {
+    "python3": 2012717989
+  },
+  "maximum-number-of-events-that-can-be-attended-ii": {
+    "python3": 2013506612
+  },
+  "maximum-number-of-groups-getting-fresh-donuts": {
+    "python3": 2014317662
+  },
+  "maximum-number-of-non-overlapping-substrings": {
+    "python3": 2012676784
+  },
+  "maximum-number-of-occurrences-of-a-substring": {
+    "python3": 2012624371
+  },
+  "maximum-number-of-ones": {
+    "python3": 2013550613
+  },
+  "maximum-number-of-points-with-cost": {
+    "python3": 2014330227
+  },
+  "maximum-number-of-removable-characters": {
+    "python3": 2014324937
+  },
+  "maximum-number-of-tasks-you-can-assign": {
+    "python3": 2013614926
+  },
+  "maximum-number-of-visible-points": {
+    "python3": 2012728648
+  },
+  "maximum-number-of-vowels-in-a-substring-of-given-length": {
+    "python3": 2012679957
+  },
+  "maximum-number-of-ways-to-partition-an-array": {
+    "python3": 2013608770
+  },
+  "maximum-number-of-weeks-for-which-you-can-work": {
+    "python3": 2014332023
+  },
+  "maximum-number-of-words-found-in-sentences": {
+    "python3": 2013620349
+  },
+  "maximum-number-of-words-you-can-type": {
+    "python3": 2012601830
+  },
+  "maximum-of-absolute-value-expression": {
+    "python3": 2013573399
+  },
+  "maximum-of-minimum-values-in-all-subarrays": {
+    "python3": 2013541763
+  },
+  "maximum-path-quality-of-a-graph": {
+    "python3": 2013616324
+  },
+  "maximum-points-in-an-archery-competition": {
+    "python3": 2013633364
+  },
+  "maximum-points-you-can-obtain-from-cards": {
+    "python3": 2014280746
+  },
+  "maximum-population-year": {
+    "python3": 2014319513
+  },
+  "maximum-product-after-k-increments": {
+    "python3": 2013635113
+  },
+  "maximum-product-difference-between-two-pairs": {
+    "python3": 2014327163
+  },
+  "maximum-product-of-the-length-of-two-palindromic-subsequences": {
+    "python3": 2013608047
+  },
+  "maximum-product-of-the-length-of-two-palindromic-substrings": {
+    "python3": 2014270110
+  },
+  "maximum-product-of-three-numbers": {
+    "python3": 2013489505
+  },
+  "maximum-product-of-two-elements-in-an-array": {
+    "python3": 2012650430
+  },
+  "maximum-product-of-word-lengths": {
+    "python3": 2012670816
+  },
+  "maximum-product-subarray": {
+    "python3": 2012609296
+  },
+  "maximum-repeating-substring": {
+    "python3": 2012649154
+  },
+  "maximum-running-time-of-n-computers": {
+    "python3": 2013626294
+  },
+  "maximum-score-after-splitting-a-string": {
+    "python3": 2014262764
+  },
+  "maximum-score-from-performing-multiplication-operations": {
+    "python3": 2012711886
+  },
+  "maximum-score-from-removing-stones": {
+    "python3": 2012674771
+  },
+  "maximum-score-from-removing-substrings": {
+    "python3": 2013499563
+  },
+  "maximum-score-of-a-good-subarray": {
+    "python3": 2012617232
+  },
+  "maximum-score-words-formed-by-letters": {
+    "python3": 2013546548
+  },
+  "maximum-side-length-of-a-square-with-sum-less-than-or-equal-to-threshold": {
+    "python3": 2013551975
+  },
+  "maximum-split-of-positive-even-integers": {
+    "python3": 2013628568
+  },
+  "maximum-students-taking-exam": {
+    "python3": 2014276394
+  },
+  "maximum-subarray": {
+    "python3": 2012662609
+  },
+  "maximum-subarray-sum-after-one-operation": {
+    "python3": 2013553986
+  },
+  "maximum-subarray-sum-with-one-deletion": {
+    "python3": 2012574628
+  },
+  "maximum-sum-circular-subarray": {
+    "python3": 2012729829
+  },
+  "maximum-sum-of-3-non-overlapping-subarrays": {
+    "python3": 2012728874
+  },
+  "maximum-sum-of-two-non-overlapping-subarrays": {
+    "python3": 2012688968
+  },
+  "maximum-swap": {
+    "python3": 2012718711
+  },
+  "maximum-total-beauty-of-the-gardens": {
+    "python3": 2013635287
+  },
+  "maximum-twin-sum-of-a-linked-list": {
+    "python3": 2013622920
+  },
+  "maximum-units-on-a-truck": {
+    "python3": 2012616133
+  },
+  "maximum-value-after-insertion": {
+    "python3": 2014322238
+  },
+  "maximum-value-at-a-given-index-in-a-bounded-array": {
+    "python3": 2012607675
+  },
+  "maximum-value-of-k-coins-from-piles": {
+    "python3": 2014272706
+  },
+  "maximum-width-of-binary-tree": {
+    "python3": 2012622653
+  },
+  "maximum-width-ramp": {
+    "python3": 2013535137
+  },
+  "maximum-xor-for-each-query": {
+    "python3": 2014318318
+  },
+  "maximum-xor-of-two-numbers-in-an-array": {
+    "python3": 2012601375
+  },
+  "maximum-xor-with-an-element-from-array": {
+    "python3": 2013500081
+  },
+  "mean-of-array-after-removing-some-elements": {
+    "python3": 2013520916
+  },
+  "median-of-two-sorted-arrays": {
+    "python3": 2012613602
+  },
+  "merge-bsts-to-create-single-bst": {
+    "python3": 2014329690
+  },
+  "merge-in-between-linked-lists": {
+    "python3": 2012623272
+  },
+  "merge-intervals": {
+    "python3": 2012670446
+  },
+  "merge-k-sorted-lists": {
+    "python3": 2013541260
+  },
+  "merge-nodes-in-between-zeros": {
+    "python3": 2013631051
+  },
+  "merge-sorted-array": {
+    "python3": 2012585633
+  },
+  "merge-triplets-to-form-target-triplet": {
+    "python3": 2014324741
+  },
+  "merge-two-binary-trees": {
+    "python3": 2012621333
+  },
+  "merge-two-sorted-lists": {
+    "python3": 2012607838
+  },
+  "middle-of-the-linked-list": {
+    "python3": 2012635250
+  },
+  "min-cost-climbing-stairs": {
+    "python3": 2012600664
+  },
+  "min-cost-to-connect-all-points": {
+    "python3": 2012727690
+  },
+  "min-stack": {
+    "python3": 2012688020
+  },
+  "minesweeper": {
+    "python3": 2012728093
+  },
+  "mini-parser": {
+    "python3": 2013553606
+  },
+  "minimize-deviation-in-array": {
+    "python3": 2012591805
+  },
+  "minimize-hamming-distance-after-swap-operations": {
+    "python3": 2012712740
+  },
+  "minimize-malware-spread": {
+    "python3": 2014260410
+  },
+  "minimize-malware-spread-ii": {
+    "python3": 2012594917
+  },
+  "minimize-max-distance-to-gas-station": {
+    "python3": 2013560947
+  },
+  "minimize-maximum-pair-sum-in-array": {
+    "python3": 2014319703
+  },
+  "minimize-product-sum-of-two-arrays": {
+    "python3": 2013525686
+  },
+  "minimize-result-by-adding-parentheses-to-expression": {
+    "python3": 2013634941
+  },
+  "minimize-the-difference-between-target-and-chosen-elements": {
+    "python3": 2013605163
+  },
+  "minimized-maximum-of-products-distributed-to-any-store": {
+    "python3": 2013616151
+  },
+  "minimum-absolute-difference-in-bst": {
+    "python3": 2013485430
+  },
+  "minimum-absolute-difference-queries": {
+    "python3": 2014325865
+  },
+  "minimum-absolute-sum-difference": {
+    "python3": 2012699740
+  },
+  "minimum-add-to-make-parentheses-valid": {
+    "python3": 2012721148
+  },
+  "minimum-adjacent-swaps-to-reach-the-kth-smallest-number": {
+    "python3": 2012696754
+  },
+  "minimum-area-rectangle": {
+    "python3": 2013505230
+  },
+  "minimum-area-rectangle-ii": {
+    "python3": 2013502937
+  },
+  "minimum-ascii-delete-sum-for-two-strings": {
+    "python3": 2013511178
+  },
+  "minimum-bit-flips-to-convert-number": {
+    "python3": 2013634076
+  },
+  "minimum-changes-to-make-alternating-binary-string": {
+    "python3": 2013519555
+  },
+  "minimum-cost-for-tickets": {
+    "python3": 2012709108
+  },
+  "minimum-cost-homecoming-of-a-robot-in-a-grid": {
+    "python3": 2013616652
+  },
+  "minimum-cost-of-buying-candies-with-discount": {
+    "python3": 2013624417
+  },
+  "minimum-cost-to-change-the-final-value-of-expression": {
+    "python3": 2014321856
+  },
+  "minimum-cost-to-cut-a-stick": {
+    "python3": 2014255680
+  },
+  "minimum-cost-to-hire-k-workers": {
+    "python3": 2014263976
+  },
+  "minimum-cost-to-make-at-least-one-valid-path-in-a-grid": {
+    "python3": 2014277591
+  },
+  "minimum-cost-to-merge-stones": {
+    "python3": 2013558681
+  },
+  "minimum-cost-to-move-chips-to-the-same-position": {
+    "python3": 2013518181
+  },
+  "minimum-cost-to-reach-destination-in-time": {
+    "python3": 2012677504
+  },
+  "minimum-cost-to-set-cooking-time": {
+    "python3": 2013626632
+  },
+  "minimum-cost-tree-from-leaf-values": {
+    "python3": 2013573044
+  },
+  "minimum-degree-of-a-connected-trio-in-a-graph": {
+    "python3": 2013544471
+  },
+  "minimum-deletions-to-make-array-beautiful": {
+    "python3": 2014270966
+  },
+  "minimum-deletions-to-make-character-frequencies-unique": {
+    "python3": 2012624715
+  },
+  "minimum-deletions-to-make-string-balanced": {
+    "python3": 2014258472
+  },
+  "minimum-depth-of-binary-tree": {
+    "python3": 2012618392
+  },
+  "minimum-difference-between-highest-and-lowest-of-k-scores": {
+    "python3": 2013605548
+  },
+  "minimum-difference-between-largest-and-smallest-value-in-three-moves": {
+    "python3": 2013510819
+  },
+  "minimum-difference-in-sums-after-removal-of-elements": {
+    "python3": 2013626799
+  },
+  "minimum-difficulty-of-a-job-schedule": {
+    "python3": 2012613268
+  },
+  "minimum-distance-between-bst-nodes": {
+    "python3": 2012668616
+  },
+  "minimum-distance-to-the-target-element": {
+    "python3": 2012628416
+  },
+  "minimum-distance-to-type-a-word-using-two-fingers": {
+    "python3": 2013491171
+  },
+  "minimum-domino-rotations-for-equal-row": {
+    "python3": 2012684262
+  },
+  "minimum-falling-path-sum": {
+    "python3": 2013486817
+  },
+  "minimum-falling-path-sum-ii": {
+    "python3": 2013484632
+  },
+  "minimum-garden-perimeter-to-collect-enough-apples": {
+    "python3": 2012641575
+  },
+  "minimum-genetic-mutation": {
+    "python3": 2012593058
+  },
+  "minimum-height-trees": {
+    "python3": 2012633759
+  },
+  "minimum-increment-to-make-array-unique": {
+    "python3": 2013519974
+  },
+  "minimum-index-sum-of-two-lists": {
+    "python3": 2013515696
+  },
+  "minimum-insertion-steps-to-make-a-string-palindrome": {
+    "python3": 2012659599
+  },
+  "minimum-insertions-to-balance-a-parentheses-string": {
+    "python3": 2012687221
+  },
+  "minimum-interval-to-include-each-query": {
+    "python3": 2013507792
+  },
+  "minimum-jumps-to-reach-home": {
+    "python3": 2014289296
+  },
+  "minimum-knight-moves": {
+    "python3": 2012684075
+  },
+  "minimum-limit-of-balls-in-a-bag": {
+    "python3": 2013489321
+  },
+  "minimum-moves-to-convert-string": {
+    "python3": 2013610951
+  },
+  "minimum-moves-to-equal-array-elements": {
+    "python3": 2014262234
+  },
+  "minimum-moves-to-equal-array-elements-ii": {
+    "python3": 2012647247
+  },
+  "minimum-moves-to-make-array-complementary": {
+    "python3": 2013544782
+  },
+  "minimum-moves-to-move-a-box-to-their-target-location": {
+    "python3": 2014272137
+  },
+  "minimum-moves-to-reach-target-score": {
+    "python3": 2014268895
+  },
+  "minimum-moves-to-reach-target-with-rotations": {
+    "python3": 2014269844
+  },
+  "minimum-non-zero-product-of-the-array-elements": {
+    "python3": 2014334220
+  },
+  "minimum-number-of-arrows-to-burst-balloons": {
+    "python3": 2012579428
+  },
+  "minimum-number-of-days-to-disconnect-island": {
+    "python3": 2012733790
+  },
+  "minimum-number-of-days-to-eat-n-oranges": {
+    "python3": 2012729992
+  },
+  "minimum-number-of-days-to-make-m-bouquets": {
+    "python3": 2012577197
+  },
+  "minimum-number-of-flips-to-convert-binary-matrix-to-zero-matrix": {
+    "python3": 2012720950
+  },
+  "minimum-number-of-flips-to-make-the-binary-string-alternating": {
+    "python3": 2014323264
+  },
+  "minimum-number-of-increments-on-subarrays-to-form-a-target-array": {
+    "python3": 2014283814
+  },
+  "minimum-number-of-moves-to-seat-everyone": {
+    "python3": 2013610266
+  },
+  "minimum-number-of-operations-to-convert-time": {
+    "python3": 2013635469
+  },
+  "minimum-number-of-operations-to-make-array-continuous": {
+    "python3": 2013606794
+  },
+  "minimum-number-of-operations-to-make-string-sorted": {
+    "python3": 2013560618
+  },
+  "minimum-number-of-operations-to-move-all-balls-to-each-box": {
+    "python3": 2012653471
+  },
+  "minimum-number-of-operations-to-reinitialize-a-permutation": {
+    "python3": 2013560267
+  },
+  "minimum-number-of-people-to-teach": {
+    "python3": 2012735758
+  },
+  "minimum-number-of-refueling-stops": {
+    "python3": 2012594617
+  },
+  "minimum-number-of-steps-to-make-two-strings-anagram": {
+    "python3": 2014276130
+  },
+  "minimum-number-of-steps-to-make-two-strings-anagram-ii": {
+    "python3": 2013630310
+  },
+  "minimum-number-of-swaps-to-make-the-binary-string-alternating": {
+    "python3": 2014320425
+  },
+  "minimum-number-of-swaps-to-make-the-string-balanced": {
+    "python3": 2014333752
+  },
+  "minimum-number-of-taps-to-open-to-water-a-garden": {
+    "python3": 2012723133
+  },
+  "minimum-number-of-vertices-to-reach-all-nodes": {
+    "python3": 2012706595
+  },
+  "minimum-number-of-work-sessions-to-finish-the-tasks": {
+    "python3": 2013605916
+  },
+  "minimum-numbers-of-function-calls-to-make-target-array": {
+    "python3": 2012721349
+  },
+  "minimum-one-bit-operations-to-make-integers-zero": {
+    "python3": 2012599887
+  },
+  "minimum-operations-to-convert-number": {
+    "python3": 2013615430
+  },
+  "minimum-operations-to-halve-array-sum": {
+    "python3": 2013632486
+  },
+  "minimum-operations-to-make-a-uni-value-grid": {
+    "python3": 2013611803
+  },
+  "minimum-operations-to-make-the-array-alternating": {
+    "python3": 2013629658
+  },
+  "minimum-operations-to-make-the-array-increasing": {
+    "python3": 2012693510
+  },
+  "minimum-operations-to-make-the-array-k-increasing": {
+    "python3": 2013622543
+  },
+  "minimum-operations-to-reduce-x-to-zero": {
+    "python3": 2012702482
+  },
+  "minimum-path-sum": {
+    "python3": 2012694422
+  },
+  "minimum-possible-integer-after-at-most-k-adjacent-swaps-on-digits": {
+    "python3": 2014257245
+  },
+  "minimum-score-triangulation-of-polygon": {
+    "python3": 2013567327
+  },
+  "minimum-sideway-jumps": {
+    "python3": 2013526225
+  },
+  "minimum-size-subarray-sum": {
+    "python3": 2012613785
+  },
+  "minimum-skips-to-arrive-at-meeting-on-time": {
+    "python3": 2014322626
+  },
+  "minimum-space-wasted-from-packaging": {
+    "python3": 2014323467
+  },
+  "minimum-subsequence-in-non-increasing-order": {
+    "python3": 2012660549
+  },
+  "minimum-suffix-flips": {
+    "python3": 2013506216
+  },
+  "minimum-sum-of-four-digit-number-after-splitting-digits": {
+    "python3": 2013626462
+  },
+  "minimum-swaps-to-group-all-1s-together-ii": {
+    "python3": 2013625542
+  },
+  "minimum-swaps-to-make-sequences-increasing": {
+    "python3": 2013531203
+  },
+  "minimum-swaps-to-make-strings-equal": {
+    "python3": 2014271410
+  },
+  "minimum-time-difference": {
+    "python3": 2012626231
+  },
+  "minimum-time-for-k-virus-variants-to-spread": {
+    "python3": 2013553422
+  },
+  "minimum-time-to-collect-all-apples-in-a-tree": {
+    "python3": 2012661120
+  },
+  "minimum-time-to-complete-trips": {
+    "python3": 2013630504
+  },
+  "minimum-time-to-finish-the-race": {
+    "python3": 2013630678
+  },
+  "minimum-time-to-remove-all-cars-containing-illegal-goods": {
+    "python3": 2013629480
+  },
+  "minimum-time-to-type-word-using-special-typewriter": {
+    "python3": 2014332666
+  },
+  "minimum-total-space-wasted-with-k-resizing-operations": {
+    "python3": 2014331605
+  },
+  "minimum-value-to-get-positive-step-by-step-sum": {
+    "python3": 2013487878
+  },
+  "minimum-weighted-subgraph-with-the-required-paths": {
+    "python3": 2013633911
+  },
+  "minimum-white-tiles-after-covering-with-carpets": {
+    "python3": 2013632660
   },
   "minimum-window-substring": {
     "python3": 2011503603
   },
-  "tweet-counts-per-frequency": {
+  "minimum-xor-sum-of-two-arrays": {
+    "python3": 2014319929
+  },
+  "mirror-reflection": {
+    "python3": 2012610609
+  },
+  "missing-number": {
+    "python3": 2012644264
+  },
+  "monotone-increasing-digits": {
+    "python3": 2013554521
+  },
+  "monotonic-array": {
+    "python3": 2012663298
+  },
+  "most-beautiful-item-for-each-query": {
+    "python3": 2013614723
+  },
+  "most-common-word": {
+    "python3": 2012717112
+  },
+  "most-frequent-number-following-key-in-an-array": {
+    "python3": 2013632840
+  },
+  "most-frequent-subtree-sum": {
+    "python3": 2012738145
+  },
+  "most-profit-assigning-work": {
+    "python3": 2013503488
+  },
+  "most-stones-removed-with-same-row-or-column": {
+    "python3": 2013517096
+  },
+  "most-visited-sector-in-a-circular-track": {
+    "python3": 2012714327
+  },
+  "move-zeroes": {
+    "python3": 2012602165
+  },
+  "moving-stones-until-consecutive": {
+    "python3": 2013566650
+  },
+  "moving-stones-until-consecutive-ii": {
+    "python3": 2013567626
+  },
+  "multiply-strings": {
+    "python3": 2012606390
+  },
+  "my-calendar-i": {
+    "python3": 2012610775
+  },
+  "my-calendar-ii": {
+    "python3": 2013545406
+  },
+  "my-calendar-iii": {
+    "python3": 2012630526
+  },
+  "n-ary-tree-postorder-traversal": {
+    "python3": 2013564724
+  },
+  "n-queens": {
+    "python3": 2012656949
+  },
+  "n-queens-ii": {
+    "python3": 2012642417
+  },
+  "n-repeated-element-in-size-2n-array": {
+    "python3": 2013486412
+  },
+  "nearest-exit-from-entrance-in-maze": {
+    "python3": 2014326566
+  },
+  "new-21-game": {
+    "python3": 2013540575
+  },
+  "next-greater-element-i": {
+    "python3": 2012583604
+  },
+  "next-greater-element-ii": {
+    "python3": 2012727485
+  },
+  "next-greater-element-iii": {
+    "python3": 2013545098
+  },
+  "next-greater-node-in-linked-list": {
+    "python3": 2012623116
+  },
+  "next-greater-numerically-balanced-number": {
+    "python3": 2013613844
+  },
+  "next-permutation": {
+    "python3": 2012600186
+  },
+  "nim-game": {
+    "python3": 2012684701
+  },
+  "non-decreasing-array": {
+    "python3": 2012591180
+  },
+  "non-decreasing-subsequences": {
+    "python3": 2014254117
+  },
+  "non-negative-integers-without-consecutive-ones": {
+    "python3": 2012637828
+  },
+  "non-overlapping-intervals": {
+    "python3": 2012625560
+  },
+  "nth-digit": {
+    "python3": 2014259572
+  },
+  "nth-magical-number": {
+    "python3": 2012676960
+  },
+  "number-complement": {
+    "python3": 2012592262
+  },
+  "number-of-1-bits": {
+    "python3": 2012638520
+  },
+  "number-of-atoms": {
+    "python3": 2013534781
+  },
+  "number-of-boomerangs": {
+    "python3": 2014254649
+  },
+  "number-of-burgers-with-no-waste-of-ingredients": {
+    "python3": 2013543801
+  },
+  "number-of-closed-islands": {
+    "python3": 2012582483
+  },
+  "number-of-days-between-two-dates": {
+    "python3": 2014267598
+  },
+  "number-of-dice-rolls-with-target-sum": {
+    "python3": 2014266268
+  },
+  "number-of-different-integers-in-a-string": {
+    "python3": 2013488634
+  },
+  "number-of-different-subsequences-gcds": {
+    "python3": 2013537227
+  },
+  "number-of-digit-one": {
+    "python3": 2013510062
+  },
+  "number-of-distinct-substrings-in-a-string": {
+    "python3": 2012631857
+  },
+  "number-of-enclaves": {
+    "python3": 2013501006
+  },
+  "number-of-good-leaf-nodes-pairs": {
+    "python3": 2012646513
+  },
+  "number-of-good-pairs": {
+    "python3": 2014284069
+  },
+  "number-of-good-ways-to-split-a-string": {
+    "python3": 2013539901
+  },
+  "number-of-islands": {
+    "python3": 2012696004
+  },
+  "number-of-laser-beams-in-a-bank": {
+    "python3": 2013623805
+  },
+  "number-of-lines-to-write-string": {
+    "python3": 2012673649
+  },
+  "number-of-longest-increasing-subsequence": {
+    "python3": 2013528206
+  },
+  "number-of-matching-subsequences": {
+    "python3": 2012609666
+  },
+  "number-of-music-playlists": {
+    "python3": 2012705053
+  },
+  "number-of-nodes-in-the-sub-tree-with-the-same-label": {
+    "python3": 2013507986
+  },
+  "number-of-operations-to-make-network-connected": {
+    "python3": 2012720768
+  },
+  "number-of-orders-in-the-backlog": {
+    "python3": 2013536237
+  },
+  "number-of-pairs-of-interchangeable-rectangles": {
+    "python3": 2013607880
+  },
+  "number-of-pairs-of-strings-with-concatenation-equal-to-target": {
+    "python3": 2013608562
+  },
+  "number-of-paths-with-max-score": {
+    "python3": 2013523917
+  },
+  "number-of-provinces": {
+    "python3": 2014256161
+  },
+  "number-of-recent-calls": {
+    "python3": 2013521742
+  },
+  "number-of-rectangles-that-can-form-the-largest-square": {
+    "python3": 2013491734
+  },
+  "number-of-restricted-paths-from-first-to-last-node": {
+    "python3": 2013515512
+  },
+  "number-of-segments-in-a-string": {
+    "python3": 2013511556
+  },
+  "number-of-sets-of-k-non-overlapping-line-segments": {
+    "python3": 2012735517
+  },
+  "number-of-smooth-descent-periods-of-a-stock": {
+    "python3": 2013622337
+  },
+  "number-of-steps-to-reduce-a-number-to-zero": {
+    "python3": 2012685933
+  },
+  "number-of-strings-that-appear-as-substrings-in-word": {
+    "python3": 2014334064
+  },
+  "number-of-students-doing-homework-at-a-given-time": {
+    "python3": 2013512561
+  },
+  "number-of-students-unable-to-eat-lunch": {
+    "python3": 2012660753
+  },
+  "number-of-sub-arrays-of-size-k-and-average-greater-than-or-equal-to-threshold": {
+    "python3": 2014275177
+  },
+  "number-of-sub-arrays-with-odd-sum": {
+    "python3": 2013534210
+  },
+  "number-of-subarrays-with-bounded-maximum": {
+    "python3": 2012715289
+  },
+  "number-of-submatrices-that-sum-to-target": {
+    "python3": 2013570508
+  },
+  "number-of-subsequences-that-satisfy-the-given-sum-condition": {
+    "python3": 2012732273
+  },
+  "number-of-substrings-containing-all-three-characters": {
+    "python3": 2012722314
+  },
+  "number-of-substrings-with-only-1s": {
+    "python3": 2012690416
+  },
+  "number-of-times-binary-string-is-prefix-aligned": {
+    "python3": 2013509162
+  },
+  "number-of-unique-good-subsequences": {
+    "python3": 2013547359
+  },
+  "number-of-valid-move-combinations-on-chessboard": {
+    "python3": 2013612784
+  },
+  "number-of-valid-subarrays": {
+    "python3": 2012634790
+  },
+  "number-of-valid-words-in-a-sentence": {
+    "python3": 2013613674
+  },
+  "number-of-visible-people-in-a-queue": {
+    "python3": 2012642254
+  },
+  "number-of-ways-of-cutting-a-pizza": {
+    "python3": 2014281639
+  },
+  "number-of-ways-to-arrive-at-destination": {
+    "python3": 2012685536
+  },
+  "number-of-ways-to-divide-a-long-corridor": {
+    "python3": 2013625009
+  },
+  "number-of-ways-to-paint-n-3-grid": {
+    "python3": 2014280028
+  },
+  "number-of-ways-to-rearrange-sticks-with-k-sticks-visible": {
+    "python3": 2013540757
+  },
+  "number-of-ways-to-reorder-array-to-get-same-bst": {
+    "python3": 2014286965
+  },
+  "number-of-ways-to-select-buildings": {
+    "python3": 2013634413
+  },
+  "number-of-ways-to-separate-numbers": {
+    "python3": 2014333201
+  },
+  "number-of-ways-to-split-a-string": {
+    "python3": 2013553225
+  },
+  "number-of-ways-to-stay-in-the-same-place-after-some-steps": {
+    "python3": 2014273129
+  },
+  "number-of-ways-to-wear-different-hats-to-each-other": {
+    "python3": 2013523004
+  },
+  "number-of-ways-where-square-of-number-is-equal-to-product-of-two-numbers": {
+    "python3": 2013501198
+  },
+  "number-of-wonderful-substrings": {
+    "python3": 2014327564
+  },
+  "numbers-at-most-n-given-digit-set": {
+    "python3": 2014259369
+  },
+  "numbers-with-repeated-digits": {
+    "python3": 2013559893
+  },
+  "numbers-with-same-consecutive-differences": {
+    "python3": 2012671597
+  },
+  "occurrences-after-bigram": {
+    "python3": 2014259119
+  },
+  "odd-even-jump": {
+    "python3": 2013551478
+  },
+  "odd-even-linked-list": {
+    "python3": 2012575362
+  },
+  "ones-and-zeroes": {
+    "python3": 2013524709
+  },
+  "online-election": {
+    "python3": 2013542778
+  },
+  "online-stock-span": {
+    "python3": 2012605588
+  },
+  "operations-on-tree": {
+    "python3": 2014263744
+  },
+  "optimal-division": {
+    "python3": 2013562123
+  },
+  "optimize-water-distribution-in-a-village": {
+    "python3": 2012719257
+  },
+  "orderly-queue": {
+    "python3": 2012737955
+  },
+  "out-of-boundary-paths": {
+    "python3": 2013484052
+  },
+  "pacific-atlantic-water-flow": {
+    "python3": 2012629677
+  },
+  "paint-house-iii": {
+    "python3": 2012646150
+  },
+  "painting-a-grid-with-three-different-colors": {
+    "python3": 2014329868
+  },
+  "pairs-of-songs-with-total-durations-divisible-by-60": {
+    "python3": 2012649530
+  },
+  "palindrome-linked-list": {
+    "python3": 2012636959
+  },
+  "palindrome-number": {
+    "python3": 2012580699
+  },
+  "palindrome-pairs": {
+    "python3": 2012662790
+  },
+  "palindrome-partitioning": {
+    "python3": 2012656058
+  },
+  "palindrome-partitioning-ii": {
+    "python3": 2012700888
+  },
+  "palindrome-partitioning-iii": {
+    "python3": 2013545894
+  },
+  "palindromic-substrings": {
+    "python3": 2013532067
+  },
+  "pancake-sorting": {
+    "python3": 2012615638
+  },
+  "parallel-courses-ii": {
+    "python3": 2014283070
+  },
+  "parallel-courses-iii": {
+    "python3": 2013614184
+  },
+  "parse-lisp-expression": {
+    "python3": 2013532438
+  },
+  "partition-array-for-maximum-sum": {
+    "python3": 2013568645
+  },
+  "partition-array-into-disjoint-intervals": {
+    "python3": 2012671386
+  },
+  "partition-array-into-three-parts-with-equal-sum": {
+    "python3": 2012587614
+  },
+  "partition-array-into-two-arrays-to-minimize-sum-difference": {
+    "python3": 2013612131
+  },
+  "partition-equal-subset-sum": {
+    "python3": 2012640630
+  },
+  "partition-labels": {
+    "python3": 2012675657
+  },
+  "partition-list": {
+    "python3": 2012630685
+  },
+  "partition-to-k-equal-sum-subsets": {
+    "python3": 2014254370
+  },
+  "partitioning-into-minimum-number-of-deci-binary-numbers": {
+    "python3": 2012664758
+  },
+  "pascals-triangle": {
+    "python3": 2012630846
+  },
+  "pascals-triangle-ii": {
+    "python3": 2012573147
+  },
+  "patching-array": {
+    "python3": 2012683443
+  },
+  "path-crossing": {
+    "python3": 2012620196
+  },
+  "path-in-zigzag-labelled-binary-tree": {
+    "python3": 2013572018
+  },
+  "path-sum": {
+    "python3": 2012583116
+  },
+  "path-sum-ii": {
+    "python3": 2012577678
+  },
+  "path-sum-iii": {
+    "python3": 2012592114
+  },
+  "path-with-maximum-gold": {
+    "python3": 2013501553
+  },
+  "path-with-maximum-probability": {
+    "python3": 2012705440
+  },
+  "path-with-minimum-effort": {
+    "python3": 2012622288
+  },
+  "peak-index-in-a-mountain-array": {
+    "python3": 2013502366
+  },
+  "peeking-iterator": {
+    "python3": 2012603220
+  },
+  "people-whose-list-of-favorite-companies-is-not-a-subset-of-another-list": {
+    "python3": 2012619065
+  },
+  "perfect-number": {
+    "python3": 2013516696
+  },
+  "perfect-rectangle": {
+    "python3": 2013531372
+  },
+  "perfect-squares": {
+    "python3": 2012608148
+  },
+  "permutation-in-string": {
+    "python3": 2013513821
+  },
+  "permutation-sequence": {
+    "python3": 2012617732
+  },
+  "permutations": {
+    "python3": 2012591332
+  },
+  "permutations-ii": {
+    "python3": 2012605460
+  },
+  "pizza-with-3n-slices": {
+    "python3": 2014277829
+  },
+  "plates-between-candles": {
+    "python3": 2013612643
+  },
+  "plus-one": {
+    "python3": 2012578026
+  },
+  "poor-pigs": {
+    "python3": 2012603680
+  },
+  "populating-next-right-pointers-in-each-node": {
+    "python3": 2012723873
+  },
+  "populating-next-right-pointers-in-each-node-ii": {
+    "python3": 2012590154
+  },
+  "positions-of-large-groups": {
+    "python3": 2012679412
+  },
+  "possible-bipartition": {
+    "python3": 2012606085
+  },
+  "power-of-four": {
+    "python3": 2012576867
+  },
+  "power-of-three": {
+    "python3": 2012631575
+  },
+  "power-of-two": {
+    "python3": 2012578346
+  },
+  "powx-n": {
+    "python3": 2013493303
+  },
+  "predict-the-winner": {
+    "python3": 2013507189
+  },
+  "prefix-and-suffix-search": {
+    "python3": 2012725702
+  },
+  "preimage-size-of-factorial-zeroes-function": {
+    "python3": 2012710622
+  },
+  "previous-permutation-with-one-swap": {
+    "python3": 2013570159
+  },
+  "prime-arrangements": {
+    "python3": 2014267832
+  },
+  "prime-palindrome": {
+    "python3": 2012738877
+  },
+  "print-binary-tree": {
+    "python3": 2013562966
+  },
+  "print-words-vertically": {
+    "python3": 2012722694
+  },
+  "prison-cells-after-n-days": {
+    "python3": 2012596092
+  },
+  "process-restricted-friend-requests": {
+    "python3": 2013617526
+  },
+  "process-tasks-using-servers": {
+    "python3": 2013509333
+  },
+  "product-of-array-except-self": {
+    "python3": 2012608619
+  },
+  "product-of-the-last-k-numbers": {
+    "python3": 2012720036
+  },
+  "profitable-schemes": {
+    "python3": 2013517273
+  },
+  "projection-area-of-3d-shapes": {
+    "python3": 2013510995
+  },
+  "pseudo-palindromic-paths-in-a-binary-tree": {
+    "python3": 2012692614
+  },
+  "push-dominoes": {
+    "python3": 2012679048
+  },
+  "pyramid-transition-matrix": {
+    "python3": 2013564254
+  },
+  "queens-that-can-attack-the-king": {
+    "python3": 2012640467
+  },
+  "queries-on-a-permutation-with-key": {
+    "python3": 2012739253
+  },
+  "queries-on-number-of-points-inside-a-circle": {
+    "python3": 2014318113
+  },
+  "queue-reconstruction-by-height": {
+    "python3": 2012671765
+  },
+  "rabbits-in-forest": {
+    "python3": 2013516090
+  },
+  "random-pick-index": {
+    "python3": 2012640276
+  },
+  "random-pick-with-weight": {
+    "python3": 2012726911
+  },
+  "range-addition-ii": {
+    "python3": 2013557613
+  },
+  "range-frequency-queries": {
+    "python3": 2014268635
+  },
+  "range-sum-of-bst": {
+    "python3": 2012733585
+  },
+  "range-sum-of-sorted-subarray-sums": {
+    "python3": 2013518980
+  },
+  "range-sum-query-2d-immutable": {
+    "python3": 2012678860
+  },
+  "range-sum-query-immutable": {
+    "python3": 2012588849
+  },
+  "range-sum-query-mutable": {
+    "python3": 2012670248
+  },
+  "rank-transform-of-a-matrix": {
+    "python3": 2014266019
+  },
+  "rank-transform-of-an-array": {
+    "python3": 2014265819
+  },
+  "ransom-note": {
+    "python3": 2012618893
+  },
+  "reach-a-number": {
+    "python3": 2013564065
+  },
+  "reachable-nodes-in-subdivided-graph": {
+    "python3": 2013553041
+  },
+  "reaching-points": {
+    "python3": 2014263279
+  },
+  "rearrange-array-elements-by-sign": {
+    "python3": 2013627342
+  },
+  "rearrange-spaces-between-words": {
+    "python3": 2014288136
+  },
+  "rearrange-words-in-a-sentence": {
+    "python3": 2012636183
+  },
+  "reconstruct-a-2-row-binary-matrix": {
+    "python3": 2013547527
+  },
+  "reconstruct-itinerary": {
+    "python3": 2012602664
+  },
+  "reconstruct-original-digits-from-english": {
+    "python3": 2012691389
+  },
+  "recover-a-tree-from-preorder-traversal": {
+    "python3": 2014264694
+  },
+  "recover-binary-search-tree": {
+    "python3": 2013486609
+  },
+  "rectangle-area": {
+    "python3": 2012724283
+  },
+  "rectangle-overlap": {
+    "python3": 2012675314
+  },
+  "redistribute-characters-to-make-all-strings-equal": {
+    "python3": 2014324518
+  },
+  "reduce-array-size-to-the-half": {
+    "python3": 2012657967
+  },
+  "reducing-dishes": {
+    "python3": 2012616725
+  },
+  "reduction-operations-to-make-the-array-elements-equal": {
+    "python3": 2014323070
+  },
+  "redundant-connection": {
+    "python3": 2012584862
+  },
+  "redundant-connection-ii": {
+    "python3": 2013563150
+  },
+  "reformat-date": {
+    "python3": 2013503683
+  },
+  "reformat-phone-number": {
+    "python3": 2012713283
+  },
+  "reformat-the-string": {
+    "python3": 2014280239
+  },
+  "regions-cut-by-slashes": {
+    "python3": 2012605917
+  },
+  "regular-expression-matching": {
+    "python3": 2012586570
+  },
+  "relative-ranks": {
+    "python3": 2012738503
+  },
+  "remove-all-adjacent-duplicates-in-string": {
+    "python3": 2013569161
+  },
+  "remove-all-occurrences-of-a-substring": {
+    "python3": 2014323881
+  },
+  "remove-boxes": {
+    "python3": 2013557804
+  },
+  "remove-colored-pieces-if-both-neighbors-are-the-same-color": {
+    "python3": 2013610423
+  },
+  "remove-comments": {
+    "python3": 2013563512
+  },
+  "remove-covered-intervals": {
+    "python3": 2012596933
+  },
+  "remove-duplicate-letters": {
+    "python3": 2012575540
+  },
+  "remove-duplicates-from-an-unsorted-linked-list": {
+    "python3": 2013509730
+  },
+  "remove-duplicates-from-sorted-array": {
+    "python3": 2012708147
+  },
+  "remove-duplicates-from-sorted-array-ii": {
+    "python3": 2012632054
+  },
+  "remove-duplicates-from-sorted-list": {
+    "python3": 2012643352
+  },
+  "remove-duplicates-from-sorted-list-ii": {
+    "python3": 2012620536
+  },
+  "remove-element": {
+    "python3": 2014259845
+  },
+  "remove-invalid-parentheses": {
+    "python3": 2012678320
+  },
+  "remove-k-digits": {
+    "python3": 2012725098
+  },
+  "remove-linked-list-elements": {
+    "python3": 2012580527
+  },
+  "remove-nth-node-from-end-of-list": {
+    "python3": 2012598055
+  },
+  "remove-one-element-to-make-the-array-strictly-increasing": {
+    "python3": 2014323669
+  },
+  "remove-outermost-parentheses": {
+    "python3": 2012662394
+  },
+  "remove-palindromic-subsequences": {
+    "python3": 2014275413
+  },
+  "remove-stones-to-minimize-the-total": {
+    "python3": 2012696378
+  },
+  "remove-sub-folders-from-the-filesystem": {
+    "python3": 2014270755
+  },
+  "remove-zero-sum-consecutive-nodes-from-linked-list": {
+    "python3": 2012639764
+  },
+  "removing-minimum-and-maximum-from-array": {
+    "python3": 2013619368
+  },
+  "removing-minimum-number-of-magic-beans": {
+    "python3": 2013629815
+  },
+  "reorder-data-in-log-files": {
+    "python3": 2012623919
+  },
+  "reorder-list": {
+    "python3": 2012636767
+  },
+  "reorder-routes-to-make-all-paths-lead-to-the-city-zero": {
+    "python3": 2012611264
+  },
+  "reordered-power-of-2": {
+    "python3": 2012736801
+  },
+  "reorganize-string": {
+    "python3": 2012621807
+  },
+  "repeated-dna-sequences": {
+    "python3": 2012704424
+  },
+  "repeated-string-match": {
+    "python3": 2013563314
+  },
+  "repeated-substring-pattern": {
+    "python3": 2012627454
+  },
+  "replace-all-digits-with-characters": {
+    "python3": 2011503763
+  },
+  "replace-all-s-to-avoid-consecutive-repeating-characters": {
+    "python3": 2012624898
+  },
+  "replace-elements-with-greatest-element-on-right-side": {
+    "python3": 2013573559
+  },
+  "replace-non-coprime-numbers-in-array": {
+    "python3": 2013632133
+  },
+  "replace-the-substring-for-balanced-string": {
+    "python3": 2013506409
+  },
+  "replace-words": {
+    "python3": 2013526777
+  },
+  "reshape-the-matrix": {
+    "python3": 2013521133
+  },
+  "restore-ip-addresses": {
+    "python3": 2012626066
+  },
+  "restore-the-array": {
+    "python3": 2014279528
+  },
+  "restore-the-array-from-adjacent-pairs": {
+    "python3": 2012607042
+  },
+  "reveal-cards-in-increasing-order": {
+    "python3": 2013540942
+  },
+  "reverse-bits": {
+    "python3": 2012698725
+  },
+  "reverse-integer": {
+    "python3": 2012619839
+  },
+  "reverse-linked-list": {
+    "python3": 2012689892
+  },
+  "reverse-linked-list-ii": {
+    "python3": 2012622120
+  },
+  "reverse-nodes-in-even-length-groups": {
+    "python3": 2013617180
+  },
+  "reverse-nodes-in-k-group": {
+    "python3": 2012699160
+  },
+  "reverse-only-letters": {
+    "python3": 2012588544
+  },
+  "reverse-pairs": {
+    "python3": 2012657456
+  },
+  "reverse-prefix-of-word": {
+    "python3": 2013607686
+  },
+  "reverse-string": {
+    "python3": 2012575878
+  },
+  "reverse-string-ii": {
+    "python3": 2013491334
+  },
+  "reverse-subarray-to-maximize-array-value": {
+    "python3": 2013543448
+  },
+  "reverse-vowels-of-a-string": {
+    "python3": 2012645977
+  },
+  "reverse-words-in-a-string": {
+    "python3": 2012631251
+  },
+  "reverse-words-in-a-string-iii": {
+    "python3": 2013496645
+  },
+  "rings-and-rods": {
+    "python3": 2013621205
+  },
+  "rle-iterator": {
+    "python3": 2013508402
+  },
+  "robot-bounded-in-circle": {
+    "python3": 2013568283
+  },
+  "robot-return-to-origin": {
+    "python3": 2013505072
+  },
+  "robot-room-cleaner": {
+    "python3": 2011504120
+  },
+  "roman-to-integer": {
+    "python3": 2012729080
+  },
+  "root-equals-sum-of-children": {
+    "python3": 2013635802
+  },
+  "rotate-array": {
+    "python3": 2012702288
+  },
+  "rotate-function": {
+    "python3": 2012582339
+  },
+  "rotate-image": {
+    "python3": 2012597114
+  },
+  "rotate-list": {
+    "python3": 2012585797
+  },
+  "rotate-string": {
+    "python3": 2012738320
+  },
+  "rotating-the-box": {
+    "python3": 2014319109
+  },
+  "rotting-oranges": {
+    "python3": 2013537580
+  },
+  "running-sum-of-1d-array": {
+    "python3": 2012614679
+  },
+  "russian-doll-envelopes": {
+    "python3": 2012701928
+  },
+  "same-tree": {
+    "python3": 2012621167
+  },
+  "satisfiability-of-equality-equations": {
+    "python3": 2014255918
+  },
+  "score-after-flipping-matrix": {
+    "python3": 2013521528
+  },
+  "score-of-parentheses": {
+    "python3": 2013523543
+  },
+  "scramble-string": {
+    "python3": 2012671927
+  },
+  "search-a-2d-matrix": {
+    "python3": 2012639599
+  },
+  "search-a-2d-matrix-ii": {
+    "python3": 2012699532
+  },
+  "search-in-rotated-sorted-array": {
+    "python3": 2012601690
+  },
+  "search-in-rotated-sorted-array-ii": {
+    "python3": 2012658849
+  },
+  "search-insert-position": {
+    "python3": 2012578959
+  },
+  "search-suggestions-system": {
+    "python3": 2014272921
+  },
+  "seat-reservation-manager": {
+    "python3": 2012655348
+  },
+  "second-minimum-node-in-a-binary-tree": {
+    "python3": 2013520172
+  },
+  "second-minimum-time-to-reach-destination": {
+    "python3": 2013613500
+  },
+  "self-crossing": {
+    "python3": 2014264907
+  },
+  "self-dividing-numbers": {
+    "python3": 2012732057
+  },
+  "sell-diminishing-valued-colored-balls": {
+    "python3": 2012614837
+  },
+  "sentence-similarity-iii": {
+    "python3": 2012716930
+  },
+  "sequential-digits": {
+    "python3": 2013572883
+  },
+  "sequentially-ordinal-rank-tracker": {
+    "python3": 2013618811
+  },
+  "serialize-and-deserialize-binary-tree": {
+    "python3": 2012635601
+  },
+  "serialize-and-deserialize-bst": {
+    "python3": 2012580355
+  },
+  "set-matrix-zeroes": {
+    "python3": 2012595403
+  },
+  "set-mismatch": {
+    "python3": 2012725298
+  },
+  "shift-2d-grid": {
+    "python3": 2012593978
+  },
+  "shopping-offers": {
+    "python3": 2013513442
+  },
+  "short-encoding-of-words": {
+    "python3": 2012718342
+  },
+  "shortest-bridge": {
+    "python3": 2012726722
+  },
+  "shortest-common-supersequence": {
+    "python3": 2012582929
+  },
+  "shortest-completing-word": {
+    "python3": 2013550082
+  },
+  "shortest-distance-to-a-character": {
+    "python3": 2013484436
+  },
+  "shortest-distance-to-target-color": {
+    "python3": 2012674074
+  },
+  "shortest-palindrome": {
+    "python3": 2013555958
+  },
+  "shortest-path-in-a-grid-with-obstacles-elimination": {
+    "python3": 2012687415
+  },
+  "shortest-path-in-a-hidden-grid": {
+    "python3": 2013542099
+  },
+  "shortest-path-to-get-all-keys": {
+    "python3": 2012704866
+  },
+  "shortest-path-to-get-food": {
+    "python3": 2012727276
+  },
+  "shortest-path-with-alternating-colors": {
+    "python3": 2013573227
+  },
+  "shortest-subarray-to-be-removed-to-make-array-sorted": {
+    "python3": 2013529605
+  },
+  "shortest-subarray-with-sum-at-least-k": {
+    "python3": 2013516515
+  },
+  "shortest-unsorted-continuous-subarray": {
+    "python3": 2012704228
+  },
+  "shortest-way-to-form-string": {
+    "python3": 2012687018
+  },
+  "shuffle-an-array": {
+    "python3": 2012666147
+  },
+  "shuffle-string": {
+    "python3": 2014285120
+  },
+  "shuffle-the-array": {
     "python3": 2011503939
+  },
+  "similar-string-groups": {
+    "python3": 2012576059
+  },
+  "simple-bank-system": {
+    "python3": 2013613131
+  },
+  "simplified-fractions": {
+    "python3": 2014280963
+  },
+  "simplify-path": {
+    "python3": 2012598998
+  },
+  "single-element-in-a-sorted-array": {
+    "python3": 2012609475
+  },
+  "single-number": {
+    "python3": 2012674942
+  },
+  "single-number-ii": {
+    "python3": 2012695218
+  },
+  "single-number-iii": {
+    "python3": 2012694837
+  },
+  "single-threaded-cpu": {
+    "python3": 2012732483
+  },
+  "sliding-window-maximum": {
+    "python3": 2012668822
+  },
+  "sliding-window-median": {
+    "python3": 2012633048
+  },
+  "slowest-key": {
+    "python3": 2012705650
+  },
+  "smallest-good-base": {
+    "python3": 2013541919
+  },
+  "smallest-index-with-equal-value": {
+    "python3": 2013615094
+  },
+  "smallest-k-length-subsequence-with-occurrences-of-a-letter": {
+    "python3": 2013611465
+  },
+  "smallest-missing-genetic-value-in-each-subtree": {
+    "python3": 2013608204
+  },
+  "smallest-range-covering-elements-from-k-lists": {
+    "python3": 2013546067
+  },
+  "smallest-range-i": {
+    "python3": 2013513107
+  },
+  "smallest-range-ii": {
+    "python3": 2012631423
+  },
+  "smallest-rotation-with-highest-score": {
+    "python3": 2013560774
+  },
+  "smallest-string-starting-from-leaf": {
+    "python3": 2013549155
+  },
+  "smallest-string-with-a-given-numeric-value": {
+    "python3": 2013525877
+  },
+  "smallest-string-with-swaps": {
+    "python3": 2014269262
+  },
+  "smallest-subsequence-of-distinct-characters": {
+    "python3": 2013515305
+  },
+  "smallest-value-of-the-rearranged-number": {
+    "python3": 2013629107
+  },
+  "snakes-and-ladders": {
+    "python3": 2013533106
+  },
+  "snapshot-array": {
+    "python3": 2014265361
+  },
+  "solve-the-equation": {
+    "python3": 2013549535
+  },
+  "sort-an-array": {
+    "python3": 2012582178
+  },
+  "sort-array-by-increasing-frequency": {
+    "python3": 2014288806
+  },
+  "sort-array-by-parity": {
+    "python3": 2012681500
+  },
+  "sort-array-by-parity-ii": {
+    "python3": 2012654594
+  },
+  "sort-characters-by-frequency": {
+    "python3": 2012656782
+  },
+  "sort-colors": {
+    "python3": 2013520720
+  },
+  "sort-even-and-odd-indices-independently": {
+    "python3": 2013628920
+  },
+  "sort-features-by-popularity": {
+    "python3": 2013556691
+  },
+  "sort-integers-by-the-number-of-1-bits": {
+    "python3": 2013533650
+  },
+  "sort-items-by-groups-respecting-dependencies": {
+    "python3": 2012678115
+  },
+  "sort-list": {
+    "python3": 2012702678
+  },
+  "sort-the-matrix-diagonally": {
+    "python3": 2013534966
+  },
+  "sorting-the-sentence": {
+    "python3": 2012657776
+  },
+  "soup-servings": {
+    "python3": 2012706032
+  },
+  "special-positions-in-a-binary-matrix": {
+    "python3": 2012652272
+  },
+  "spiral-matrix": {
+    "python3": 2012617421
+  },
+  "spiral-matrix-ii": {
+    "python3": 2012594444
+  },
+  "spiral-matrix-iii": {
+    "python3": 2012669357
+  },
+  "split-a-string-in-balanced-strings": {
+    "python3": 2014270459
+  },
+  "split-a-string-into-the-max-number-of-unique-substrings": {
+    "python3": 2014288364
+  },
+  "split-array-into-consecutive-subsequences": {
+    "python3": 2012695605
+  },
+  "split-array-into-fibonacci-sequence": {
+    "python3": 2013526041
+  },
+  "split-array-largest-sum": {
+    "python3": 2012583441
+  },
+  "split-array-with-same-average": {
+    "python3": 2013558521
+  },
+  "split-linked-list-in-parts": {
+    "python3": 2012647903
+  },
+  "split-two-strings-to-make-palindrome": {
+    "python3": 2013509885
+  },
+  "splitting-a-string-into-descending-consecutive-values": {
+    "python3": 2013514596
+  },
+  "sqrtx": {
+    "python3": 2012628876
+  },
+  "squares-of-a-sorted-array": {
+    "python3": 2012611902
+  },
+  "stamping-the-grid": {
+    "python3": 2013617883
+  },
+  "stamping-the-sequence": {
+    "python3": 2013530842
+  },
+  "statistics-from-a-large-sample": {
+    "python3": 2012718534
+  },
+  "step-by-step-directions-from-a-binary-tree-node-to-another": {
+    "python3": 2013620156
+  },
+  "stickers-to-spell-word": {
+    "python3": 2012714518
+  },
+  "stock-price-fluctuation": {
+    "python3": 2013611959
+  },
+  "stone-game": {
+    "python3": 2013537402
+  },
+  "stone-game-ii": {
+    "python3": 2013573734
+  },
+  "stone-game-iii": {
+    "python3": 2013530333
+  },
+  "stone-game-iv": {
+    "python3": 2012622801
+  },
+  "stone-game-ix": {
+    "python3": 2013611306
+  },
+  "stone-game-v": {
+    "python3": 2013511744
+  },
+  "stone-game-vii": {
+    "python3": 2013487721
+  },
+  "stone-game-viii": {
+    "python3": 2014321280
+  },
+  "strange-printer": {
+    "python3": 2013518403
+  },
+  "stream-of-characters": {
+    "python3": 2013566492
+  },
+  "string-compression": {
+    "python3": 2012632711
+  },
+  "string-compression-ii": {
+    "python3": 2013485843
+  },
+  "string-matching-in-an-array": {
+    "python3": 2013524889
+  },
+  "string-to-integer-atoi": {
+    "python3": 2012725939
+  },
+  "string-without-aaa-or-bbb": {
+    "python3": 2013534400
+  },
+  "strong-password-checker": {
+    "python3": 2014260842
+  },
+  "student-attendance-record-i": {
+    "python3": 2012604393
+  },
+  "student-attendance-record-ii": {
+    "python3": 2013538876
+  },
+  "subarray-product-less-than-k": {
+    "python3": 2012697519
+  },
+  "subarray-sum-equals-k": {
+    "python3": 2012736191
+  },
+  "subarray-sums-divisible-by-k": {
+    "python3": 2012595088
+  },
+  "subarrays-with-k-different-integers": {
+    "python3": 2013517639
+  },
+  "subdomain-visit-count": {
+    "python3": 2013522651
+  },
+  "subrectangle-queries": {
+    "python3": 2013542418
+  },
+  "subsets": {
+    "python3": 2012655171
+  },
+  "subsets-ii": {
+    "python3": 2012712932
+  },
+  "substring-with-concatenation-of-all-words": {
+    "python3": 2012649926
+  },
+  "substrings-of-size-three-with-distinct-characters": {
+    "python3": 2013504857
+  },
+  "subtract-the-product-and-sum-of-digits-of-an-integer": {
+    "python3": 2013527844
+  },
+  "subtree-of-another-tree": {
+    "python3": 2013517454
+  },
+  "sudoku-solver": {
+    "python3": 2012591017
+  },
+  "sum-game": {
+    "python3": 2014326787
+  },
+  "sum-of-absolute-differences-in-a-sorted-array": {
+    "python3": 2012666336
+  },
+  "sum-of-all-odd-length-subarrays": {
+    "python3": 2014287169
+  },
+  "sum-of-beauty-in-the-array": {
+    "python3": 2013609114
+  },
+  "sum-of-beauty-of-all-substrings": {
+    "python3": 2014316812
+  },
+  "sum-of-digits-in-base-k": {
+    "python3": 2014318677
+  },
+  "sum-of-digits-of-string-after-convert": {
+    "python3": 2014330624
+  },
+  "sum-of-distances-in-tree": {
+    "python3": 2012700696
+  },
+  "sum-of-even-numbers-after-queries": {
+    "python3": 2013514021
+  },
+  "sum-of-k-mirror-numbers": {
+    "python3": 2013618248
+  },
+  "sum-of-left-leaves": {
+    "python3": 2012683662
+  },
+  "sum-of-mutated-array-closest-to-target": {
+    "python3": 2012707561
+  },
+  "sum-of-nodes-with-even-valued-grandparent": {
+    "python3": 2013574249
+  },
+  "sum-of-root-to-leaf-binary-numbers": {
+    "python3": 2012581531
+  },
+  "sum-of-scores-of-built-strings": {
+    "python3": 2013634576
+  },
+  "sum-of-square-numbers": {
+    "python3": 2013504670
+  },
+  "sum-of-subarray-minimums": {
+    "python3": 2012703506
+  },
+  "sum-of-subarray-ranges": {
+    "python3": 2013621379
+  },
+  "sum-of-subsequence-widths": {
+    "python3": 2013559515
+  },
+  "sum-of-two-integers": {
+    "python3": 2012604986
+  },
+  "sum-of-unique-elements": {
+    "python3": 2012633929
+  },
+  "sum-root-to-leaf-numbers": {
+    "python3": 2012639087
+  },
+  "summary-ranges": {
+    "python3": 2012601540
+  },
+  "super-egg-drop": {
+    "python3": 2012610435
+  },
+  "super-palindromes": {
+    "python3": 2012695797
+  },
+  "super-pow": {
+    "python3": 2013526605
+  },
+  "super-ugly-number": {
+    "python3": 2013486990
+  },
+  "super-washing-machines": {
+    "python3": 2012663817
+  },
+  "surface-area-of-3d-shapes": {
+    "python3": 2013506001
+  },
+  "surrounded-regions": {
+    "python3": 2012638901
+  },
+  "swap-nodes-in-pairs": {
+    "python3": 2012629835
+  },
+  "swapping-nodes-in-a-linked-list": {
+    "python3": 2012731850
+  },
+  "swim-in-rising-water": {
+    "python3": 2013564992
+  },
+  "symmetric-tree": {
+    "python3": 2012605760
+  },
+  "tag-validator": {
+    "python3": 2013562474
+  },
+  "tallest-billboard": {
+    "python3": 2012608455
+  },
+  "target-sum": {
+    "python3": 2012645450
+  },
+  "task-scheduler": {
+    "python3": 2012673093
+  },
+  "teemo-attacking": {
+    "python3": 2012587291
+  },
+  "text-justification": {
+    "python3": 2012637346
+  },
+  "the-earliest-and-latest-rounds-where-players-compete": {
+    "python3": 2014325136
+  },
+  "the-k-strongest-values-in-an-array": {
+    "python3": 2014282580
+  },
+  "the-k-th-lexicographical-string-of-all-happy-strings-of-length-n": {
+    "python3": 2014279306
+  },
+  "the-k-weakest-rows-in-a-matrix": {
+    "python3": 2012689362
+  },
+  "the-kth-factor-of-n": {
+    "python3": 2012579709
+  },
+  "the-number-of-full-rounds-you-have-played": {
+    "python3": 2014325679
+  },
+  "the-number-of-good-subsets": {
+    "python3": 2013604647
+  },
+  "the-number-of-the-smallest-unoccupied-chair": {
+    "python3": 2014328954
+  },
+  "the-number-of-weak-characters-in-the-game": {
+    "python3": 2013607141
+  },
+  "the-score-of-students-solving-math-expression": {
+    "python3": 2013610104
+  },
+  "the-skyline-problem": {
+    "python3": 2012611604
+  },
+  "the-time-when-the-network-becomes-idle": {
+    "python3": 2013610777
+  },
+  "third-maximum-number": {
+    "python3": 2012635768
+  },
+  "thousand-separator": {
+    "python3": 2013539067
+  },
+  "three-consecutive-odds": {
+    "python3": 2012590752
+  },
+  "three-divisors": {
+    "python3": 2014331816
+  },
+  "three-equal-parts": {
+    "python3": 2012644802
+  },
+  "time-based-key-value-store": {
+    "python3": 2012600353
+  },
+  "time-needed-to-buy-tickets": {
+    "python3": 2013616994
+  },
+  "toeplitz-matrix": {
+    "python3": 2013564854
+  },
+  "top-k-frequent-elements": {
+    "python3": 2012635440
+  },
+  "top-k-frequent-words": {
+    "python3": 2012736418
+  },
+  "total-hamming-distance": {
+    "python3": 2013543295
+  },
+  "transform-to-chessboard": {
+    "python3": 2013560450
+  },
+  "transpose-matrix": {
+    "python3": 2012660364
+  },
+  "trapping-rain-water": {
+    "python3": 2012605307
+  },
+  "trapping-rain-water-ii": {
+    "python3": 2013492697
+  },
+  "tree-of-coprimes": {
+    "python3": 2014316337
+  },
+  "triangle": {
+    "python3": 2012710187
+  },
+  "trim-a-binary-search-tree": {
+    "python3": 2013497273
+  },
+  "triples-with-bitwise-and-equal-to-zero": {
+    "python3": 2012679784
+  },
+  "tuple-with-same-product": {
+    "python3": 2014271179
+  },
+  "two-best-non-overlapping-events": {
+    "python3": 2013612493
+  },
+  "two-city-scheduling": {
+    "python3": 2012595573
+  },
+  "two-furthest-houses-with-different-colors": {
+    "python3": 2013617717
+  },
+  "two-out-of-three": {
+    "python3": 2013611637
+  },
+  "two-sum": {
+    "python3": 2012664559
+  },
+  "two-sum-ii-input-array-is-sorted": {
+    "python3": 2012686118
+  },
+  "two-sum-iv-input-is-a-bst": {
+    "python3": 2013499902
+  },
+  "ugly-number": {
+    "python3": 2012720557
+  },
+  "ugly-number-ii": {
+    "python3": 2014260132
+  },
+  "uncommon-words-from-two-sentences": {
+    "python3": 2013515144
+  },
+  "uncrossed-lines": {
+    "python3": 2013566984
+  },
+  "unique-binary-search-trees": {
+    "python3": 2012607989
+  },
+  "unique-binary-search-trees-ii": {
+    "python3": 2012652823
+  },
+  "unique-email-addresses": {
+    "python3": 2012616569
+  },
+  "unique-length-3-palindromic-subsequences": {
+    "python3": 2014329513
+  },
+  "unique-morse-code-words": {
+    "python3": 2013496292
+  },
+  "unique-number-of-occurrences": {
+    "python3": 2012677142
+  },
+  "unique-paths": {
+    "python3": 2012572047
+  },
+  "unique-paths-ii": {
+    "python3": 2012591661
+  },
+  "unique-paths-iii": {
+    "python3": 2012609995
+  },
+  "unique-substrings-in-wraparound-string": {
+    "python3": 2013548200
+  },
+  "univalued-binary-tree": {
+    "python3": 2012638708
+  },
+  "utf-8-validation": {
+    "python3": 2012625894
+  },
+  "valid-anagram": {
+    "python3": 2012673278
+  },
+  "valid-arrangement-of-pairs": {
+    "python3": 2013618048
+  },
+  "valid-boomerang": {
+    "python3": 2013567970
+  },
+  "valid-mountain-array": {
+    "python3": 2012665972
+  },
+  "valid-number": {
+    "python3": 2012659235
+  },
+  "valid-palindrome": {
+    "python3": 2012576718
+  },
+  "valid-palindrome-ii": {
+    "python3": 2013525280
+  },
+  "valid-parentheses": {
+    "python3": 2012618566
+  },
+  "valid-parenthesis-string": {
+    "python3": 2012581998
+  },
+  "valid-perfect-square": {
+    "python3": 2012681897
+  },
+  "valid-square": {
+    "python3": 2013503304
+  },
+  "valid-sudoku": {
+    "python3": 2012606557
+  },
+  "valid-triangle-number": {
+    "python3": 2013551296
+  },
+  "validate-binary-search-tree": {
+    "python3": 2012599187
+  },
+  "validate-binary-tree-nodes": {
+    "python3": 2013545732
+  },
+  "validate-ip-address": {
+    "python3": 2012579863
+  },
+  "validate-stack-sequences": {
+    "python3": 2013484254
+  },
+  "verbal-arithmetic-puzzle": {
+    "python3": 2014274502
+  },
+  "verify-preorder-serialization-of-a-binary-tree": {
+    "python3": 2012586897
+  },
+  "verifying-an-alien-dictionary": {
+    "python3": 2012628586
+  },
+  "vertical-order-traversal-of-a-binary-tree": {
+    "python3": 2012627276
+  },
+  "video-stitching": {
+    "python3": 2013520527
+  },
+  "vowel-spellchecker": {
+    "python3": 2013489156
+  },
+  "vowels-of-all-substrings": {
+    "python3": 2013615990
+  },
+  "walking-robot-simulation": {
+    "python3": 2013554709
+  },
+  "walking-robot-simulation-ii": {
+    "python3": 2013614559
+  },
+  "water-and-jug-problem": {
+    "python3": 2013512748
+  },
+  "watering-plants-ii": {
+    "python3": 2013621580
+  },
+  "ways-to-make-a-fair-array": {
+    "python3": 2014314926
+  },
+  "ways-to-split-array-into-three-subarrays": {
+    "python3": 2014315741
+  },
+  "where-will-the-ball-fall": {
+    "python3": 2012646334
+  },
+  "widest-vertical-area-between-two-points-containing-no-points": {
+    "python3": 2013486223
+  },
+  "wiggle-sort-ii": {
+    "python3": 2013557074
+  },
+  "wiggle-subsequence": {
+    "python3": 2012697705
+  },
+  "wildcard-matching": {
+    "python3": 2012616899
+  },
+  "word-break": {
+    "python3": 2012578659
+  },
+  "word-break-ii": {
+    "python3": 2012661673
+  },
+  "word-ladder": {
+    "python3": 2012651731
+  },
+  "word-ladder-ii": {
+    "python3": 2012611104
+  },
+  "word-pattern": {
+    "python3": 2012666842
+  },
+  "word-search": {
+    "python3": 2012692819
+  },
+  "word-search-ii": {
+    "python3": 2012585340
+  },
+  "word-subsets": {
+    "python3": 2014261303
+  },
+  "x-of-a-kind-in-a-deck-of-cards": {
+    "python3": 2012638337
+  },
+  "xor-operation-in-an-array": {
+    "python3": 2013541102
+  },
+  "xor-queries-of-a-subarray": {
+    "python3": 2014274744
+  },
+  "zigzag-conversion": {
+    "python3": 2012598523
+  },
+  "zuma-game": {
+    "python3": 2013561950
   }
 }

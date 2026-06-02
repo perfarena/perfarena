@@ -23,6 +23,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# Make the webapp's `app.*` package importable regardless of cwd. This
+# matters when leetbot is invoked as a subprocess (e.g. by app.dispatch or
+# app.seed_anchors_from_parquet) — cwd is then the repo root, not the
+# webapp/backend folder, so a bare `from app.leetcode_accounts import …`
+# would fail and the credential-pool rotation would silently fall back to
+# the .env-only path (single account, no rotation on 429).
+_REPO_ROOT = Path(__file__).parent
+_BACKEND_DIR = _REPO_ROOT / "webapp" / "backend"
+if _BACKEND_DIR.exists() and str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
 import httpx
 from dotenv import load_dotenv
 
@@ -57,6 +68,17 @@ query submissionDetails($submissionId: Int!) {
   }
 }
 """
+
+
+class _RateLimited(RuntimeError):
+    """LeetCode returned HTTP 429. Carries the account name (when known) so
+    the rotator can mark it exhausted before trying the next account."""
+    def __init__(self, account_name: str | None = None):
+        super().__init__(
+            f"rate limited by LeetCode (429)"
+            + (f" on account {account_name!r}" if account_name else "")
+        )
+        self.account_name = account_name
 
 
 @dataclass
@@ -116,8 +138,24 @@ class LeetCodeClient:
             headers={"Referer": f"{self.host}/problems/{slug}/"},
         )
         if r.status_code == 429:
-            raise RuntimeError("rate limited by LeetCode (429); back off and retry")
-        r.raise_for_status()
+            # Signal to the outer rotation loop in `main()` which account got
+            # the 429 (so it can mark it exhausted and try the next one). We
+            # carry the account name on the client so the rotator can read it.
+            account_name = getattr(self, "_account_name", None)
+            raise _RateLimited(account_name)
+        # LeetCode returns a 302 to the login page (with an empty HTML body)
+        # for premium-only problems when the account isn't subscribed. That
+        # used to slip past `raise_for_status` (which only flags 4xx/5xx)
+        # and then crash inside `r.json()`. Detect explicitly so the caller
+        # gets a useful message instead of a stack trace.
+        ct = r.headers.get("content-type", "")
+        if r.status_code != 200 or "json" not in ct.lower():
+            snippet = (r.text or "").strip()[:200]
+            raise RuntimeError(
+                f"submit failed: HTTP {r.status_code} content-type={ct!r}; "
+                f"likely a premium-only problem or expired session "
+                f"(body[:200]={snippet!r})"
+            )
         body = r.json()
         if "submission_id" not in body:
             raise RuntimeError(f"unexpected submit response: {body!r}")
@@ -128,6 +166,8 @@ class LeetCodeClient:
         while time.monotonic() < deadline:
             try:
                 r = self.client.get(f"/submissions/detail/{submission_id}/check/")
+                if r.status_code == 429:
+                    raise _RateLimited(getattr(self, "_account_name", None))
                 r.raise_for_status()
                 body = r.json()
                 if body.get("state") == "SUCCESS":
@@ -138,9 +178,30 @@ class LeetCodeClient:
             time.sleep(interval + random.uniform(0, 0.2))
         raise TimeoutError(f"submission {submission_id} did not finish in {timeout}s")
 
-    def submit_and_wait(self, slug: str, lang: str, code: str) -> dict[str, Any]:
-        sid = self.submit(slug, lang, code)
-        return self.poll(sid)
+    def submit_and_wait(self, slug: str, lang: str, code: str,
+                        tle_retries: int = 0,
+                        tle_retry_delay: float = 8.0) -> dict[str, Any]:
+        """Submit once and poll for the verdict.
+
+        Time Limit Exceeded is LeetCode's flakiest verdict — its 2 s wall-clock
+        budget is measured on shared judge hardware, so a solution sitting near
+        the boundary can TLE on one run and pass on the next purely from host
+        load. When `tle_retries > 0`, a TLE result is re-submitted up to that
+        many extra times; the FIRST non-TLE verdict wins. If every retry also
+        TLEs, the TLE stands. Re-submitting the SAME problem repeatedly is the
+        pattern LeetCode tolerates (a human iterating), so the short delay
+        between tries is just politeness, not anti-throttle pacing.
+        """
+        result = self.poll(self.submit(slug, lang, code))
+        for attempt in range(tle_retries):
+            if result.get("status_msg") != "Time Limit Exceeded":
+                return result
+            print(f"[tle-retry] {slug}: Time Limit Exceeded — re-submitting "
+                  f"(retry {attempt + 1}/{tle_retries}) after {tle_retry_delay:.0f}s",
+                  file=sys.stderr)
+            time.sleep(tle_retry_delay)
+            result = self.poll(self.submit(slug, lang, code))
+        return result
 
     def submission_details(self, submission_id: int) -> dict[str, Any]:
         r = self.client.post(
@@ -152,6 +213,8 @@ class LeetCodeClient:
             },
             headers={"Referer": f"{self.host}/submissions/detail/{submission_id}/"},
         )
+        if r.status_code == 429:
+            raise _RateLimited(getattr(self, "_account_name", None))
         r.raise_for_status()
         return r.json()["data"]["submissionDetails"]
 
@@ -298,6 +361,13 @@ def main() -> int:
     p.add_argument("--stats-for", type=int, metavar="SUBMISSION_ID", help="just fetch stats for an existing submission id and exit")
     p.add_argument("--repeat", type=int, default=1, metavar="N", help="submit the same solution N times and aggregate results (default 1)")
     p.add_argument("--delay", type=float, default=12.0, metavar="SEC", help="seconds between repeats; jittered ±20%% (default 12)")
+    p.add_argument("--tle-retries", type=int, default=3, metavar="N",
+                   help="on a Time Limit Exceeded verdict, re-submit up to N more "
+                        "times before accepting the TLE (default 3). TLE is "
+                        "judge-load-flaky; a borderline solution often passes on "
+                        "retry. Applies per repeat.")
+    p.add_argument("--tle-retry-delay", type=float, default=8.0, metavar="SEC",
+                   help="seconds to wait between TLE re-submissions (default 8)")
     p.add_argument("--log", type=Path, metavar="PATH", help="append each run as a JSON line to this file")
     args = p.parse_args()
 
@@ -306,40 +376,175 @@ def main() -> int:
 
     load_dotenv()
     host = os.getenv("LEETCODE_HOST", "https://leetcode.com")
-    cookie_header = os.getenv("LEETCODE_COOKIE_HEADER")
-    if cookie_header:
-        # Parse "name=value; name=value; ..." into our two fields
-        jar = {}
-        for piece in cookie_header.split(";"):
-            piece = piece.strip()
-            if "=" in piece:
-                k, _, v = piece.partition("=")
-                jar[k.strip()] = v.strip()
-        session = jar.get("LEETCODE_SESSION")
-        csrf = jar.get("csrftoken")
-        if not session or not csrf:
-            print("error: LEETCODE_COOKIE_HEADER is missing LEETCODE_SESSION or csrftoken", file=sys.stderr)
-            return 2
-    else:
-        session = os.getenv("LEETCODE_SESSION")
-        csrf = os.getenv("LEETCODE_CSRF_TOKEN")
-        if not session or not csrf:
-            print("error: set LEETCODE_SESSION and LEETCODE_CSRF_TOKEN in .env (or LEETCODE_COOKIE_HEADER)", file=sys.stderr)
-            return 2
 
-    client = LeetCodeClient(host=host, session=session, csrf=csrf)
+    # Credential pool first; falls back to .env transparently for callers that
+    # haven't migrated to the multi-account setup. The pool bootstraps itself
+    # from .env on first read, so even the single-account case ends up going
+    # through the same rotation code path (rotation just has nothing to rotate).
+    try:
+        from app.leetcode_accounts import (
+            pick_account, mark_exhausted, load_accounts as _load_accounts,
+        )
+    except ImportError:
+        # leetbot used standalone outside the webapp tree — fall back hard.
+        pick_account = mark_exhausted = _load_accounts = None  # type: ignore
+
+    def _build_client() -> tuple[LeetCodeClient | None, str | None]:
+        """Build a client from the next available account. Returns
+        (client, account_name) or (None, None) if the pool is dry."""
+        if pick_account is None:
+            # Standalone fallback: read .env directly (legacy single-account).
+            session = os.getenv("LEETCODE_SESSION")
+            csrf = os.getenv("LEETCODE_CSRF_TOKEN")
+            ch = os.getenv("LEETCODE_COOKIE_HEADER")
+            if ch:
+                jar: dict[str, str] = {}
+                for piece in ch.split(";"):
+                    if "=" in piece:
+                        k, _, v = piece.partition("=")
+                        jar[k.strip()] = v.strip()
+                session = jar.get("LEETCODE_SESSION", session)
+                csrf = jar.get("csrftoken", csrf)
+            if not session or not csrf:
+                return None, None
+            c = LeetCodeClient(host=host, session=session, csrf=csrf)
+            c._account_name = ".env"  # type: ignore[attr-defined]
+            return c, ".env"
+        acc = pick_account()
+        if acc is None:
+            return None, None
+        try:
+            session, csrf = acc.parsed_cookies()
+        except ValueError as e:
+            print(f"warning: skipping account {acc.name!r}: {e}", file=sys.stderr)
+            mark_exhausted(acc.name)
+            return _build_client()       # recurse to try the next one
+        c = LeetCodeClient(host=host, session=session, csrf=csrf)
+        c._account_name = acc.name      # type: ignore[attr-defined]
+        return c, acc.name
+
+    client, account_name = _build_client()
+    if client is None:
+        print("error: no usable LeetCode credentials. Either set "
+              "LEETCODE_COOKIE_HEADER (or LEETCODE_SESSION + LEETCODE_CSRF_TOKEN) "
+              "in .env, or seed data/leetcode_accounts.json. All pool accounts "
+              "may also be exhausted — run "
+              "`python -m app.leetcode_accounts` to check.",
+              file=sys.stderr)
+        return 2
+    if account_name and account_name != ".env":
+        print(f"[leetbot] using account {account_name!r}", file=sys.stderr)
+
+    def _rotate_on_429(op):
+        """Run `op(client)` and on 429 mark the current account exhausted and
+        retry with the next available one. Caps at one attempt per account in
+        the pool so a fully-exhausted pool fails fast instead of looping."""
+        nonlocal client, account_name
+        seen: set[str] = set()
+        while True:
+            try:
+                return op(client)
+            except _RateLimited as e:
+                name = e.account_name or account_name or "?"
+                if mark_exhausted and name not in ("?", ".env"):
+                    mark_exhausted(name)
+                    print(f"[leetbot] account {name!r} hit 429 — marked exhausted "
+                          f"for 24h; rotating", file=sys.stderr)
+                else:
+                    # Standalone .env mode (single account, nothing to rotate to).
+                    raise RuntimeError(
+                        "rate limited by LeetCode (429); back off and retry"
+                    ) from e
+                seen.add(name)
+                client, account_name = _build_client()
+                if client is None:
+                    raise RuntimeError(
+                        f"all {len(seen)} account(s) exhausted (429); "
+                        f"run `python -m app.leetcode_accounts` to inspect "
+                        f"and `--add` more, or wait for cooldown"
+                    ) from e
+                if account_name in seen:
+                    # _build_client picked an account we already burned this
+                    # call — pool exhausted from our perspective.
+                    raise RuntimeError(
+                        f"pool drained mid-call (re-picked already-tried "
+                        f"account {account_name!r})"
+                    ) from e
+                print(f"[leetbot] retrying with account {account_name!r}",
+                      file=sys.stderr)
+
+    def _validate_session_or_rotate() -> bool:
+        """Probe whoami on the active account and rotate past any that aren't
+        signed in (expired cookies). Daily-cap rotation is for HTTP 429; this
+        is for the OTHER way a pool account goes bad — session lapses.
+
+        Returns True if we end up on a signed-in account, False if the whole
+        pool is unusable (caller should exit). Side effect: marks expired
+        accounts exhausted in the pool so the next run skips them.
+        """
+        nonlocal client, account_name
+        tried: set[str] = set()
+        while True:
+            try:
+                us = client.whoami()
+            except (httpx.HTTPError, Exception) as e:  # noqa: BLE001
+                print(f"[leetbot] whoami failed for {account_name!r}: {e}",
+                      file=sys.stderr)
+                us = {"isSignedIn": False}
+            if us.get("isSignedIn"):
+                if account_name and account_name != ".env":
+                    print(f"[leetbot] account {account_name!r} signed in as "
+                          f"{us.get('username') or '?'}", file=sys.stderr)
+                return True
+            # Account is in pool but its session is dead. Mark exhausted so
+            # the pool skips it on the next pick (the user can refresh by
+            # `python -m app.leetcode_accounts --add NAME --cookie ...`).
+            if mark_exhausted and account_name and account_name not in ("?", ".env"):
+                mark_exhausted(account_name)
+                print(f"[leetbot] account {account_name!r} not signed in "
+                      f"(cookies expired) — marked exhausted; rotating",
+                      file=sys.stderr)
+            elif account_name == ".env":
+                # Standalone single-account mode, nothing to rotate to.
+                return False
+            tried.add(account_name or "?")
+            client, account_name = _build_client()
+            if client is None or (account_name or "?") in tried:
+                return False
+            print(f"[leetbot] trying next account {account_name!r}",
+                  file=sys.stderr)
 
     if args.whoami:
-        print(json.dumps(client.whoami(), indent=2))
+        # Rotate past expired-cookie accounts so the printed result reflects
+        # the first signed-in account in the pool, not just whichever one was
+        # picked first. Without this, callers like dispatch._check_leetcode_auth
+        # would see {"isSignedIn": false} for a stale `alt2` and skip dispatch
+        # entirely even when a healthy `alt3` sits behind it.
+        if _validate_session_or_rotate():
+            print(json.dumps(_rotate_on_429(lambda c: c.whoami()), indent=2))
+            return 0
+        # Pool is fully dry — emit the not-signed-in JSON the caller expects
+        # so the auth pre-flight can fail cleanly with its usual message.
+        print(json.dumps({"isSignedIn": False, "username": None}, indent=2))
         return 0
 
     if args.stats_for is not None:
-        details = client.submission_details(args.stats_for)
+        details = _rotate_on_429(lambda c: c.submission_details(args.stats_for))
         print(json.dumps(compute_stats(details), indent=2))
         return 0
 
     if not (args.slug and args.lang and args.file):
         p.error("slug, lang, and file are required unless --whoami / --stats-for is set")
+
+    # Auth-validate before burning a daily-cap submission slot. If every
+    # account in the pool has stale cookies this returns False — fail fast
+    # with a clear message rather than 0-for-N a thousand slugs.
+    if not _validate_session_or_rotate():
+        print("error: no signed-in LeetCode account available. "
+              "Refresh cookies via `python -m app.leetcode_accounts --add "
+              "NAME --cookie '...'` (or update .env) and try again.",
+              file=sys.stderr)
+        return 2
 
     code = args.file.read_text()
     runs: list[dict[str, Any]] = []
@@ -351,7 +556,9 @@ def main() -> int:
             print(f"[run {i + 1}/{args.repeat}] sleeping {wait:.1f}s before next submission", file=sys.stderr)
             time.sleep(wait)
 
-        result = client.submit_and_wait(args.slug, args.lang, code)
+        result = _rotate_on_429(lambda c: c.submit_and_wait(
+            args.slug, args.lang, code,
+            tle_retries=args.tle_retries, tle_retry_delay=args.tle_retry_delay))
         run = {
             "run": i + 1,
             "submission_id": result.get("submission_id"),
@@ -362,6 +569,15 @@ def main() -> int:
             "memory_percentile": result.get("memory_percentile"),
             "total_correct": result.get("total_correct"),
             "total_testcases": result.get("total_testcases"),
+            # The language LeetCode actually GRADED the submission in. Usually
+            # matches what we sent in `args.lang`, but LeetCode silently
+            # re-classifies submissions whose typed_code looks like a different
+            # language (e.g. `public class Solution` ⇒ Java even when lang=python3).
+            # The server compares this to the declared submission language and
+            # marks mismatches as "Language mismatch" so they don't pollute
+            # cross-language baselines.
+            "lang": result.get("lang"),
+            "pretty_lang": result.get("pretty_lang"),
         }
         # Preserve LeetCode's diagnostic fields on non-Accepted runs so the UI
         # can show *why* it failed (which test, what the traceback was). Only
@@ -373,6 +589,12 @@ def main() -> int:
             v = result.get(k)
             if v:
                 run[k] = v
+        # ALSO stash the entire raw /check/ response so the platform can
+        # archive whatever LeetCode returned — including fields we don't
+        # enumerate above (status_code, state, pretty_lang, task_finish_time,
+        # …). The DB persists this verbatim on Run.leetcode_full_response;
+        # the UI shows it on non-Accepted runs for unfamiliar error shapes.
+        run["leetcode_full_response"] = result
         runs.append(run)
         if run["status_msg"] == "Accepted":
             last_accepted_sid = int(run["submission_id"])
@@ -388,7 +610,7 @@ def main() -> int:
         # We dropped the full result above, so re-fetch the raw if --raw asked
         if args.raw:
             # Re-poll cheaply: we still have the submission_id
-            result = client.poll(int(last["submission_id"]))
+            result = _rotate_on_429(lambda c: c.poll(int(last["submission_id"])))
             print(json.dumps(result, indent=2))
         else:
             print(json.dumps(last, indent=2))
@@ -396,7 +618,7 @@ def main() -> int:
         print(json.dumps({"runs": runs, "aggregate": aggregate_runs(runs)}, indent=2))
 
     if args.stats and last_accepted_sid is not None:
-        details = client.submission_details(last_accepted_sid)
+        details = _rotate_on_429(lambda c: c.submission_details(last_accepted_sid))
         print("\n--- population distribution stats (from last accepted submission) ---")
         print(json.dumps(compute_stats(details), indent=2))
 

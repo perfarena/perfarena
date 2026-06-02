@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, SnapshotDetail } from "../lib/api";
 import { formatPassAt1, formatPercentile } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
+import PromptName from "../components/PromptName";
 
 export default function SnapshotDetailPage() {
   const { id = "" } = useParams();
@@ -37,6 +38,7 @@ export default function SnapshotDetailPage() {
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
+              <th title="Registered prompt template used at snapshot time. Pre-2026-05-28 snapshots may show 'ad-hoc' for all rows (field wasn't recorded yet).">Prompt</th>
               <th>pass@1</th><th>Solved</th><th>Runtime %ile</th><th>Memory %ile</th><th></th>
             </tr></thead>
             <tbody>
@@ -51,6 +53,7 @@ export default function SnapshotDetailPage() {
                   </td>
                   <td>{m.submitter}</td>
                   <td><LanguageLink name={m.language} /></td>
+                  <td><PromptName id={m.prompt_id ?? null} name={m.prompt_name ?? null} /></td>
                   <td className="metric">{formatPassAt1(m.pass_at_1)}</td>
                   <td className="metric">{m.total_solved}/{m.total_problems}</td>
                   <td className="metric">{formatPercentile(m.avg_runtime_percentile)}</td>

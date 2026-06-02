@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, MePayload, PendingUser } from "../lib/api";
 
 /** Admin-only — grant or deny access to pending registrants. */
@@ -46,9 +47,17 @@ export default function Admin() {
   return (
     <div className="col">
       <div className="hero" style={{ paddingBottom: 0 }}>
-        <h1>Pending registrations</h1>
-        <p>Review applications and grant access. Approved users get an API key and can sign in with their email + password (if they set one during registration).</p>
+        <h1>Admin</h1>
+        <p>
+          Review pending registrations and grant access — approved users
+          get an API key and can sign in with email + password (if they set
+          one during registration). For replica work, the{" "}
+          <Link to="/admin/export">Export &amp; Import</Link> page lets you
+          download a JSON bundle of the platform's content and merge it back
+          into another instance.
+        </p>
       </div>
+      <h2 style={{ marginBottom: 4 }}>Pending registrations</h2>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}
 

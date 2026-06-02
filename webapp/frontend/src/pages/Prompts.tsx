@@ -1,9 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   api, getApiKey, MePayload, PromptTemplateIn, PromptTemplatePublic,
 } from "../lib/api";
 
 export default function Prompts() {
+  // /prompts/:id deep-links to one prompt — we auto-expand + scroll to it.
+  const { id: focusIdParam } = useParams();
+  const focusId = focusIdParam ? Number(focusIdParam) : null;
   const [me, setMe] = useState<MePayload | null>(null);
   const [rows, setRows] = useState<PromptTemplatePublic[]>([]);
   const [includeRetired, setIncludeRetired] = useState(false);
@@ -69,35 +73,82 @@ export default function Prompts() {
         : (
           <div className="col" style={{ gap: 12 }}>
             {rows.map(p => (
-              <div key={p.id} className="card col">
-                <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                  <h3 style={{ margin: 0 }}>
-                    {p.name}
-                    {" "}
-                    <span className={`badge ${p.status === "active" ? "badge-easy" : "badge-medium"}`}
-                          style={{ fontSize: "0.7rem", verticalAlign: "middle", marginLeft: 8 }}>
-                      {p.status}
-                    </span>
-                  </h3>
-                  <span className="muted" style={{ fontSize: "0.85rem" }}>
-                    created {new Date(p.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                {p.notes && <div className="muted" style={{ fontSize: "0.9rem" }}>{p.notes}</div>}
-                <Field label="System prompt" value={p.system_prompt} />
-                <Field label="User prompt template" value={p.user_prompt_template} />
-                {p.language_hint && <div className="muted">Language hint: <code>{p.language_hint}</code></div>}
-                {isAdmin && (
-                  <div className="row" style={{ gap: 6 }}>
-                    <button className="secondary" onClick={() => { setEditing(p); setShowForm(true); }}>edit</button>
-                    <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                            onClick={() => onDelete(p.id)}>delete</button>
-                  </div>
-                )}
-              </div>
+              <PromptCard
+                key={p.id}
+                p={p}
+                isAdmin={isAdmin}
+                focused={focusId === p.id}
+                onEdit={() => { setEditing(p); setShowForm(true); }}
+                onDelete={() => onDelete(p.id)}
+              />
             ))}
           </div>
         )}
+    </div>
+  );
+}
+
+/* One prompt in the list. Main info (name, status, created date, notes,
+ * language hint) is always visible; the bulky templates — system prompt +
+ * user prompt template — are collapsed behind a toggle, hidden by default,
+ * so the list stays scannable. */
+function PromptCard({
+  p, isAdmin, focused = false, onEdit, onDelete,
+}: {
+  p: PromptTemplatePublic;
+  isAdmin: boolean;
+  focused?: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  // When deep-linked via /prompts/:id this card is the focus: expand its text
+  // by default and scroll it into view so the click lands on the right prompt.
+  const [open, setOpen] = useState(focused);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused && ref.current) {
+      ref.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [focused]);
+  return (
+    <div ref={ref} className="card col"
+         style={focused ? { borderColor: "var(--accent)", boxShadow: "0 0 0 2px var(--accent-soft)" } : undefined}>
+      <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0 }}>
+          {p.name}
+          {" "}
+          <span className={`badge ${p.status === "active" ? "badge-easy" : "badge-medium"}`}
+                style={{ fontSize: "0.7rem", verticalAlign: "middle", marginLeft: 8 }}>
+            {p.status}
+          </span>
+        </h3>
+        <span className="muted" style={{ fontSize: "0.85rem" }}>
+          created {new Date(p.created_at).toLocaleDateString()}
+        </span>
+      </div>
+
+      {p.notes && <div className="muted" style={{ fontSize: "0.9rem" }}>{p.notes}</div>}
+      {p.language_hint && <div className="muted">Language hint: <code>{p.language_hint}</code></div>}
+
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <button className="secondary" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+          {open ? "Hide prompt text" : "Show prompt text"}
+        </button>
+        {isAdmin && (
+          <>
+            <button className="secondary" onClick={onEdit}>edit</button>
+            <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
+                    onClick={onDelete}>delete</button>
+          </>
+        )}
+      </div>
+
+      {open && (
+        <div className="col" style={{ gap: 10, marginTop: 4 }}>
+          <Field label="System prompt" value={p.system_prompt} />
+          <Field label="User prompt template" value={p.user_prompt_template} />
+        </div>
+      )}
     </div>
   );
 }

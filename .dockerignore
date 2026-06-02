@@ -1,0 +1,47 @@
+# Anything not needed inside the image — keeps build context small and
+# avoids leaking local dev artefacts.
+
+# VCS
+.git
+.gitignore
+.git*
+
+# Local env / secrets
+.env
+.env.*
+*.secrets
+data/leetcode_accounts.json
+sampled_solutions/
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv/
+*.egg-info
+
+# Node — built fresh inside the Node stage
+webapp/frontend/node_modules
+webapp/frontend/dist
+
+# Backend local artefacts
+webapp/backend/arena.db
+webapp/backend/arena.db-journal
+webapp/backend/.pytest_cache
+webapp/backend/.venv
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Huge static parquet that isn't needed at runtime
+train-00000-of-00001.parquet
+
+# Build artifact directories that come from local runs
+docs/
+README.md
+claude.session

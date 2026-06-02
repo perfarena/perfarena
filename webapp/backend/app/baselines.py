@@ -1,9 +1,18 @@
-"""Human-baseline reference performance per (problem, language).
+"""LeetCode-population baseline reference performance per (problem, language).
 
 Two tiers per pair: `avg` (population mean) and `expert` (top decile-ish).
+The cohort is everyone who's submitted on LeetCode for that problem/language —
+LeetCode doesn't separate human-authored from AI-assisted submissions, so
+think of these as "the LeetCode submission distribution" rather than "humans".
+
 For now we synthesize plausible distributions from the problem's difficulty
 level and a per-language efficiency multiplier — the table is the schema we'd
 populate from a real public submissions corpus.
+
+Internal note: the corresponding DB columns and SQLModel attributes still
+use `time_human_avg` / `time_human_expert` / `mem_human_avg` /
+`mem_human_expert` — renaming those would force a SQLite migration with
+no semantic gain. The user-visible labels in the UI all say "LeetCode".
 
 Run as: python -m app.baselines [--reset]
 """

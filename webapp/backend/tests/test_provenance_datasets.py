@@ -25,12 +25,13 @@ def test_provenance_log_chain(client):
     assert len(page["entries"]) == 1
 
 
-def test_dataset_export_gated_and_streams(client):
+def test_dataset_export_public_and_streams(client):
+    """Dataset download is open to the community — anyone can verify the
+    leaderboard end-to-end without first asking for an API key."""
     make_submission(client, slugs=("two-sum", "add-digits"))
 
-    assert client.get("/api/datasets/solutions").status_code == 401
-
-    r = client.get("/api/datasets/solutions", headers=ADMIN)
+    # anonymous works
+    r = client.get("/api/datasets/solutions")
     assert r.status_code == 200
     lines = [ln for ln in r.text.splitlines() if ln.strip()]
     assert lines, "expected JSONL records"
@@ -38,8 +39,8 @@ def test_dataset_export_gated_and_streams(client):
     assert {"submission_id", "model_name", "language", "code",
             "trace_hash", "model_digest", "problem_slug"} <= rec.keys()
 
-    # filter narrows the stream and stays valid JSONL
-    filtered = client.get("/api/datasets/solutions", headers=USER,
+    # filter narrows the stream and stays valid JSONL (still anon)
+    filtered = client.get("/api/datasets/solutions",
                            params={"language": "python3", "only_accepted": True})
     assert filtered.status_code == 200
     for ln in filtered.text.splitlines():

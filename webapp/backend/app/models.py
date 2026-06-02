@@ -51,6 +51,12 @@ class Problem(SQLModel, table=True):
     tags: str
     content: str
     hints: str | None = None
+    # LeetCode-provided starter-code snippets per language, keyed by langSlug
+    # ("python3", "cpp", "java", …). Each value is the exact class + method
+    # signature shape LeetCode expects — a model that returns code conforming
+    # to it avoids "class/method not found" judge errors. Populated by
+    # `python -m app.fetch_code_snippets`; nullable until that script runs.
+    code_snippets: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class SubmissionStatus(str, Enum):
@@ -79,6 +85,15 @@ class Submission(SQLModel, table=True):
     # passed `prompt_template` text directly.
     prompt_id: int | None = Field(default=None, foreign_key="prompttemplate.id", index=True)
 
+    # Iterative-refinement experiment knobs (all default to single-shot,
+    # no hints, no specific optimization target — the legacy behavior).
+    # Set together at submission creation; the client driver in
+    # `webapp/examples/iterative_refine.py` interprets these to shape the
+    # prompt expansion for each round.
+    n_rounds: int = Field(default=1, ge=1)
+    include_hints: bool = Field(default=False)
+    optimization_target: str | None = Field(default=None)   # 'latency'|'memory'|None
+
     pass_at_1: float | None = None        # unbiased estimator over k samples
     pass_at_k: float | None = None        # k = n_samples_per_problem
     pass_at_full: float | None = None     # 1 if any of k samples accepted
@@ -89,11 +104,14 @@ class Submission(SQLModel, table=True):
     avg_runtime_percentile: float | None = None
     avg_memory_percentile: float | None = None
 
-    # Coefficients vs. human baselines, averaged across the submission.
-    # Convention: higher = better. Value = baseline / model.
-    #   1.0 → matches the human baseline
-    #   2.0 → twice as fast / half the memory of the baseline cohort
+    # Coefficients vs. the LeetCode-population baselines, averaged across the
+    # submission. Convention: higher = better. Value = baseline / model.
+    #   1.0 → matches the LeetCode baseline
+    #   2.0 → twice as fast / half the memory of the LeetCode cohort
     #   0.5 → twice as slow / twice the memory
+    # NB: legacy `_human_` field names — kept to avoid a DB migration. The
+    # cohort isn't purely human (LeetCode mixes in AI-assisted submissions);
+    # all user-visible UI strings have been renamed to "LeetCode avg/expert".
     time_human_avg: float | None = None
     time_human_expert: float | None = None
     mem_human_avg: float | None = None
@@ -101,6 +119,23 @@ class Submission(SQLModel, table=True):
 
     total_solved: int = 0
     total_problems: int = 0
+
+    # Cost + token accounting, summed across every attempt in the submission
+    # (so k samples × N problems × refinement rounds all roll up here).
+    # Recomputed whenever attempts are ingested. None until any attempt with
+    # the respective field lands; 0.0 when all contributing attempts are free
+    # (Ollama). See _recompute_submission_costs in main.py.
+    total_cost_usd: float | None = None
+    total_response_tokens: int | None = None
+    # Total generation wall-clock across all attempts (ms) — the sum of every
+    # attempt's `wall_clock_ms`. None until any attempt reports its generation
+    # time. Recomputed alongside the cost/token totals.
+    total_generation_ms: int | None = None
+    # Total energy of the generation process across all attempts (joules).
+    # Reported only when the submit client measures it (e.g., a GPU power
+    # probe). For LeetCode-only data paths this stays None and the UI omits
+    # the column / stat. Summed in _recompute_submission_costs.
+    total_generation_energy_j: float | None = None
 
     # Soft delete: hides the submission from every public read surface but
     # keeps the row (and its attempts/runs/traces) so research exports, the
@@ -118,8 +153,27 @@ class Attempt(SQLModel, table=True):
     # model, provider, endpoint, params, created_at, provider_meta}. Lets a
     # reviewer confirm the model actually produced this solution.
     trace: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Wall-clock runtime of the generation process for THIS solution (ms) —
+    # how long the model took to produce this attempt's code. Reported by the
+    # submit client; summed into Submission.total_generation_ms.
     wall_clock_ms: int | None = None
+    # Energy used by the generation process for THIS solution (joules).
+    # Reported only when the submit client has a power probe (NVML, RAPL,
+    # provider telemetry, …). LeetCode itself never reports this — left None
+    # and the UI omits the column when no rows in scope carry a value.
+    generation_energy_j: float | None = None
+    # The client already detected this response isn't a valid solution
+    # (wrong language extracted, no code in response, malformed output, …) —
+    # we record it as a failed attempt and stash the raw response in `trace`
+    # so the model's behavior is preserved for analysis. Set ⇒ dispatch skips
+    # LeetCode entirely and synthesizes one failure Run with this string.
+    prefailed_reason: str | None = None
+    # $ cost of the single LLM call that produced THIS sample. 0 for local /
+    # Ollama models; for paid APIs the client computes it from token pricing.
     cost_usd: float | None = None
+    # Token count of the CODE-only response (the extracted solution, excluding
+    # any reasoning/thinking channel). Best-effort — the client estimates it.
+    response_tokens: int | None = None
 
     # Provenance (see provenance.py). trace_hash binds code+summary+trace and
     # is anchored in the append-only TraceLogEntry chain at ingest time.
@@ -131,6 +185,14 @@ class Attempt(SQLModel, table=True):
     model_digest_source: str | None = None  # submitted|derived
     log_seq: int | None = None             # position in the transparency log
     logged_at: datetime | None = None      # server-authoritative timestamp
+
+    # Refinement-chain link. round_index is 0-based within the submission
+    # (round 0 = cold-start, no feedback). previous_attempt_id points back to
+    # the round-(N-1) attempt for the same problem, so a single chain can be
+    # walked forward or backward. Both nullable for back-compat with legacy
+    # single-shot attempts.
+    round_index: int = Field(default=0, ge=0)
+    previous_attempt_id: int | None = Field(default=None, foreign_key="attempt.id", index=True)
 
     # Aggregates over the N dispatch runs of this attempt (best = min ms / min MB
     # / max percentile; avg = arithmetic mean over accepted runs).
@@ -148,11 +210,14 @@ class Attempt(SQLModel, table=True):
 
 
 class Baseline(SQLModel, table=True):
-    """Human reference performance for one (problem, language) pair.
+    """LeetCode-population reference performance for one (problem, language) pair.
 
     `*_avg` is the population mean; `*_expert` approximates the top decile
     (or whatever cohort we choose to call "expert"). Populated from public
     LeetCode submission data; seeded synthetically until that pipeline lands.
+    The cohort isn't purely human — LeetCode mixes human and AI-assisted
+    submissions in its distributions — so "LeetCode population" is more
+    accurate than "human" for what these numbers actually represent.
     """
     id: int | None = Field(default=None, primary_key=True)
     problem_id: int = Field(foreign_key="problem.id", index=True)
@@ -194,14 +259,24 @@ class Run(SQLModel, table=True):
     total_correct: int | None = None
     total_testcases: int | None = None
     raw_response: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Verbatim LeetCode /check/ response for THIS run (or the dispatcher's
+    # synthetic failure payload in fake-mode / pre-flight errors). Captured
+    # for every run regardless of verdict so any LeetCode-side error shape
+    # — including ones the parser doesn't enumerate (`status_code`,
+    # `pretty_lang`, `state`, `task_finish_time`, …) — is preserved for
+    # later inspection.
+    leetcode_full_response: dict | None = Field(
+        default=None, sa_column=Column(JSON),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class RegisteredModel(SQLModel, table=True):
-    """A model officially supported on the platform. The team adds models
-    here once access is granted by the model's authors; the platform then
-    runs experiments against them and publishes the results. Replaces the
-    older open self-submission flow."""
+    """A model the platform knows about — either admin-curated or auto-stubbed
+    from a first submission. Every (model_name, model_version) that lands in
+    a Submission gets a row here, so /models can list every model that ever
+    submitted answers; admins then fill in the rich metadata (description,
+    type, family, provenance) on previously-unverified stubs."""
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)              # canonical name used in submissions
     version: str
@@ -209,9 +284,65 @@ class RegisteredModel(SQLModel, table=True):
     endpoint: str | None = None                # base URL (Ollama) / "openai" / "anthropic"
     params: dict | None = Field(default=None, sa_column=Column(JSON))   # decoding defaults
     notes: str | None = None                   # markdown blurb
-    status: str = Field(default="active", index=True)   # active|retired
+    # Rich metadata, filled in by admins after a model has been seen. All
+    # nullable: auto-stubbed rows start with everything blank and the UI
+    # surfaces an "unverified — needs admin details" banner until populated.
+    description: str | None = None             # longer-form markdown blurb
+    model_type: str | None = None              # chat | instruct | reasoning | coder | embedding | …
+    family: str | None = None                  # qwen | llama | gpt | claude | mistral | …
+    provenance: str | None = None              # HF/model-card URL, citation, source links (markdown)
+    # active   — admin verified, in active use
+    # retired  — admin has marked it out of rotation
+    # unverified — auto-created on first submission; awaits admin curation
+    status: str = Field(default="active", index=True)
     added_at: datetime = Field(default_factory=datetime.utcnow)
     added_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class Competition(SQLModel, table=True):
+    """A named contest the platform tracks — one set of Problems, evaluated
+    under one prompt/dispatch regime. The 99 LeetCode problems are the seed
+    competition (slug='leetcode-99-perf'); future ones (HumanEval, MBPP, a
+    custom curated set) drop in additively without touching existing data.
+
+    Submissions reference Problems by slug — there's intentionally no FK
+    from Submission to Competition. Competition-scoped leaderboards filter
+    by membership in the join table, so a problem in two competitions is
+    counted in both."""
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)     # stable id used in URLs
+    name: str
+    description: str | None = None                 # markdown blurb
+    kind: str = Field(default="custom", index=True)  # leetcode | humaneval | mbpp | custom | …
+    status: str = Field(default="active", index=True)  # active | retired
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class CompetitionProblem(SQLModel, table=True):
+    """Many-to-many membership join. Composite primary key so the same
+    problem can appear in many competitions without dup rows."""
+    competition_id: int = Field(foreign_key="competition.id", primary_key=True)
+    problem_id: int = Field(foreign_key="problem.id", primary_key=True)
+
+
+class BlogPost(SQLModel, table=True):
+    """A blog post displayed on the /blog page as a card and at /blog/{slug}
+    in full. `body` is markdown; `cover_image_url` is rendered as the card's
+    header image when present. Draft posts are admin-only previewable; only
+    `status=='published'` rows appear in public listings."""
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)          # stable URL id
+    title: str
+    summary: str | None = None                          # one-paragraph teaser
+    body: str = ""                                      # markdown
+    cover_image_url: str | None = None
+    author_name: str | None = None                      # display author (free text)
+    status: str = Field(default="draft", index=True)    # draft | published | retired
+    published_at: datetime | None = None                # filled when status flips to published
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
 
 
 class PromptTemplate(SQLModel, table=True):

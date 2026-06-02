@@ -18,7 +18,23 @@ def test_admin_only_endpoints_reject_plain_user(client):
 
 def test_register_flow_and_captcha(client):
     # missing captcha
-    bad = client.post("/api/register", json={
+    # Registration is now admin-only (the platform is curated; self-signup
+    # was retired). Anonymous and approved-user POSTs both 401 / 403.
+    tok0, ans0 = solve_captcha(client)
+    anon = client.post("/api/register", json={
+        "email": "anon@test.dev", "display_name": "A",
+        "captcha_token": tok0, "captcha_answer": ans0,
+    })
+    assert anon.status_code == 401
+
+    forbidden = client.post("/api/register", headers=USER, json={
+        "email": "anon@test.dev", "display_name": "A",
+        "captcha_token": tok0, "captcha_answer": ans0,
+    })
+    assert forbidden.status_code == 403
+
+    # Admin still needs to pass the captcha — same code path, no shortcut.
+    bad = client.post("/api/register", headers=ADMIN, json={
         "email": "x@test.dev", "display_name": "X",
         "captcha_token": "", "captcha_answer": "",
     })
@@ -26,7 +42,7 @@ def test_register_flow_and_captcha(client):
 
     # wrong answer
     tok, _ = solve_captcha(client)
-    wrong = client.post("/api/register", json={
+    wrong = client.post("/api/register", headers=ADMIN, json={
         "email": "x@test.dev", "display_name": "X",
         "captcha_token": tok, "captcha_answer": "-9999",
     })
@@ -34,7 +50,7 @@ def test_register_flow_and_captcha(client):
 
     # correct
     tok, ans = solve_captcha(client)
-    ok = client.post("/api/register", json={
+    ok = client.post("/api/register", headers=ADMIN, json={
         "email": "newcomer@test.dev", "display_name": "Newcomer",
         "org": "Org", "motivation": "compete",
         "captcha_token": tok, "captcha_answer": ans,
@@ -44,7 +60,7 @@ def test_register_flow_and_captcha(client):
 
     # duplicate email -> 409
     tok, ans = solve_captcha(client)
-    dup = client.post("/api/register", json={
+    dup = client.post("/api/register", headers=ADMIN, json={
         "email": "newcomer@test.dev", "display_name": "Dup",
         "captcha_token": tok, "captcha_answer": ans,
     })
@@ -53,7 +69,7 @@ def test_register_flow_and_captcha(client):
 
 def test_register_with_password_then_login(client):
     tok, ans = solve_captcha(client)
-    r = client.post("/api/register", json={
+    r = client.post("/api/register", headers=ADMIN, json={
         "email": "logmein@test.dev", "display_name": "Logger",
         "password": "correct-horse-battery",
         "captcha_token": tok, "captcha_answer": ans,

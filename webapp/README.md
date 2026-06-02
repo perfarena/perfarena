@@ -2,6 +2,8 @@
 
 Open competition site where AI labs submit batches of solutions for a fixed set of LeetCode problems. Submissions are dispatched to LeetCode for verification; verified results are ranked by language, problem, and difficulty using pass@k and avg runtime/memory percentiles.
 
+> **Note on percentile semantics.** LeetCode's per-run runtime/memory percentile is observably noisy in our data (~4 pp within-attempt spread, ~50 % ranking agreement with raw ms across attempts). The platform leaderboard's ~500-sample mean smooths most of it out, but the per-problem view shows best-of-5 with mean alongside instead of a single noisy run. The full empirical analysis and what LC actually documents (vs. what's just community speculation) lives in [`docs/leetcode-percentile-semantics.md`](../docs/leetcode-percentile-semantics.md).
+
 Built at NYU Abu Dhabi by Rui Rua, Karim Ali (SanadLab), and João Paulo Fernandes. Licensed under Apache 2.0 — see `LICENSE`.
 
 ```

@@ -37,25 +37,24 @@ class AuthMissing(RuntimeError):
 
 
 def build_client() -> httpx.Client:
+    """Build an httpx client using the credential pool's next available
+    account. The pool bootstraps itself from .env on first read, so this
+    works for both single-account and multi-account setups."""
     load_dotenv(REPO_ROOT / ".env")
     host = os.getenv("LEETCODE_HOST", "https://leetcode.com")
-    cookie_header = os.getenv("LEETCODE_COOKIE_HEADER")
-    if cookie_header:
-        jar: dict[str, str] = {}
-        for piece in cookie_header.split(";"):
-            if "=" in piece:
-                k, v = piece.strip().split("=", 1)
-                jar[k] = v
-        session, csrf = jar.get("LEETCODE_SESSION"), jar.get("csrftoken")
-    else:
-        session = os.getenv("LEETCODE_SESSION")
-        csrf = os.getenv("LEETCODE_CSRF_TOKEN")
-    if not session or not csrf:
+    # Local import keeps leetcode_dist.py importable in contexts where the
+    # accounts module isn't on the path (e.g. some standalone scripts).
+    from app.leetcode_accounts import pick_account
+    acc = pick_account()
+    if acc is None:
         raise AuthMissing(
             "LeetCode auth not configured — set LEETCODE_COOKIE_HEADER "
-            "or LEETCODE_SESSION + LEETCODE_CSRF_TOKEN in the repo-root .env"
+            "or LEETCODE_SESSION + LEETCODE_CSRF_TOKEN in the repo-root .env, "
+            "or seed data/leetcode_accounts.json. All pool accounts may "
+            "also be exhausted (run `python -m app.leetcode_accounts`)."
         )
-    return httpx.Client(
+    session, csrf = acc.parsed_cookies()
+    client = httpx.Client(
         base_url=host,
         cookies={"LEETCODE_SESSION": session, "csrftoken": csrf},
         headers={
@@ -66,16 +65,33 @@ def build_client() -> httpx.Client:
         },
         timeout=30,
     )
+    # Tag so callers (or fetch_distribution) can mark exhausted on 429.
+    client._account_name = acc.name  # type: ignore[attr-defined]
+    return client
 
 
 def fetch_distribution(submission_id: int, *, client: httpx.Client) -> dict | None:
     """Returns the submissionDetails dict or None when the submission is
-    inaccessible / has no histogram (deleted, not yours, judged failed, …)."""
+    inaccessible / has no histogram (deleted, not yours, judged failed, …).
+
+    On HTTP 429 (daily cap), marks the active account exhausted in the
+    credential pool and returns None — the caller can rebuild the client
+    via `build_client()` to pick up the next available account.
+    """
     try:
         r = client.post("/graphql", json={
             "query": _GRAPHQL, "variables": {"submissionId": int(submission_id)},
         })
     except httpx.HTTPError:
+        return None
+    if r.status_code == 429:
+        name = getattr(client, "_account_name", None)
+        if name:
+            try:
+                from app.leetcode_accounts import mark_exhausted
+                mark_exhausted(name)
+            except ImportError:
+                pass
         return None
     if r.status_code != 200:
         return None

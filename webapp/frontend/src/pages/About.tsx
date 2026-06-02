@@ -3,10 +3,17 @@ const SANADLAB_URL = "https://sanadlab.org";
 const TEAM = [
   {
     name: "Rui Rua",
-    site: "https://example.com/rui-rua",
+    site: "https://rrua.github.com",
     position: "Post-Doctoral Associate, NYU Abu Dhabi",
     affiliations: ["SanadLab"],
     photo: "https://rrua.github.io/images/profile.png", // drop a 240×240 photo here
+  },
+  {
+    name: "Hailemarian Mersha",
+    site: "https://sanadlab.org",
+    position: "Undergraduate Research Assistant, NYU Abu Dhabi",
+    affiliations: ["SanadLab"],
+    photo: "https://sanadlab.org/resources/images/people/haile.png", // drop a 240×240 photo here
   },
   {
     name: "Karim Ali",
@@ -62,10 +69,6 @@ export default function About() {
         </p>
       </section>
 
-      <section className="muted" style={{ fontSize: "0.85em", borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        Licensed under the Apache License 2.0. Problem statements © LeetCode; this site is not
-        affiliated with LeetCode.
-      </section>
     </div>
   );
 }

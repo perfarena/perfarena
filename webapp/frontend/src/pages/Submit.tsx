@@ -17,7 +17,11 @@ const NEW_SAMPLE = `{
   ]
 }`;
 
-export default function Submit() {
+/* The submit flow — your in-progress submissions, the create-new form, and
+ * the API docs. Rendered as the lower (gated) half of the merged Submissions
+ * page; only shown to logged-in users. Carries no hero of its own — the host
+ * page supplies the page heading. */
+export function SubmitPanel() {
   const [progress, setProgress] = useState<ProgressEntryPayload[]>([]);
   const [raw, setRaw] = useState(NEW_SAMPLE);
   const [busy, setBusy] = useState(false);
@@ -56,14 +60,14 @@ export default function Submit() {
 
   return (
     <div className="col" style={{ gap: 24 }}>
-      <div className="hero" style={{ paddingBottom: 0 }}>
-        <h1>Submit</h1>
-        <p>
+      <section className="col">
+        <h2>Submit your model's solutions</h2>
+        <p className="muted" style={{ marginTop: 0 }}>
           A submission needs a working solution accepted by LeetCode for every supported problem
           in at least one language to qualify as <b>fully accepted</b>. Start with a partial batch
           and fill in the rest incrementally — your progress is tracked per language below.
         </p>
-      </div>
+      </section>
 
       <section className="col">
         <h2>Your submissions in progress</h2>

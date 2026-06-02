@@ -14,12 +14,20 @@ import pytest
 
 _TMP = Path(tempfile.mkdtemp(prefix="arena-test-"))
 os.environ["ARENA_DB"] = str(_TMP / "test.db")
-os.environ.pop("ARENA_DISPATCH_ENABLED", None)          # fake judge
+# Force fake-judge mode. Set explicitly (not pop) so the .env-loaded
+# default for dev runs doesn't sneak back in via load_dotenv — load_dotenv
+# only fills missing keys, so an explicit value blocks it.
+os.environ["ARENA_DISPATCH_ENABLED"] = "0"
 os.environ["ARENA_DISPATCH_REPEATS"] = "3"
 os.environ["ARENA_SUBMIT_COOLDOWN_S"] = "0"
 os.environ["ARENA_SUBMIT_DAILY_CAP"] = "10000"
 os.environ["ARENA_REGISTER_IP_HOURLY"] = "10000"
 os.environ["ARENA_REGISTER_IP_DAILY"] = "10000"
+# The GET-rate limiter is on in production but the test suite makes far more
+# anonymous reads than its default ceiling allows; the dedicated
+# test_ip_ratelimit.py file flips it back on with a tiny cap to exercise the
+# guard end-to-end.
+os.environ["ARENA_IP_RATE_LIMIT_ENABLED"] = "0"
 # Runtime default is now "off" (so a fresh deployment doesn't hide small
 # datasets); the eligibility tests want strict-mode behavior so they pin it.
 os.environ["ARENA_LEADERBOARD_GATE"] = "on"
@@ -28,7 +36,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select       # noqa: E402
 
 from app.db import engine, init_db          # noqa: E402
-from app.main import app, _seed_default_prompts   # noqa: E402
+from app.main import app, _seed_default_competitions, _seed_default_prompts   # noqa: E402
 from app.models import (                    # noqa: E402
     Problem, User, UserRole, UserStatus,
 )
@@ -78,6 +86,9 @@ def _seed():
                        org="Acme Labs", role=UserRole.user,
                        status=UserStatus.approved, api_key=USER_KEY))
         s.commit()
+    # Seed AFTER problems exist so the default competition's membership rows
+    # cover the test problem set.
+    _seed_default_competitions()
     yield
 
 

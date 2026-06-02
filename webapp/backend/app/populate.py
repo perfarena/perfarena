@@ -139,6 +139,7 @@ def _make_batch(
     avg_rt = []; best_rt = []; avg_mem = []; best_mem = []
     avg_rtp = []; avg_memp = []
     t_h_avg = []; t_h_exp = []; m_h_avg = []; m_h_exp = []
+    cost_sum = 0.0; gen_ms_sum = 0      # roll up cost + generation wall-clock
     baselines = {
         b.problem_id: b for b in session.exec(
             select(Baseline).where(
@@ -148,12 +149,15 @@ def _make_batch(
         ).all()
     }
     for p in problems:
+        gen_ms = random.randint(2_000, 30_000)
+        cost = round(random.uniform(0.001, 0.05), 4)
+        gen_ms_sum += gen_ms; cost_sum += cost
         attempt = Attempt(
             submission_id=sub.id, problem_id=p.id,
             code=_fake_attempt_code(p.title_slug, language),
             inference_trace=_fake_trace(p.title_slug),
-            wall_clock_ms=random.randint(2_000, 30_000),
-            cost_usd=round(random.uniform(0.001, 0.05), 4),
+            wall_clock_ms=gen_ms,
+            cost_usd=cost,
         )
         session.add(attempt); session.commit(); session.refresh(attempt)
 
@@ -201,6 +205,8 @@ def _make_batch(
     sub.time_human_expert = _mean(t_h_exp)
     sub.mem_human_avg = _mean(m_h_avg)
     sub.mem_human_expert = _mean(m_h_exp)
+    sub.total_cost_usd = round(cost_sum, 6) if problems else None
+    sub.total_generation_ms = gen_ms_sum if problems else None
     session.add(sub); session.commit()
     return sub
 
@@ -223,7 +229,7 @@ def main() -> None:
 
         n_baselines = session.exec(select(Baseline)).first()
         if n_baselines is None:
-            print("seeding human baselines …")
+            print("seeding LeetCode-population baselines …")
             inserted = seed_baselines(session, list(LANG_RUNTIME_MULT.keys()))
             print(f"  inserted {inserted} baseline rows")
 

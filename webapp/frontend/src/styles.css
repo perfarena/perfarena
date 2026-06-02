@@ -62,10 +62,12 @@ header.top {
   position: sticky; top: 0; z-index: 10;
 }
 header.top .brand {
+  display: inline-flex; align-items: center; gap: 8px;
   font-weight: 700; letter-spacing: 0.5px;
   color: var(--fg); text-decoration: none;
 }
 header.top .brand:hover { color: var(--accent); text-decoration: none; }
+header.top .brand img { height: 28px; width: 28px; display: block; }
 header.top nav a {
   margin-left: 16px;
   color: var(--fg-dim);
@@ -300,3 +302,29 @@ button.theme-toggle:hover { background: var(--panel-2); color: var(--accent); }
 }
 .markdown th { background: var(--panel-2); color: var(--fg-dim); font-weight: 600; }
 .markdown img { max-width: 100%; border-radius: 6px; }
+
+/* ---- Blog cards (used on /blog) -------------------------------------- */
+.blog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.blog-card-link {
+  text-decoration: none; color: inherit; display: block;
+}
+.blog-card-link:hover .blog-card { border-color: var(--accent); }
+.blog-card {
+  padding: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: border-color 120ms ease;
+}
+.blog-cover {
+  width: 100%; aspect-ratio: 16 / 9;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.blog-cover img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.blog-body { font-size: 1rem; }

@@ -17,7 +17,7 @@ from datetime import date, datetime
 
 from sqlmodel import Session, select
 
-from .models import Snapshot, Submission, SubmissionStatus, User
+from .models import PromptTemplate, Snapshot, Submission, SubmissionStatus, User
 
 
 def _label_for(d: date | None = None) -> str:
@@ -49,6 +49,11 @@ def build_report(session: Session) -> dict:
     top_models = sorted(
         subs, key=lambda s: (-(s.pass_at_1 or 0), -(s.avg_runtime_percentile or 0))
     )[:10]
+    # Prompt-template name lookup so the snapshot records which registered
+    # prompt produced each top-row. New snapshots get the fields; existing
+    # ones (pre-this-change) just don't have them — the frontend's
+    # PromptName component falls back to "ad-hoc" for that case.
+    prompt_name_by_id = {pt.id: pt.name for pt in session.exec(select(PromptTemplate)).all()}
 
     top_models_out = [
         {
@@ -63,6 +68,8 @@ def build_report(session: Session) -> dict:
             "total_solved": s.total_solved,
             "total_problems": s.total_problems,
             "submission_id": s.id,
+            "prompt_id": s.prompt_id,
+            "prompt_name": prompt_name_by_id.get(s.prompt_id) if s.prompt_id else None,
         }
         for i, s in enumerate(top_models)
     ]

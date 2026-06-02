@@ -53,6 +53,53 @@ _ADDITIVE_COLUMNS = [
     ("submission", "pass_at_full", "FLOAT"),
     ("baseline", "fetched_at", "DATETIME"),
     ("submission", "prompt_id", "INTEGER"),
+    # Iterative-refinement / experiment-knob columns.
+    ("submission", "n_rounds", "INTEGER"),
+    ("submission", "include_hints", "INTEGER"),       # 0/1 — SQLite has no bool
+    ("submission", "optimization_target", "VARCHAR"), # 'latency'|'memory'|NULL
+    ("attempt", "round_index", "INTEGER"),
+    ("attempt", "previous_attempt_id", "INTEGER"),    # nullable FK back to attempt.id
+    # LeetCode's starter-code snippets keyed by langSlug — populated by
+    # app.fetch_code_snippets. Stored as JSON: {"python3": "class Solution:\n…", …}
+    ("problem", "code_snippets", "JSON"),
+    # Cost + token accounting.
+    #   attempt.cost_usd        — $ cost of the one LLM call that produced this
+    #                             sample (0 for local/Ollama). Defined on the
+    #                             model already, but it was never in this list,
+    #                             so older DBs lack the column — add it here.
+    #   attempt.response_tokens — token count of the CODE-only response.
+    #   submission.total_cost_usd / total_response_tokens — sums across all the
+    #                             submission's attempts (covers k samples × N
+    #                             problems × refinement rounds).
+    ("attempt", "cost_usd", "FLOAT"),
+    ("attempt", "response_tokens", "INTEGER"),
+    ("submission", "total_cost_usd", "FLOAT"),
+    ("submission", "total_response_tokens", "INTEGER"),
+    # Generation wall-clock accounting.
+    #   attempt.wall_clock_ms        — generation runtime of THIS solution (ms).
+    #                                  On the model since early on, but absent
+    #                                  from this list, so older DBs may lack it.
+    #   submission.total_generation_ms — sum of wall_clock_ms across attempts.
+    ("attempt", "wall_clock_ms", "INTEGER"),
+    ("submission", "total_generation_ms", "INTEGER"),
+    # Verbatim LeetCode /check/ payload per run — additive so older rows
+    # keep the field null until the next dispatch fills it in.
+    ("run", "leetcode_full_response", "JSON"),
+    # Client-detected malformed-response signal. When set, the attempt is
+    # recorded but dispatch synthesizes a failure Run (no LeetCode call) so
+    # the raw model response is preserved without burning a submission quota.
+    ("attempt", "prefailed_reason", "VARCHAR"),
+    # Rich admin-curated metadata on registered models. Auto-stubbed rows
+    # start with these all null and admins fill them in via /models edit.
+    ("registeredmodel", "description", "TEXT"),
+    ("registeredmodel", "model_type", "VARCHAR"),
+    ("registeredmodel", "family", "VARCHAR"),
+    ("registeredmodel", "provenance", "TEXT"),
+    # Energy accounting (Joules). Reported by the submit client when a power
+    # probe is available; LeetCode never reports it, so the UI hides the
+    # column / stat when every row in scope is null.
+    ("attempt", "generation_energy_j", "FLOAT"),
+    ("submission", "total_generation_energy_j", "FLOAT"),
 ]
 
 
@@ -74,6 +121,18 @@ def _apply_additive_migrations() -> None:
             ))
         except Exception:
             pass
+        # Backfill the experiment-knob columns: legacy submissions were all
+        # single-round, no hints, no specific optimization target. Legacy
+        # attempts were all round 0 with no predecessor in the chain.
+        for stmt in (
+            "UPDATE submission SET n_rounds = 1 WHERE n_rounds IS NULL",
+            "UPDATE submission SET include_hints = 0 WHERE include_hints IS NULL",
+            "UPDATE attempt SET round_index = 0 WHERE round_index IS NULL",
+        ):
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass
 
 
 def init_db() -> None:

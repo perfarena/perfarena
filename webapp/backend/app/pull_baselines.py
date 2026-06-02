@@ -1,4 +1,4 @@
-"""Pull LeetCode submissionDistribution histograms → human baselines (JSON).
+"""Pull LeetCode submissionDistribution histograms → LeetCode-population baselines (JSON).
 
 For each (problem, language) pair in the 99-sample × 14 languages grid, anchor
 the GraphQL `submissionDetails` query with a submission_id and derive:

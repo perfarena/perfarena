@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, MyByLanguagePayload, MyLangProblem } from "../lib/api";
 import LevelBadge from "../components/LevelBadge";
+import PromptName from "../components/PromptName";
 import { formatMemory, formatRuntime } from "../lib/format";
 
 /** My work, separated by language. Across ALL my (non-deleted) submissions
@@ -137,7 +138,9 @@ export default function MyByLanguage() {
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
-              <th>When</th><th>Model</th><th>Status</th><th>k</th>
+              <th>When</th><th>Model</th>
+              <th title="Registered prompt template used; 'ad-hoc' for inline prompts.">Prompt</th>
+              <th>Status</th><th>k</th>
               <th>pass@1</th><th>solved</th><th>attempts</th><th></th>
             </tr></thead>
             <tbody>
@@ -145,6 +148,7 @@ export default function MyByLanguage() {
                 <tr key={s.id}>
                   <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
                   <td><b>{s.model_name}</b> <span className="muted">{s.model_version}</span></td>
+                  <td><PromptName id={s.prompt_id} name={s.prompt_name} /></td>
                   <td><span className="badge badge-status">{s.status}</span></td>
                   <td className="metric">{s.n_samples_per_problem}</td>
                   <td className="metric">{(s.pass_at_1 ?? 0).toFixed(2)}</td>

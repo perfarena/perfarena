@@ -12,12 +12,20 @@ import LanguageDetail from "./pages/LanguageDetail";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
+import AdminExport from "./pages/AdminExport";
 import ApiKey from "./pages/ApiKey";
 import MyByLanguage from "./pages/MyByLanguage";
 import Compare from "./pages/Compare";
+// The cross-language scatter is the "Correctness vs Performance" tab inside
+// Compare (Compare imports it internally); the /analysis route below
+// redirects there for deep links pointing at the old URL. Compare itself
+// also accepts the legacy ?tab=analysis query as an alias.
 import Catalog from "./pages/Catalog";
+import Competitions from "./pages/Competitions";
+import CompetitionDetail from "./pages/CompetitionDetail";
 import Prompts from "./pages/Prompts";
-import Submit from "./pages/Submit";
+import Blog from "./pages/Blog";
+import BlogPost from "./pages/BlogPost";
 import SubmitProgress from "./pages/SubmitProgress";
 import AttemptResults from "./pages/AttemptResults";
 import Me from "./pages/Me";
@@ -37,8 +45,14 @@ export default function App() {
         <Route index element={<Home />} />
         <Route path="rankings" element={<Rankings />} />
         <Route path="compare" element={<Compare />} />
-        <Route path="catalog" element={<Catalog />} />
+        <Route path="analysis" element={<Navigate to="/compare?tab=perf-vs-correctness" replace />} />
+        {/* "Catalog" was renamed to "Models"; keep the old path as a redirect. */}
+        <Route path="models" element={<Catalog />} />
+        <Route path="catalog" element={<Navigate to="/models" replace />} />
         <Route path="prompts" element={<Prompts />} />
+        <Route path="prompts/:id" element={<Prompts />} />
+        <Route path="competitions" element={<Competitions />} />
+        <Route path="competitions/:slug" element={<CompetitionDetail />} />
         <Route path="problems" element={<Problems />} />
         <Route path="problems/:slug" element={<ProblemDetail />} />
         <Route path="submissions" element={<Submissions />} />
@@ -48,16 +62,20 @@ export default function App() {
         <Route path="languages/:name" element={<LanguageDetail />} />
         <Route path="snapshots" element={<Snapshots />} />
         <Route path="snapshots/:id" element={<SnapshotDetail />} />
+        <Route path="blog" element={<Blog />} />
+        <Route path="blog/:slug" element={<BlogPost />} />
         <Route path="about" element={<About />} />
         <Route path="register" element={<Register />} />
         <Route path="login" element={<Login />} />
-        <Route path="submit" element={<Gated><Submit /></Gated>} />
+        {/* /submit merged into /submissions (table on top, submit flow below). */}
+        <Route path="submit" element={<Navigate to="/submissions" replace />} />
         <Route path="submit/:id" element={<Gated><SubmitProgress /></Gated>} />
         <Route path="submit/:id/attempts" element={<Gated><AttemptResults /></Gated>} />
         <Route path="me" element={<Gated><Me /></Gated>} />
         <Route path="me/api-key" element={<Gated><ApiKey /></Gated>} />
         <Route path="me/by-language" element={<Gated><MyByLanguage /></Gated>} />
         <Route path="admin" element={<Gated><Admin /></Gated>} />
+        <Route path="admin/export" element={<Gated><AdminExport /></Gated>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

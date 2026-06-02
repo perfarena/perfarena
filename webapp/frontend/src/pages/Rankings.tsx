@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, RankingEntry } from "../lib/api";
+import { api, CompetitionPublic, RankingEntry } from "../lib/api";
 import {
   coefficientClass, formatCoefficient, formatMemory,
   formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import Th from "../components/Th";
+import PromptName from "../components/PromptName";
 import LanguageLink from "../components/LanguageLink";
 
 const LANGS = ["python3", "java", "cpp", "javascript", "typescript", "csharp", "c",
@@ -20,12 +21,25 @@ const DEFAULT_RANGES = {
 // Columns that sort lexicographically; everything else is numeric.
 const STRING_COLS = new Set(["model_name", "submitter", "language"]);
 
+// Default competition shown on the leaderboard until the user picks another.
+// The seed competition contains every problem, so this is equivalent to
+// "no filter" on a fresh install — but switching to e.g. HumanEval later
+// scopes the leaderboard to that competition's problem set.
+const DEFAULT_COMPETITION = "leetcode-99-perf";
+
 export default function Rankings() {
   const [rows, setRows] = useState<RankingEntry[]>([]);
   const [language, setLanguage] = useState<string>("");
   const [level, setLevel] = useState<string>("");
   const [k, setK] = useState<string>("");                    // "" = any
+  const [competitionSlug, setCompetitionSlug] = useState<string>(DEFAULT_COMPETITION);
+  const [competitions, setCompetitions] = useState<CompetitionPublic[]>([]);
   const [err, setErr] = useState<string>("");
+
+  // Load competitions once for the selector.
+  useEffect(() => {
+    api.competitions().then(setCompetitions).catch(() => setCompetitions([]));
+  }, []);
 
   // Client-side view sort, toggled by clicking column headers.
   const [sortKey, setSortKey] = useState<string>("pass_at_1");
@@ -40,11 +54,16 @@ export default function Rankings() {
 
   useEffect(() => {
     const kNum = k === "" ? undefined : Number(k);
-    api.rankings({ language, level, k: kNum })
+    api.rankings({
+      language, level, k: kNum,
+      competition: competitionSlug || undefined,
+    })
       .then(setRows).catch((e: unknown) => setErr(String(e)));
-  }, [language, level, k]);
+  }, [language, level, k, competitionSlug]);
 
-  useEffect(() => { setPage(1); }, [language, level, k, q, ranges, pageSize, sortKey, sortDir]);
+  useEffect(() => { setPage(1); }, [language, level, k, competitionSlug, q, ranges, pageSize, sortKey, sortDir]);
+
+  const selectedCompetition = competitions.find(c => c.slug === competitionSlug) ?? null;
 
   function onSort(key: string) {
     if (key === sortKey) {
@@ -115,7 +134,41 @@ export default function Rankings() {
     <div>
       <div className="hero">
         <h1>Leaderboard</h1>
-        <p>Pass@1, runtime percentile, and memory percentile per model × language × difficulty.</p>
+        <p>
+          Pass@1, runtime percentile, and memory percentile per
+          model × language × difficulty —
+          {" "}<b>scoped to the competition you pick below.</b> Use the
+          {" "}<Link to="/competitions">Competitions</Link> page for the full
+          list of contests and to add new ones.
+        </p>
+        {selectedCompetition && (
+          <div className="card" style={{
+            marginTop: 12,
+            background: "var(--accent-soft)",
+            borderColor: "var(--accent)",
+          }}>
+            <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+              <div className="col" style={{ gap: 2 }}>
+                <div style={{ fontWeight: 700 }}>
+                  <Link to={`/competitions/${selectedCompetition.slug}`}>
+                    {selectedCompetition.name}
+                  </Link>
+                  <span className="muted" style={{ fontWeight: 400, marginLeft: 8 }}>
+                    · <code>{selectedCompetition.slug}</code> · {selectedCompetition.kind}
+                  </span>
+                </div>
+                {selectedCompetition.description && (
+                  <div className="muted" style={{ fontSize: "0.88rem" }}>
+                    {selectedCompetition.description}
+                  </div>
+                )}
+              </div>
+              <div className="muted" style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
+                {selectedCompetition.n_problems} problems · {selectedCompetition.n_submissions} submissions · {selectedCompetition.n_models} models
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {!language && (
@@ -145,6 +198,16 @@ export default function Rankings() {
           onChange={e => setQ(e.target.value)}
           style={{ minWidth: 240 }}
         />
+        <select value={competitionSlug}
+                onChange={e => setCompetitionSlug(e.target.value)}
+                title="Scope the leaderboard to one competition's problem set">
+          {/* Empty value = no competition filter (full platform-wide
+              leaderboard). Default lands on the seed LC-99. */}
+          <option value="">All competitions</option>
+          {competitions.map(c => (
+            <option key={c.slug} value={c.slug}>{c.name}</option>
+          ))}
+        </select>
         <select value={language} onChange={e => setLanguage(e.target.value)}>
           <option value="">All languages</option>
           {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
@@ -215,22 +278,23 @@ export default function Rankings() {
                 <Th label="Model" tip="Model name and version. Click the name to open the model's aggregate page." sortKey="model_name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Submitter" tip="Organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific — one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@1" tip="Unbiased pass@1 estimator over k samples — average of c/n per problem. Equivalent to single-shot pass-rate when k=1, and statistically more reliable when k>1. Use this column to compare submissions across different k values." sortKey="pass_at_1" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="pass@k" tip="Probability that at least one of the k sampled solutions per problem is accepted, averaged across problems. The standard code-LLM metric." sortKey="pass_at_k" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="pass@full" tip="Fraction of problems with at least one accepted sample (best-of-k). Always ≥ pass@k. Useful as the maximum achievable rate the submitter unlocks at this sample budget." sortKey="pass_at_full" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="pass@k" tip="Mean acceptance rate across the SUBMITTED attempts: total accepted samples / total submitted samples. Equivalently, the average of per-problem acceptance fractions when k is constant. Denominator is the count of attempts actually submitted, NOT total supported problems — so a partial submission isn't penalised for unattempted problems. Differs from pass@1 (which divides by total supported) and pass@full (best-of-k per problem)." sortKey="pass_at_k" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="pass@full" tip="Fraction of all supported problems with at least one accepted sample (best-of-k per problem). Always ≤ pass@1 ≤ pass@k for partial submissions with high accept rate. Useful as the maximum achievable rate the submitter unlocks at this sample budget." sortKey="pass_at_full" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Solved" tip="Number of problems with at least one accepted sample / total supported problems. Sorts by problems solved." sortKey="total_solved" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Attempts" tip="Total number of attempts submitted (one Attempt = one code + trace POST). Equals k × total problems for a complete submission." sortKey="n_attempts" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Avg runtime" tip="Each problem is submitted 5× to smooth LeetCode's noise. Per problem we take the MEAN of its accepted runs; this column is the mean of those per-problem means across all accepted problems." sortKey="avg_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Best runtime" tip="Per problem we take the FASTEST of its 5 runs; this column is the mean of those per-problem bests across all accepted problems." sortKey="best_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Avg memory" tip="Mean of per-problem mean memory (5 runs each) across all accepted problems." sortKey="avg_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Best memory" tip="Mean of per-problem minimum memory (5 runs each) across all accepted problems." sortKey="best_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Runtime %ile" tip="Mean of the per-problem LeetCode runtime percentile (the model's runtime vs. all OTHER submissions on the same problem in the same language), averaged across accepted attempts. Higher = faster than more humans." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Memory %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Higher = leaner than more humans." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="t vs avg" tip="Speedup against the AVERAGE human submission. Computed per accepted attempt as human_avg_runtime_ms / model_runtime_ms, then averaged. 1.0× = parity; 2.0× = twice as fast as the average human." sortKey="time_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="t vs exp" tip="Speedup against the EXPERT human cohort (top decile-ish). human_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top human performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE human submission: human_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the average human." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="m vs exp" tip="Memory ratio vs. the EXPERT human cohort. >1.0× = the model is leaner than top human performers." sortKey="mem_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Runtime %ile" tip="Mean of the per-problem LeetCode runtime percentile, averaged across accepted attempts. Higher = LC ranked the run as faster than more of the LC population AT THE TIME. The per-run percentile is noisy (~4 pp spread within a single attempt's 5 runs — see docs/leetcode-percentile-semantics.md); the ~500-sample mean shown here smooths most of that out." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Memory %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Same noise caveat as Runtime %ile, but memory %ile tends to be much less noisy than runtime %ile in practice." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="t vs avg" tip="Speedup against the AVERAGE LeetCode submission. Computed per accepted attempt as leetcode_avg_runtime_ms / model_runtime_ms, then averaged. 1.0× = parity; 2.0× = twice as fast as the LeetCode average. (The LeetCode population mixes human and AI-assisted submissions — LeetCode doesn't separate them.)" sortKey="time_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="t vs exp" tip="Speedup against the EXPERT cohort on LeetCode (~top decile of the population distribution). leetcode_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top LeetCode performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE LeetCode submission: leetcode_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the LeetCode average." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="m vs exp" tip="Memory ratio vs. the EXPERT LeetCode cohort. >1.0× = the model is leaner than top LeetCode performers." sortKey="mem_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <th></th>
               </tr></thead>
               <tbody>
@@ -245,6 +309,7 @@ export default function Rankings() {
                     </td>
                     <td><Link to={`/submitters/${r.submitter_slug}`}>{r.submitter}</Link></td>
                     <td><LanguageLink name={r.language} /></td>
+                    <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
                     <td className="metric">{r.n_samples_per_problem}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_1)}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_k)}</td>

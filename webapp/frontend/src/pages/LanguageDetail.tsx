@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, LanguageDetailPayload } from "../lib/api";
 import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import PromptName from "../components/PromptName";
 
 export default function LanguageDetail() {
   const { name = "" } = useParams();
@@ -90,6 +91,7 @@ export default function LanguageDetail() {
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th>
+                <th title="Registered prompt template used. Click to compare prompts.">Prompt</th>
                 <th>pass@1</th><th>Avg runtime</th><th>Avg memory</th>
                 <th>Runtime %ile</th><th>Memory %ile</th><th></th>
               </tr></thead>
@@ -104,6 +106,7 @@ export default function LanguageDetail() {
                       <span className="muted"> {m.model_version}</span>
                     </td>
                     <td><Link to={`/submitters/${m.submitter_slug}`}>{m.submitter}</Link></td>
+                    <td><PromptName id={m.prompt_id} name={m.prompt_name} /></td>
                     <td className="metric">{formatPassAt1(m.pass_at_1)}</td>
                     <td className="metric">{formatRuntime(m.avg_runtime_ms)}</td>
                     <td className="metric">{formatMemory(m.avg_memory_mb)}</td>

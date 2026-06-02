@@ -1,13 +1,21 @@
-import { Fragment, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { api, BaselineSummary, getApiKey, MePayload, RunPublic, SubmissionDetail, SubmissionPublic } from "../lib/api";
-import { ErrorPanel, LogEntryPanel, ProvenancePanel, hasErrorLog, sigBadge } from "../components/AuditPanels";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, AttemptResultPayload, BaselineSummary, getApiKey, MePayload, SubmissionDetail, SubmissionPublic } from "../lib/api";
 import {
-  formatCoefficient, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
+  formatCoefficient, formatDuration, formatEnergy, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
+import AttemptsTable from "../components/AttemptsTable";
 
-function BaselineSourceChip({ summary }: { summary?: BaselineSummary }) {
+function BaselineSourceChip({
+  summary, isAdmin, onRefreshed,
+}: {
+  summary?: BaselineSummary;
+  isAdmin: boolean;
+  onRefreshed: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
   if (!summary || summary.n_used === 0) return null;
   const real = summary.by_source["leetcode-distribution"] ?? 0;
   const syn  = summary.by_source["synthetic"] ?? 0;
@@ -16,6 +24,17 @@ function BaselineSourceChip({ summary }: { summary?: BaselineSummary }) {
   const fresh = summary.newest_fetched_at
     ? new Date(summary.newest_fetched_at).toLocaleString()
     : null;
+
+  async function refresh() {
+    setBusy(true); setNote("");
+    try {
+      const r = await api.refreshBaselines();
+      setNote(`Backfilled: ${r.real} real · ${r.synthetic_placeholders} synthetic · ${r.already_real} already real.`);
+      onRefreshed();   // reload the submission so the chip reflects new sources
+    } catch (e: unknown) { setNote(String(e)); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className="card" style={{
       padding: 10,
@@ -33,9 +52,18 @@ function BaselineSourceChip({ summary }: { summary?: BaselineSummary }) {
       {fresh && <> · newest fetched {fresh}</>}
       {!allReal && (
         <div className="muted" style={{ marginTop: 4 }}>
-          Coefficients that include synthetic baselines are estimates — run
-          {" "}<code>POST /api/admin/baselines/refresh</code> or wait for the
-          {" "}auto-refresh trigger to replace them with real LeetCode data.
+          Coefficients that include synthetic baselines are estimates. New
+          submissions auto-seed a baseline for their (language, problem) pair;
+          the auto-refresher upgrades placeholders to real LeetCode data when
+          an accepted submission + credentials are available.
+          {isAdmin && (
+            <div className="row" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
+              <button className="secondary" disabled={busy} onClick={refresh}>
+                {busy ? "Refreshing…" : "Refresh baselines now"}
+              </button>
+              {note && <span className="muted">{note}</span>}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -70,78 +98,26 @@ function LeaderboardBanner({ s }: { s: SubmissionPublic }) {
   );
 }
 
-type RowPanel = null | "error" | "provenance" | "log";
-
-function RunPublicRow({ run, trace }: { run: RunPublic; trace?: import("../lib/api").AttemptTrace }) {
-  const [open, setOpen] = useState<RowPanel>(null);
-  const errLog = run.error_log;
-  const hasErr = hasErrorLog(errLog);
-  const hasTrace = !!trace && (!!trace.trace || !!trace.inference_trace);
-  const pv = trace?.provenance;
-  const hasChain = !!pv && pv.log_seq != null;
-
-  function toggle(p: RowPanel) { setOpen(o => (o === p ? null : p)); }
-
-  return (
-    <Fragment>
-      <tr>
-        <td><code>{run.problem_slug}</code></td>
-        <td><span className={`badge ${run.status_msg === "Accepted" ? "badge-easy" : "badge-hard"}`}>{run.status_msg}</span></td>
-        <td className="metric">{formatRuntime(run.runtime_ms)}</td>
-        <td className="metric">{formatMemory(run.memory_mb)}</td>
-        <td className="metric">{formatPercentile(run.runtime_percentile)}</td>
-        <td className="metric">{formatPercentile(run.memory_percentile)}</td>
-        <td className="metric">{run.total_correct ?? "?"} / {run.total_testcases ?? "?"}</td>
-        <td>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {hasErr && (
-              <button className="secondary"
-                      style={open === "error" ? {} : { borderColor: "var(--bad)", color: "var(--bad)" }}
-                      onClick={() => toggle("error")}>
-                {open === "error" ? "Hide error" : "Error log"}
-              </button>
-            )}
-            {hasTrace && (
-              <button className="secondary"
-                      onClick={() => toggle("provenance")}>
-                {open === "provenance" ? "Hide provenance" : "Provenance"}
-              </button>
-            )}
-            {hasChain && (
-              <button className="secondary"
-                      onClick={() => toggle("log")}>
-                {open === "log" ? "Hide log entry" : `Log entry #${pv?.log_seq}`}
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
-      {open !== null && (
-        <tr>
-          <td colSpan={8} style={{
-            background: open === "error" ? "rgba(255,80,80,0.06)" : "rgba(127,127,127,0.06)",
-          }}>
-            {open === "error" && hasErr && <ErrorPanel log={errLog!} />}
-            {open === "provenance" && trace && <ProvenancePanel t={trace} />}
-            {open === "log" && pv && <LogEntryPanel pv={pv} />}
-          </td>
-        </tr>
-      )}
-    </Fragment>
-  );
-}
-
-
 export default function SubmissionDetailPage() {
   const { id = "" } = useParams();
   const [d, setD] = useState<SubmissionDetail | null>(null);
+  const [attempts, setAttempts] = useState<AttemptResultPayload[] | null>(null);
   const [me, setMe] = useState<MePayload | null>(null);
   const [err, setErr] = useState("");
   const nav = useNavigate();
 
-  useEffect(() => {
+  function loadDetail() {
     api.submissionDetail(id).then(setD).catch((e: unknown) => setErr(String(e)));
+  }
+
+  useEffect(() => {
+    loadDetail();
+    // Per-attempt detail (with the full N-run arrays) drives the shared
+    // AttemptsTable + RunsChart — same component the gated /submit/:id/attempts
+    // page uses. The endpoint is public, so it works on this public page too.
+    api.submissionAttempts(id).then(setAttempts).catch(() => setAttempts([]));
     if (getApiKey()) api.me().then(setMe).catch(() => setMe(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   async function onDelete() {
@@ -169,7 +145,10 @@ export default function SubmissionDetailPage() {
             <span className="badge badge-status" style={{ marginLeft: 8 }}>{s.status}</span>
           </div>
         </div>
-        {me && (me.role === "admin" || me.display_name === d.submitter.display_name) && (
+        {/* Delete is now admin-only: the platform is curated, so mutating the
+            submission set is reserved for the team. The owner-can-delete path
+            was retired alongside self-submission. */}
+        {me?.role === "admin" && (
           <button className="secondary" onClick={onDelete}
                   style={{ borderColor: "var(--bad)", color: "var(--bad)" }}>
             Delete submission
@@ -181,11 +160,25 @@ export default function SubmissionDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label={`k (samples)`} value={String(s.n_samples_per_problem)} />
-        <Stat label="pass@1" value={formatPassAt1(s.pass_at_1)} />
-        <Stat label="pass@k" value={formatPassAt1(s.pass_at_k)} />
-        <Stat label="pass@full" value={formatPassAt1(s.pass_at_full)} />
+        <Stat label="pass@1" tip="Chen unbiased estimator at k=1, averaged over ALL supported problems (unattempted problems contribute 0). Single-shot accuracy across the full problem set." value={formatPassAt1(s.pass_at_1)} />
+        <Stat label="pass@k" tip="Mean acceptance rate across submitted attempts: total accepted / total submitted. Only divides by attempts that were actually shipped — partial submissions aren't penalised for unattempted problems." value={formatPassAt1(s.pass_at_k)} />
+        <Stat label="pass@full" tip="Best-of-k per problem, averaged over all supported problems. Fraction of the full set the submitter solved AT LEAST ONCE across their k samples." value={formatPassAt1(s.pass_at_full)} />
         <Stat label="solved" value={`${s.total_solved} / ${s.total_problems}`} />
         <Stat label="attempts" value={String(s.n_attempts)} />
+        <Stat label="total cost"
+              tip="Sum of the $ cost of every LLM call in this submission (k samples × problems × rounds). 0 for Ollama / local models; blank if not reported."
+              value={s.total_cost_usd == null ? "–" : `$${s.total_cost_usd.toFixed(4)}`} />
+        <Stat label="code tokens"
+              tip="Sum of code-only response tokens across all attempts (excludes reasoning). Best-effort estimate from the submitting client."
+              value={s.total_response_tokens == null ? "–" : s.total_response_tokens.toLocaleString()} />
+        <Stat label="total gen time"
+              tip="Sum of the generation wall-clock of every solution in this submission (k samples × problems × rounds). Blank if not reported."
+              value={formatDuration(s.total_generation_ms)} />
+        {s.total_generation_energy_j != null && (
+          <Stat label="total gen energy"
+                tip="Sum of generation energy across all attempts (Joules). Reported only when the submit client has a power probe; omitted when no data."
+                value={formatEnergy(s.total_generation_energy_j)} />
+        )}
         <Stat label="avg runtime" value={formatRuntime(s.avg_runtime_ms)} />
         <Stat label="best runtime" value={formatRuntime(s.best_runtime_ms)} />
         <Stat label="avg memory" value={formatMemory(s.avg_memory_mb)} />
@@ -201,17 +194,20 @@ export default function SubmissionDetailPage() {
         across accepted problems.
       </p>
 
-      <h2 style={{ marginBottom: 0 }}>vs. human baselines</h2>
+      <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
       <p className="muted" style={{ marginTop: 4 }}>
-        Ratio of human-baseline metric to model metric. <b>&gt; 1.0×</b> means the model
-        outperforms the cohort; <b>&lt; 1.0×</b> means it's worse.
+        Ratio of the LeetCode population baseline to the model metric. <b>&gt; 1.0×</b> means
+        the model outperforms the cohort; <b>&lt; 1.0×</b> means it's worse. The cohort
+        is everyone who's submitted on LeetCode for that problem in the same language —
+        humans <em>and</em> AI-assisted submissions, since LeetCode doesn't separate them.
       </p>
-      <BaselineSourceChip summary={d.baselines} />
+      <BaselineSourceChip summary={d.baselines} isAdmin={me?.role === "admin"}
+                          onRefreshed={loadDetail} />
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-        <Stat label="time vs human avg" value={formatCoefficient(s.time_human_avg)} />
-        <Stat label="time vs human expert" value={formatCoefficient(s.time_human_expert)} />
-        <Stat label="memory vs human avg" value={formatCoefficient(s.mem_human_avg)} />
-        <Stat label="memory vs human expert" value={formatCoefficient(s.mem_human_expert)} />
+        <Stat label="time vs LeetCode avg" value={formatCoefficient(s.time_human_avg)} />
+        <Stat label="time vs LeetCode expert" value={formatCoefficient(s.time_human_expert)} />
+        <Stat label="memory vs LeetCode avg" value={formatCoefficient(s.mem_human_avg)} />
+        <Stat label="memory vs LeetCode expert" value={formatCoefficient(s.mem_human_expert)} />
       </div>
 
       <div className="card">
@@ -220,28 +216,34 @@ export default function SubmissionDetailPage() {
       </div>
 
       <div className="card">
-        <h2>Prompt template</h2>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+          <h2 style={{ margin: 0 }}>Prompt template</h2>
+          {s.prompt_id != null && s.prompt_name ? (
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              from registry:{" "}
+              <Link to={`/prompts/${s.prompt_id}`}><b><code>{s.prompt_name}</code></b></Link>
+            </span>
+          ) : (
+            <span className="muted" style={{ fontSize: "0.85rem" }}>
+              ad-hoc (not from registry)
+            </span>
+          )}
+        </div>
+        <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
+          The exact text snapshot persisted at submission time — if the registry's
+          template was edited later, this stays the version the model saw.
+        </p>
         <pre className="code">{d.prompt_template}</pre>
       </div>
 
-      <div className="card tbl-scroll" style={{ padding: 0 }}>
-        <table className="tbl">
-          <thead><tr>
-            <th>Problem</th><th>Status</th>
-            <th title="LeetCode-reported runtime (ms)">Runtime</th>
-            <th title="LeetCode-reported memory (MB)">Memory</th>
-            <th>Runtime %ile</th><th>Memory %ile</th><th>Tests</th><th></th>
-          </tr></thead>
-          <tbody>
-            {d.runs.map((r, i) => (
-              <RunPublicRow key={i} run={r} trace={d.traces?.[i]} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {attempts === null
+        ? <div className="empty">Loading attempts…</div>
+        : <AttemptsTable rows={attempts} />}
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
-        Per row above: <b>Error log</b> surfaces LeetCode's traceback / failing
+        Each row is one attempt. Click <b>N runs</b> to see the per-run
+        runtime/memory chart across the dispatch repeats and the full run
+        table · <b>Error log</b> surfaces LeetCode's traceback / failing
         testcase when a run failed · <b>Provenance</b> shows the exact prompt,
         the model's full response, and its reasoning trace · <b>Log entry</b>
         is that attempt's append-only transparency-log row (sequence, hashes,
@@ -252,9 +254,9 @@ export default function SubmissionDetailPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, tip }: { label: string; value: string; tip?: string }) {
   return (
-    <div className="card" style={{ minWidth: 140 }}>
+    <div className="card" style={{ minWidth: 140 }} title={tip}>
       <div className="muted" style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }} className="metric">{value}</div>
     </div>
