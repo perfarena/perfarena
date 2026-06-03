@@ -4,7 +4,7 @@
 
 PerfArena lets AI labs (and individuals) submit batches of model-generated solutions for a curated set of LeetCode problems. Each solution is dispatched to **the real LeetCode judge** to capture runtime, memory, and percentile metrics, then ranked by language, problem, difficulty, and prompt strategy. The provenance of every attempt — prompt, raw model response, reasoning trace, model digest, optional Ed25519 signature — is anchored in an append-only hash chain so reviewers can verify what was actually produced.
 
-Built at **NYU Abu Dhabi** by Rui Rua, Karim Ali (SanadLab), and João Paulo Fernandes. Licensed **Apache 2.0**.
+Built at **NYU Abu Dhabi** by Rui Rua, Hailemarian Mersha, Karim Ali (SanadLab), and João Paulo Fernandes. Licensed **Apache 2.0**.
 
 > ⚠ **About LeetCode percentiles** — LC's per-run runtime/memory percentile is observably noisy (~4 pp within-attempt spread; ~50 % rank agreement with raw ms across attempts). PerfArena shows best-of-N with mean alongside instead of a single noisy run. Full empirical analysis: [`docs/leetcode-percentile-semantics.md`](docs/leetcode-percentile-semantics.md).
 
@@ -526,4 +526,4 @@ Open a GitHub issue with the failing command, the response body, and `docker log
 
 Apache 2.0 — see [`LICENSE`](LICENSE). Cite the authors if you use PerfArena in published work:
 
-> Rua, R., Ali, K., and Fernandes, J. P. *PerfArena: A verifiable leaderboard for LLM-generated LeetCode solutions.* NYU Abu Dhabi / SanadLab, 2026.
+> Rua, R., Mersha, H., Ali, K., and Fernandes, J. P. *PerfArena: A verifiable leaderboard for LLM-generated LeetCode solutions.* NYU Abu Dhabi / SanadLab, 2026.
