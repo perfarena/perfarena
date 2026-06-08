@@ -72,7 +72,7 @@ export default function Layout() {
           {" "}<a href="/docs" target="_blank" rel="noreferrer">API docs</a> ·
           {" "}<a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a> ·
           {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
-          {" "}<a href="https://github.com/anthropics/claude-code" target="_blank" rel="noreferrer">source</a>
+          {" "}<a href="https://github.com/sanadlab/perfarena-leetcode" target="_blank" rel="noreferrer">source</a>
         </div>
         {/* Consolidated from the former per-page footers on Home / About. */}
         <div>

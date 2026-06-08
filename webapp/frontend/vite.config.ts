@@ -20,6 +20,21 @@ export default defineConfig({
           { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
         ],
       },
+      // Workbox's default navigation fallback returns index.html for ANY
+      // navigation that misses the precache, which means the SW happily
+      // intercepts /docs, /redoc, /openapi.json, and /api/* and feeds the
+      // SPA shell back to the browser. In dev (no SW) the footer links
+      // work; once the container's SPA is installed they 404 into the
+      // React Router not-found view. Denylist every backend-owned path
+      // so the SW forwards those requests to FastAPI untouched.
+      workbox: {
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/docs/,
+          /^\/redoc/,
+          /^\/openapi\.json$/,
+        ],
+      },
     }),
   ],
   server: {
