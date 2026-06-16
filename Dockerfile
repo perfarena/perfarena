@@ -68,6 +68,7 @@ RUN pip install -r /app/requirements.txt
 
 # Backend source.
 COPY webapp/backend/ /app/
+COPY leetbot.py /leetbot.py
 
 # Reference data (anchors, baselines, discrimination, sampled problems).
 # Path matches the one app/* scripts default to (repo-root / data).

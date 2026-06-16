@@ -86,14 +86,19 @@ class LeetCodeClient:
     host: str
     session: str
     csrf: str
+    cookies: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
+        cookies = dict(self.cookies or {})
+        cookies.setdefault("LEETCODE_SESSION", self.session)
+        cookies.setdefault("csrftoken", self.csrf)
         self.client = httpx.Client(
             base_url=self.host,
-            cookies={"LEETCODE_SESSION": self.session, "csrftoken": self.csrf},
+            cookies=cookies,
             headers={
                 "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    os.getenv("LEETCODE_USER_AGENT")
+                    or "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                     "AppleWebKit/537.36 (KHTML, like Gecko) "
                     "Chrome/124.0 Safari/537.36"
                 ),
@@ -392,22 +397,26 @@ def main() -> int:
     def _build_client() -> tuple[LeetCodeClient | None, str | None]:
         """Build a client from the next available account. Returns
         (client, account_name) or (None, None) if the pool is dry."""
+        def parse_cookie_header(cookie_header: str | None) -> dict[str, str]:
+            jar: dict[str, str] = {}
+            for piece in (cookie_header or "").split(";"):
+                if "=" in piece:
+                    k, _, v = piece.partition("=")
+                    jar[k.strip()] = v.strip()
+            return jar
+
         if pick_account is None:
             # Standalone fallback: read .env directly (legacy single-account).
             session = os.getenv("LEETCODE_SESSION")
             csrf = os.getenv("LEETCODE_CSRF_TOKEN")
             ch = os.getenv("LEETCODE_COOKIE_HEADER")
-            if ch:
-                jar: dict[str, str] = {}
-                for piece in ch.split(";"):
-                    if "=" in piece:
-                        k, _, v = piece.partition("=")
-                        jar[k.strip()] = v.strip()
+            jar = parse_cookie_header(ch)
+            if jar:
                 session = jar.get("LEETCODE_SESSION", session)
                 csrf = jar.get("csrftoken", csrf)
             if not session or not csrf:
                 return None, None
-            c = LeetCodeClient(host=host, session=session, csrf=csrf)
+            c = LeetCodeClient(host=host, session=session, csrf=csrf, cookies=jar)
             c._account_name = ".env"  # type: ignore[attr-defined]
             return c, ".env"
         acc = pick_account()
@@ -419,7 +428,12 @@ def main() -> int:
             print(f"warning: skipping account {acc.name!r}: {e}", file=sys.stderr)
             mark_exhausted(acc.name)
             return _build_client()       # recurse to try the next one
-        c = LeetCodeClient(host=host, session=session, csrf=csrf)
+        c = LeetCodeClient(
+            host=host,
+            session=session,
+            csrf=csrf,
+            cookies=parse_cookie_header(acc.cookie_header),
+        )
         c._account_name = acc.name      # type: ignore[attr-defined]
         return c, acc.name
 

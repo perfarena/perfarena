@@ -40,6 +40,18 @@ from .models import (
 )
 
 LEETBOT = Path(__file__).parent.parent.parent.parent / "leetbot.py"
+BACKEND_ROOT = Path(__file__).parent.parent
+
+
+def _leetbot_env() -> dict[str, str]:
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(BACKEND_ROOT)
+        if not existing
+        else f"{BACKEND_ROOT}{os.pathsep}{existing}"
+    )
+    return env
 
 # Seconds to wait between dispatching attempts for DIFFERENT problems.
 # Empirically, LeetCode's anti-abuse heuristic fires on rapid breadth-first
@@ -138,7 +150,8 @@ def _check_leetcode_auth() -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             [sys.executable, str(LEETBOT), "--whoami"],
-            capture_output=True, text=True, timeout=20, cwd=str(LEETBOT.parent),
+            capture_output=True, text=True, timeout=20, cwd=str(BACKEND_ROOT),
+            env=_leetbot_env(),
         )
     except Exception as e:  # noqa: BLE001
         return False, f"whoami subprocess failed: {e}"
@@ -179,7 +192,8 @@ def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats:
                         "--tle-retries", str(TLE_RETRIES),
                     ],
                     capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-                    cwd=str(LEETBOT.parent),
+                    cwd=str(BACKEND_ROOT),
+                    env=_leetbot_env(),
                 )
             except subprocess.TimeoutExpired:
                 return _failure_runs(repeats, "Dispatch timeout",
