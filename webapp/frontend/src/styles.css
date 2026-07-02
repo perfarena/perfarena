@@ -68,11 +68,23 @@ header.top .brand {
 }
 header.top .brand:hover { color: var(--accent); text-decoration: none; }
 header.top .brand img { height: 28px; width: 28px; display: block; }
-header.top nav a {
+/* Apply the same spacing + colour rules to both link and button children of
+ * the header nav so a <button>-based dropdown trigger sits visually flush
+ * with the NavLink anchors around it. Without this the Catalog button picks
+ * up zero left-margin and overlaps the previous tab; conversely, leaving
+ * <a> rules alone keeps every other tab pixel-for-pixel identical. */
+header.top nav a,
+header.top nav button {
   margin-left: 16px;
   color: var(--fg-dim);
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
-header.top nav a.active { color: var(--fg); }
+header.top nav a.active,
+header.top nav button.active { color: var(--fg); }
 
 main {
   flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto;

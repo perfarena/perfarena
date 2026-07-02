@@ -6,6 +6,9 @@ import {
 } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
 import AttemptsTable from "../components/AttemptsTable";
+import CompareByLevel from "../components/CompareByLevel";
+import CompareByTag from "../components/CompareByTag";
+import { CompareByLevelRow, CompareByTagRow } from "../lib/api";
 
 function BaselineSourceChip({
   summary, isAdmin, onRefreshed,
@@ -174,6 +177,13 @@ export default function SubmissionDetailPage() {
         <Stat label="total gen time"
               tip="Sum of the generation wall-clock of every solution in this submission (k samples × problems × rounds). Blank if not reported."
               value={formatDuration(s.total_generation_ms)} />
+        <Stat label="avg gen time"
+              tip="Mean generation wall-clock per attempt: total_gen_time / n_attempts. The per-attempt cost of producing one solution from this model+prompt+language, in isolation from the number of samples or problems shipped."
+              value={
+                s.total_generation_ms == null || s.n_attempts === 0
+                  ? "–"
+                  : formatDuration(s.total_generation_ms / s.n_attempts)
+              } />
         {s.total_generation_energy_j != null && (
           <Stat label="total gen energy"
                 tip="Sum of generation energy across all attempts (Joules). Reported only when the submit client has a power probe; omitted when no data."
@@ -236,6 +246,30 @@ export default function SubmissionDetailPage() {
         <pre className="code">{d.prompt_template}</pre>
       </div>
 
+      {/* Per-difficulty breakdown for THIS submission. Same grouped-bar
+          chart component the /compare page uses, just with a single
+          model. Hidden when there are no attempts yet (loading) or zero
+          attempts in any of Easy/Medium/Hard (likely a synthetic test
+          submission against a non-standard problem set). */}
+      {attempts && attempts.length > 0 && (() => {
+        const byLevel = buildByLevelFromAttempts(attempts, s.model_name);
+        const hasData = byLevel.some(r => r.n_attempted > 0);
+        return hasData
+          ? <CompareByLevel models={[s.model_name]} rows={byLevel} />
+          : null;
+      })()}
+
+      {/* Per-tag radar charts (pass rate / avg runtime / avg memory)
+          for THIS submission. Same component the /compare page uses,
+          with a single-model legend. Hidden when no attempts carry
+          tags (older problems that never had LeetCode tags scraped). */}
+      {attempts && attempts.length > 0 && (() => {
+        const byTag = buildByTagFromAttempts(attempts, s.model_name);
+        return byTag.length > 0
+          ? <CompareByTag models={[s.model_name]} rows={byTag} />
+          : null;
+      })()}
+
       {attempts === null
         ? <div className="empty">Loading attempts…</div>
         : <AttemptsTable rows={attempts} />}
@@ -261,4 +295,190 @@ function Stat({ label, value, tip }: { label: string; value: string; tip?: strin
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }} className="metric">{value}</div>
     </div>
   );
+}
+
+
+/* Per-(level) breakdown for ONE submission, computed client-side from the
+ * attempts array. Returns three rows (Easy/Medium/Hard) shaped exactly like
+ * CompareByLevelRow so the same chart component the /compare page uses can
+ * render them directly — the only difference is models.length === 1.
+ *
+ * Reduction rules mirror the backend's compare-by-level handler so the
+ * numbers match anything the user might cross-check on /compare:
+ *   * n_attempted / n_accepted: counted PER PROBLEM (a problem with 5
+ *     retries still counts as 1 attempted; accepted if ANY attempt for it
+ *     was Accepted)
+ *   * perf metrics (runtime, memory, percentile): mean over each problem's
+ *     "best" accepted attempt's reported value — failed attempts excluded
+ *     so the average isn't dragged by errors
+ *   * generator-side ($, tokens, time): per-problem totals (sum of every
+ *     attempt's spend for the problem), then mean across problems —
+ *     a model that retried 3 times for one problem pays 3× the per-call
+ *     cost on that problem and the chart should reflect it
+ */
+function buildByLevelFromAttempts(
+  attempts: AttemptResultPayload[], modelName: string,
+): CompareByLevelRow[] {
+  const LEVELS: ("Easy" | "Medium" | "Hard")[] = ["Easy", "Medium", "Hard"];
+  // Group attempts by problem first, then bucket each problem by its level.
+  const byProblem: Map<string, AttemptResultPayload[]> = new Map();
+  const slugLevel: Map<string, string> = new Map();
+  for (const a of attempts) {
+    if (!byProblem.has(a.problem_slug)) byProblem.set(a.problem_slug, []);
+    byProblem.get(a.problem_slug)!.push(a);
+    slugLevel.set(a.problem_slug, a.level);
+  }
+
+  return LEVELS.map(level => {
+    let n_attempted = 0, n_accepted = 0;
+    const avgRT: number[] = [], avgMB: number[] = [];
+    const avgRTP: number[] = [], avgMP: number[] = [];
+    const costPerProblem: number[] = [];
+    const tokensPerProblem: number[] = [];
+    const wallPerProblem: number[] = [];
+
+    for (const [slug, atts] of byProblem) {
+      if (slugLevel.get(slug) !== level) continue;
+      n_attempted++;
+      const accepted = atts.filter(a => a.accepted);
+      if (accepted.length) {
+        n_accepted++;
+        // Pick the "best" accepted attempt — highest accepted-runs share
+        // and, tied on that, fastest avg runtime. Same picker the backend
+        // uses in /api/compare so the numbers line up.
+        const best = accepted.reduce((a, b) => {
+          const sa = a.n_runs ? a.n_accepted_runs / a.n_runs : 0;
+          const sb = b.n_runs ? b.n_accepted_runs / b.n_runs : 0;
+          if (sa !== sb) return sa > sb ? a : b;
+          const ra = a.avg_runtime_ms ?? Infinity;
+          const rb = b.avg_runtime_ms ?? Infinity;
+          return ra < rb ? a : b;
+        });
+        if (best.avg_runtime_ms != null) avgRT.push(best.avg_runtime_ms);
+        if (best.avg_memory_mb != null) avgMB.push(best.avg_memory_mb);
+        if (best.avg_runtime_percentile != null) avgRTP.push(best.avg_runtime_percentile);
+        if (best.avg_memory_percentile != null) avgMP.push(best.avg_memory_percentile);
+      }
+      // Generator-side spend — sum across ALL attempts for this problem
+      // (whether accepted or not; LLM bills per call regardless).
+      const costSum = atts.reduce((s, a) => s + (a.cost_usd ?? 0), 0);
+      const tokSum  = atts.reduce((s, a) => s + (a.response_tokens ?? 0), 0);
+      const wcSum   = atts.reduce((s, a) => s + (a.wall_clock_ms ?? 0), 0);
+      // Only push when at least one attempt reported the metric — a
+      // problem with zero instrumented attempts shouldn't drag the
+      // average toward zero.
+      if (atts.some(a => a.cost_usd != null))        costPerProblem.push(costSum);
+      if (atts.some(a => a.response_tokens != null)) tokensPerProblem.push(tokSum);
+      if (atts.some(a => a.wall_clock_ms != null))   wallPerProblem.push(wcSum);
+    }
+
+    const mean = (xs: number[]): number | null =>
+      xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+
+    return {
+      model_name: modelName,
+      level,
+      n_attempted,
+      n_accepted,
+      pass_rate: n_attempted ? n_accepted / n_attempted : 0,
+      avg_runtime_ms: mean(avgRT),
+      avg_memory_mb: mean(avgMB),
+      avg_runtime_percentile: mean(avgRTP),
+      avg_memory_percentile: mean(avgMP),
+      avg_cost_usd: mean(costPerProblem),
+      avg_response_tokens: mean(tokensPerProblem),
+      avg_wall_clock_ms: mean(wallPerProblem),
+    };
+  });
+}
+
+
+/* Per-(tag) breakdown for ONE submission, computed client-side from
+ * the attempts array. Returns one row per LeetCode tag that ANY problem
+ * in the submission carries — the CompareByTag component then keeps
+ * the top-N by attempt count and drops the long tail so the radar
+ * stays legible.
+ *
+ * Reduction rules mirror the backend's `/api/compare` by_tag handler so
+ * the numbers line up with what /compare?models=<this_model> shows:
+ *   * a problem tagged "Array, Hash Table" contributes to BOTH spokes
+ *   * n_attempted: bumped once per problem per tag, regardless of
+ *     accept-status (so failed problems still show up as a spoke)
+ *   * n_accepted: only when the problem's best attempt was Accepted
+ *   * runtime / memory means: best accepted attempt's value, pushed
+ *     onto each tag the problem carries
+ */
+function buildByTagFromAttempts(
+  attempts: AttemptResultPayload[], modelName: string,
+): CompareByTagRow[] {
+  // First group attempts by problem so we can pick the "best" one per
+  // problem before fanning out across its tags (mirrors the backend).
+  const byProblem: Map<string, AttemptResultPayload[]> = new Map();
+  const slugTags: Map<string, string[]> = new Map();
+  for (const a of attempts) {
+    if (!byProblem.has(a.problem_slug)) byProblem.set(a.problem_slug, []);
+    byProblem.get(a.problem_slug)!.push(a);
+    if (!slugTags.has(a.problem_slug)) {
+      const tags = (a.tags || "")
+        .split(",")
+        .map(t => t.trim())
+        .filter(Boolean);
+      slugTags.set(a.problem_slug, tags);
+    }
+  }
+
+  // Accumulator: tag -> running tallies.
+  type Cell = {
+    n_attempted: number; n_accepted: number;
+    rts: number[]; mems: number[];
+  };
+  const byTag: Map<string, Cell> = new Map();
+  const ensure = (tag: string): Cell => {
+    let c = byTag.get(tag);
+    if (!c) {
+      c = { n_attempted: 0, n_accepted: 0, rts: [], mems: [] };
+      byTag.set(tag, c);
+    }
+    return c;
+  };
+
+  for (const [slug, atts] of byProblem) {
+    const tags = slugTags.get(slug) || [];
+    if (tags.length === 0) continue;          // untagged problem — skipped
+    for (const tag of tags) ensure(tag).n_attempted++;
+
+    const accepted = atts.filter(a => a.accepted);
+    if (accepted.length === 0) continue;
+    // Pick the "best" accepted attempt — same picker as buildByLevel.
+    const best = accepted.reduce((a, b) => {
+      const sa = a.n_runs ? a.n_accepted_runs / a.n_runs : 0;
+      const sb = b.n_runs ? b.n_accepted_runs / b.n_runs : 0;
+      if (sa !== sb) return sa > sb ? a : b;
+      const ra = a.avg_runtime_ms ?? Infinity;
+      const rb = b.avg_runtime_ms ?? Infinity;
+      return ra < rb ? a : b;
+    });
+    for (const tag of tags) {
+      const cell = byTag.get(tag)!;
+      cell.n_accepted++;
+      if (best.avg_runtime_ms != null) cell.rts.push(best.avg_runtime_ms);
+      if (best.avg_memory_mb != null) cell.mems.push(best.avg_memory_mb);
+    }
+  }
+
+  const mean = (xs: number[]): number | null =>
+    xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+
+  // Sorted by tag for stable axis order on the radar.
+  return Array.from(byTag.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([tag, cell]) => ({
+      model_name: modelName,
+      tag,
+      n_attempted: cell.n_attempted,
+      n_accepted: cell.n_accepted,
+      pass_rate: cell.n_attempted ? cell.n_accepted / cell.n_attempted : 0,
+      avg_runtime_ms: mean(cell.rts),
+      avg_memory_mb: mean(cell.mems),
+    }));
 }

@@ -66,11 +66,50 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  problems: (params: { level?: string; tag?: string } = {}) => {
+  problems: (params: { level?: string; tag?: string; competition?: string } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => !!v) as [string, string][],
     ).toString();
     return request<ProblemPublic[]>(`/api/problems${qs ? "?" + qs : ""}`);
+  },
+  // LeetCode credential pool (admin) -----------------------------------
+  leetcodeAccounts: () =>
+    request<LeetCodeAccountsResponse>(`/api/admin/leetcode-accounts`),
+  leetcodeAccountsProbe: () =>
+    request<LeetCodeAccountsResponse>(
+      `/api/admin/leetcode-accounts/probe`, { method: "POST" }),
+  /** Add/refresh a LeetCode account. Accepts either the split shape
+   *  (session_token + csrf_token — preferred, what the SPA form sends)
+   *  or the legacy cookie_header full string. */
+  addLeetcodeAccount: (body: {
+    name: string;
+    session_token?: string;
+    csrf_token?: string;
+    cookie_header?: string;
+  }) =>
+    request<LeetCodeAccountsResponse>(
+      `/api/admin/leetcode-accounts`, {
+        method: "POST", body: JSON.stringify(body),
+      }),
+  removeLeetcodeAccount: (name: string) =>
+    request<null>(
+      `/api/admin/leetcode-accounts/${encodeURIComponent(name)}`,
+      { method: "DELETE" }),
+  clearLeetcodeAccountExhaustion: (name: string) =>
+    request<LeetCodeAccountsResponse>(
+      `/api/admin/leetcode-accounts/${encodeURIComponent(name)}/clear-exhaustion`,
+      { method: "POST" }),
+
+  costEstimatorStats: (params: {
+    prompt_id?: number; language?: string;
+    model_name?: string; competition?: string;
+  } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== "")
+        .map(([k, v]) => [k, String(v)]) as [string, string][],
+    ).toString();
+    return request<CostEstimatorStats>(
+      `/api/cost-estimator-stats${qs ? "?" + qs : ""}`);
   },
   problemDetail: (slug: string) => request<ProblemDetail>(`/api/problems/${slug}`),
   rankings: (params: {
@@ -142,6 +181,16 @@ export const api = {
     }),
   deleteRegisteredModel: (id: number) =>
     request<null>(`/api/admin/registered-models/${id}`, { method: "DELETE" }),
+  updateRegisteredModelPricing: (id: number, body: RegisteredModelPricingPatch) =>
+    request<RegisteredModelPublic>(
+      `/api/admin/registered-models/${id}/pricing`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    ),
+  seedRegisteredModelPricing: (overwrite = false) =>
+    request<RegisteredModelSeedPricingResponse>(
+      `/api/admin/registered-models/seed-pricing${overwrite ? "?overwrite=true" : ""}`,
+      { method: "POST" },
+    ),
 
   prompts: (includeRetired = false) =>
     request<PromptTemplatePublic[]>(
@@ -166,6 +215,17 @@ export const api = {
     if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
     if (params.promptId != null) qs.set("prompt_id", String(params.promptId));
     return request<CompareResponse>(`/api/compare?${qs.toString()}`);
+  },
+  /** Same shape as compare(), but the comparison axis is specific
+   *  submission IDs rather than model names. Labels for each row are
+   *  synthesized server-side as `#<id> <model> · <language>`. */
+  compareSubmissions: (params: {
+    ids: number[]; problems?: string[];
+  }) => {
+    const qs = new URLSearchParams();
+    params.ids.forEach(n => qs.append("ids", String(n)));
+    if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
+    return request<CompareResponse>(`/api/compare/submissions?${qs.toString()}`);
   },
   comparePrompts: (params: {
     modelName: string; modelVersion?: string; language?: string;
@@ -231,11 +291,16 @@ export const api = {
   languageDetail: (name: string) => request<LanguageDetailPayload>(`/api/languages/${encodeURIComponent(name)}`),
   adminPending: () => request<PendingUser[]>(`/api/admin/pending`),
   adminExportTables: () => request<{ tables: string[] }>(`/api/admin/export/tables`),
-  /** Builds the download URL with auth fold-in so the admin can just click. */
-  adminExportUrl: (tables: string[], format: "json" | "csv") => {
+  /** Builds the download URL with auth fold-in so the admin can just click.
+   * `includeCredentials` only has effect when `leetcode_accounts` is in the
+   * tables list — when true, the bundle ships raw session cookies; when
+   * false (default), cookies are redacted to `<head>…<redacted>`. */
+  adminExportUrl: (tables: string[], format: "json" | "csv",
+                   includeCredentials: boolean = false) => {
     const qs = new URLSearchParams();
     if (tables.length) qs.set("tables", tables.join(","));
     qs.set("format", format);
+    if (includeCredentials) qs.set("include_credentials", "true");
     // Many browsers can't attach an Authorization header to a plain <a download>
     // click; the file is fetched via fetch() in the page and then turned into a
     // blob URL there. This helper just returns the API path for that fetch.
@@ -264,12 +329,22 @@ export const api = {
 
 // types ---------------------------------------------------------------------
 
+/** Light pointer used wherever we surface "this thing belongs to a
+ *  competition" without needing the full CompetitionPublic shape. */
+export interface CompetitionRef {
+  slug: string;
+  name: string;
+}
+
 export interface ProblemPublic {
   id: number;
   title_slug: string;
   title: string;
   level: "Easy" | "Medium" | "Hard";
   tags: string[];
+  /** Competitions this problem is a member of. Usually one entry; empty
+   *  for orphan problems with no competition link (legacy data). */
+  competitions: CompetitionRef[];
 }
 
 export interface ProblemTopSolution {
@@ -310,6 +385,14 @@ export interface ProblemDetail extends ProblemPublic {
   best_per_language: ProblemTopSolution[];
   n_attempts_by_language: Record<string, number>;
   n_accepted_by_language: Record<string, number>;
+  /** Anti-contamination metadata — populated when this Problem is a
+   *  rephrased variant of another. Null on canonical problems. The
+   *  model being evaluated never sees these fields; they exist purely
+   *  so researchers can verify the mapping at a glance in the SPA. */
+  original_slug: string | null;
+  original_title: string | null;
+  original_function_name: string | null;
+  function_name: string | null;
 }
 
 export interface RankingEntry {
@@ -339,6 +422,22 @@ export interface RankingEntry {
   submitter_slug: string;
   prompt_id: number | null;
   prompt_name: string | null;
+  /** Competition this submission targeted. null on legacy rows. */
+  competition_slug: string | null;
+  competition_name: string | null;
+  /** Token / $ accounting. Total = sum across all attempts in this submission;
+   *  median = per-attempt median so submissions covering different attempt
+   *  counts compare on the same axis. Null when no attempt reported the
+   *  field (e.g. all-Ollama runs with no cost telemetry, legacy ingests). */
+  total_response_tokens: number | null;
+  median_response_tokens_per_attempt: number | null;
+  total_cost_usd: number | null;
+  median_cost_usd_per_attempt: number | null;
+  /** Generation wall-clock — sum across attempts (ms) + per-attempt
+   *  median. The median is the apples-to-apples "typical seconds per
+   *  solution" regardless of how many problems the submission covers. */
+  total_generation_ms: number | null;
+  median_generation_ms_per_attempt: number | null;
 }
 
 export interface SubmissionPublic {
@@ -381,10 +480,20 @@ export interface SubmissionPublic {
   include_hints: boolean;
   optimization_target: "latency" | "memory" | null;
   /* Cost + token totals across all attempts (k samples × N problems × rounds).
-   * null = not reported (e.g. pre-feature submissions); 0 = genuinely free
-   * (all-Ollama). */
+   * total_cost_usd is the LIVE total — current per-model rates × stored
+   * tokens, falling back to each attempt's snapshot when its tokens are
+   * missing. total_cost_usd_snapshot preserves the at-submit value so
+   * "what we actually paid" stays available. null = not reported (e.g.
+   * pre-feature submissions); 0 = genuinely free (all-Ollama). */
   total_cost_usd: number | null;
+  total_cost_usd_snapshot: number | null;
   total_response_tokens: number | null;
+  /** Per-attempt median spend, computed server-side. Lets the sortable
+   *  tables rank submissions by "typical cost / tokens per problem"
+   *  instead of just the total (which scales with attempt count). */
+  median_response_tokens_per_attempt: number | null;
+  median_cost_usd_per_attempt: number | null;
+  median_generation_ms_per_attempt: number | null;
   /* Total generation wall-clock (ms) summed across all attempts. null =
    * not reported (pre-feature submissions). */
   total_generation_ms: number | null;
@@ -392,6 +501,13 @@ export interface SubmissionPublic {
    * no attempt reported one (LeetCode never reports it) — the UI omits the
    * column / stat in that case. */
   total_generation_energy_j: number | null;
+  /** Competition this submission targeted. null on legacy rows. */
+  competition_slug: string | null;
+  competition_name: string | null;
+  /** Timestamp of the most recent attempt on this submission. null when
+   *  the submission has no attempts yet. The /submissions table sorts
+   *  by this so a still-running sweep stays at the top of the list. */
+  last_attempt_at: string | null;
 }
 
 export interface ModelDetailLanguageStat {
@@ -433,6 +549,22 @@ export interface RegisteredModelPublic {
   provenance: string | null;     // model-card URL, citation, source links (markdown)
   status: string;                // active | retired | unverified
   added_at: string;
+  /** USD per 1M tokens. When BOTH are set, the SPA renders attempt-level
+   *  cost as live-recomputed (current rate × stored tokens) instead of
+   *  the snapshot stored at submit time. Edit inline on /models. */
+  input_price_per_1m_usd: number | null;
+  output_price_per_1m_usd: number | null;
+}
+export interface RegisteredModelPricingPatch {
+  input_price_per_1m_usd: number | null;
+  output_price_per_1m_usd: number | null;
+}
+export interface RegisteredModelSeedPricingResponse {
+  filled: number;
+  skipped_has_rates: number;
+  skipped_no_default: number;
+  overwrite_mode: boolean;
+  total_registered_models: number;
 }
 /** GET /api/registered-models — adds activity stats per row. */
 export interface RegisteredModelOverview extends RegisteredModelPublic {
@@ -454,6 +586,8 @@ export interface RegisteredModelIn {
   family?: string | null;
   provenance?: string | null;
   status?: string;
+  input_price_per_1m_usd?: number | null;
+  output_price_per_1m_usd?: number | null;
 }
 
 export interface CompetitionPublic {
@@ -471,9 +605,24 @@ export interface CompetitionPublic {
 export interface CompetitionDetail extends CompetitionPublic {
   problems: ProblemPublic[];
   languages: string[];
+  /** Per-model leaderboard scoped to THIS competition's problem set.
+   *  All metrics are recomputed across only the attempts on the
+   *  competition's problems — a model's pass@1 here will differ from
+   *  its pass@1 on a different competition that includes a different
+   *  subset of problems. */
   top_models: {
-    model_name: string; model_version: string;
-    best_pass_at_1: number; n_submissions: number;
+    model_name: string;
+    model_version: string;
+    best_pass_at_1: number;
+    pass_at_k: number | null;
+    n_submissions: number;
+    n_solved: number | null;
+    n_attempted: number | null;
+    n_problems: number | null;
+    avg_runtime_ms: number | null;
+    avg_memory_mb: number | null;
+    avg_runtime_percentile: number | null;
+    avg_memory_percentile: number | null;
   }[];
 }
 export interface CompetitionIn {
@@ -592,6 +741,36 @@ export interface CompareWinners {
   overall_wins_by_model: Record<string, number>;
 }
 
+export interface CompareByLevelRow {
+  model_name: string;
+  level: "Easy" | "Medium" | "Hard";
+  n_attempted: number;
+  n_accepted: number;
+  pass_rate: number;                            // 0..1
+  // Judge-side perf (accepted attempts only)
+  avg_runtime_ms: number | null;
+  avg_memory_mb: number | null;
+  avg_runtime_percentile: number | null;
+  avg_memory_percentile: number | null;
+  // Generator-side cost & throughput per problem in scope
+  avg_cost_usd: number | null;
+  avg_response_tokens: number | null;
+  avg_wall_clock_ms: number | null;
+}
+
+/** One (model × problem tag) cell — same metric vocab as CompareByLevelRow
+ *  but the axis is the LeetCode tag (Dynamic Programming, Math, Array, …)
+ *  rather than difficulty. Used by the SPA's radar charts. */
+export interface CompareByTagRow {
+  model_name: string;
+  tag: string;
+  n_attempted: number;
+  n_accepted: number;
+  pass_rate: number;                            // 0..1
+  avg_runtime_ms: number | null;
+  avg_memory_mb: number | null;
+}
+
 export interface CompareResponse {
   models: string[];
   language: string | null;
@@ -599,6 +778,14 @@ export interface CompareResponse {
   summary: CompareSummaryRow[];
   problems: CompareProblemRow[];
   winners: CompareWinners;
+  /** Per-(model, level) breakdown for the Easy/Medium/Hard grouped bar
+   *  charts in the SPA. One row per (model, level) — sorted Easy →
+   *  Medium → Hard. Empty array if the comparison ran on zero models. */
+  by_level: CompareByLevelRow[];
+  /** Per-(model, tag) breakdown for the radar charts. One row per
+   *  (model, tag) — sorted alphabetically by tag, then by model. Empty
+   *  array when the comparison ran on zero models or tagless problems. */
+  by_tag: CompareByTagRow[];
 }
 
 /* Prompt-strategy comparison response shape — mirrors CompareResponse but
@@ -932,12 +1119,22 @@ export interface AttemptResultPayload {
   problem_slug: string;
   problem_title: string;
   level: string;
+  /** Comma-separated LeetCode tags (`"Array, Hash Table, Dynamic Programming"`).
+   *  Defaults to `""` for back-compat with older servers / problems that
+   *  have no tags. Used by SubmissionDetail's per-tag radar charts. */
+  tags?: string;
   status: string;
   accepted: boolean;
   round_index?: number;
   previous_attempt_id?: number | null;
   cost_usd?: number | null;
+  /** Live-recomputed cost from RegisteredModel's current rates × stored
+   *  prompt+response tokens. null when the model has no rates set or
+   *  the attempt is missing prompt_tokens (legacy). The SPA prefers
+   *  this for display; cost_usd is the snapshot fallback. */
+  cost_usd_live?: number | null;
   response_tokens?: number | null;
+  prompt_tokens?: number | null;
   wall_clock_ms?: number | null;
   /* Generation energy of this attempt (Joules). null when not measured. */
   generation_energy_j?: number | null;
@@ -972,12 +1169,32 @@ export interface SubmissionProgressPayload {
   rejected: string[];
 }
 
+export interface LanguageTopSubmission {
+  submission_id: number;
+  model_name: string;
+  model_version: string;
+  submitter: string;
+  pass_at_1: number | null;
+  pass_at_k: number | null;
+  avg_runtime_ms: number | null;
+  avg_memory_mb: number | null;
+  avg_runtime_percentile: number | null;
+  avg_memory_percentile: number | null;
+}
+
 export interface LanguageListItem {
   name: string;
   display_name: string;
   category: string;
+  /** Card-level metadata surfaced on /languages so a user can scan
+   *  languages without drilling into each detail page. */
+  paradigms: string[];
+  tiobe_rank_2025: number | null;
   n_submissions: number;
   n_fully_accepted: number;
+  n_models: number;
+  /** Top 3 submissions by pass@k (then by avg runtime). */
+  top_submissions: LanguageTopSubmission[];
 }
 
 export interface LanguageInfo {
@@ -1005,10 +1222,18 @@ export interface LanguageTopModel {
   submitter: string;
   submitter_slug: string;
   pass_at_1: number | null;
+  pass_at_k: number | null;
   avg_runtime_ms: number | null;
   avg_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /* Submission-level totals — surfaced on the language page's sort
+   * dropdown (rank by cost / energy / generation time). null on legacy
+   * submissions that pre-date the field. */
+  total_cost_usd: number | null;
+  total_response_tokens: number | null;
+  total_generation_ms: number | null;
+  total_generation_energy_j: number | null;
   /* Prompt-template attribution — server adds these so the per-language
    * leaderboard can show which prompt produced each row. */
   prompt_id: number | null;
@@ -1072,4 +1297,71 @@ export interface ProgressEntryPayload {
   missing_count: number;
   fully_accepted: boolean;
   created_at: string;
+}
+
+// Cost estimator -----------------------------------------------------------
+// Returns the observed total-token ranges across already-completed full-sweep
+// submissions, plus the universes for each filter dropdown. The page itself
+// multiplies the returned min/max by the user-supplied $-per-1M rates to
+// produce a cost envelope — see CostEstimator.tsx.
+
+export interface CostEstimatorSubmissionRow {
+  submission_id: number;
+  model_name: string;
+  model_version: string;
+  language: string;
+  prompt_id: number | null;
+  prompt_name: string | null;
+  competition_slug: string | null;
+  competition_name: string | null;
+  n_attempts: number;
+  n_problems_attempted: number;
+  n_problems_in_scope: number;
+  is_full_sweep: boolean;
+  total_input_tokens: number | null;
+  total_output_tokens: number | null;
+  n_attempts_with_token_data: number;
+}
+
+export interface CostEstimatorRange {
+  min: number | null;
+  max: number | null;
+  median: number | null;
+  n: number;
+}
+
+export interface CostEstimatorStats {
+  applied: {
+    prompt_id: number | null;
+    language: string | null;
+    model_name: string | null;
+    competition: string | null;
+  };
+  available_prompts: { id: number; name: string }[];
+  available_languages: string[];
+  available_models: string[];
+  available_competitions: { slug: string; name: string }[];
+  submissions: CostEstimatorSubmissionRow[];
+  input_tokens: CostEstimatorRange;
+  output_tokens: CostEstimatorRange;
+}
+
+// LeetCode credential pool (admin) -----------------------------------------
+
+export interface LeetCodeAccountStatus {
+  name: string;
+  is_exhausted: boolean;
+  exhausted_until: string | null;
+  // Populated only by the /probe endpoint.
+  is_signed_in: boolean | null;
+  username: string | null;
+  probe_message: string | null;
+}
+
+export interface LeetCodeAccountsResponse {
+  total: number;
+  available: number;
+  exhausted: number;
+  earliest_available_after: string | null;
+  accounts: LeetCodeAccountStatus[];
 }

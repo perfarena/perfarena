@@ -47,8 +47,37 @@ import httpx
 from dotenv import load_dotenv
 
 
-REPO_ROOT = Path(__file__).parent.parent.parent.parent
-ACCOUNTS_JSON = REPO_ROOT / "data" / "leetcode_accounts.json"
+def _resolve_accounts_json() -> Path:
+    """Pick the credentials file path. Priority:
+      1. ARENA_LEETCODE_ACCOUNTS env var — explicit override for ops.
+      2. <repo_root>/data/leetcode_accounts.json — the source-tree layout
+         (webapp/backend/app/… → .parent×4 lands on the repo root).
+      3. /data/leetcode_accounts.json — the container layout, where the
+         persistent volume lives at /data and the source tree is /app.
+
+    Returns the first existing candidate, or — when nothing exists yet —
+    the first writable candidate so `--add` lands in a sensible place.
+    """
+    override = os.environ.get("ARENA_LEETCODE_ACCOUNTS")
+    if override:
+        return Path(override)
+    src_layout = Path(__file__).parent.parent.parent.parent / "data" / "leetcode_accounts.json"
+    container_layout = Path("/data/leetcode_accounts.json")
+    # Prefer whichever EXISTS so an in-image install picks up the volume,
+    # and a source-tree install picks up the gitignored host file.
+    for cand in (src_layout, container_layout):
+        if cand.exists():
+            return cand
+    # Nothing exists yet — choose by writability of the parent so `--add`
+    # works on both layouts without surprising the user.
+    for cand in (src_layout, container_layout):
+        if cand.parent.exists() and os.access(cand.parent, os.W_OK):
+            return cand
+    return src_layout  # last-resort default; _save_raw will mkdir(parents=True)
+
+
+ACCOUNTS_JSON = _resolve_accounts_json()
+REPO_ROOT = ACCOUNTS_JSON.parent.parent          # kept for any importers that referenced it
 
 # Per-account cooldown after a 429. LeetCode's per-day cap resets roughly
 # daily; we round up to 24h to stay safely on the right side of the window.
@@ -77,6 +106,12 @@ class Account:
     name: str
     cookie_header: str
     exhausted_until: str | None = None   # ISO 8601 UTC, or None
+    # When the dispatcher last submitted with this account. Drives the
+    # per-account inter-submission gap (see pick_for_submission below):
+    # an account that just submitted needs to cool down before its next
+    # use, but a SIBLING account can be used immediately. This is how
+    # multi-account pools translate into wall-time savings on a sweep.
+    last_used_at: str | None = None      # ISO 8601 UTC, or None
 
     def is_exhausted(self, *, now: dt.datetime | None = None) -> bool:
         if not self.exhausted_until:
@@ -86,6 +121,31 @@ class Account:
         except ValueError:
             return False
         return (now or dt.datetime.now(dt.timezone.utc)) < t
+
+    def next_available_at(self, min_gap_s: float,
+                          *, now: dt.datetime | None = None) -> dt.datetime:
+        """Earliest time this account can be used again, considering BOTH:
+          * the 24 h-ish exhaustion cooldown (after a 429), and
+          * the per-account minimum gap between submissions (`min_gap_s`).
+        Never returns a time in the past — clamped to `now` so callers
+        don't have to handle negative wait times."""
+        now = now or dt.datetime.now(dt.timezone.utc)
+        candidates: list[dt.datetime] = []
+        if self.exhausted_until:
+            try:
+                candidates.append(dt.datetime.fromisoformat(self.exhausted_until))
+            except ValueError:
+                pass
+        if self.last_used_at:
+            try:
+                last = dt.datetime.fromisoformat(self.last_used_at)
+                candidates.append(last + dt.timedelta(seconds=min_gap_s))
+            except ValueError:
+                pass
+        if not candidates:
+            return now
+        nxt = max(candidates)
+        return nxt if nxt > now else now
 
     def parsed_cookies(self) -> tuple[str, str]:
         """Return (LEETCODE_SESSION, csrftoken) parsed from cookie_header.
@@ -172,6 +232,7 @@ def load_accounts() -> list[Account]:
             name=r.get("name") or "?",
             cookie_header=r.get("cookie_header", ""),
             exhausted_until=r.get("exhausted_until"),
+            last_used_at=r.get("last_used_at"),
         ))
     return out
 
@@ -182,6 +243,87 @@ def pick_account() -> Account | None:
         if not a.is_exhausted() and a.cookie_header:
             return a
     return None
+
+
+def pick_account_by_name(name: str) -> Account | None:
+    """Look up a specific account by name; returns None when unknown or
+    when its cookies are missing. Used by leetbot.py to honour the
+    `LEETCODE_FORCE_ACCOUNT` env var the dispatcher sets when it wants a
+    specific credential for the next submission (round-robin pacing)."""
+    for a in load_accounts():
+        if a.name == name and a.cookie_header:
+            return a
+    return None
+
+
+def pick_for_submission(min_gap_s: float) -> tuple[Account, float] | None:
+    """Pick the next account for an outgoing submission, optimising for
+    minimum wait time.
+
+    Strategy: of all non-exhausted accounts, pick the one whose
+    `next_available_at(min_gap_s)` is soonest. Returns
+    `(account, wait_seconds)` — the caller sleeps `wait_seconds` (0 if
+    the account is ready now) before submitting with it, then calls
+    `mark_used(account.name)` after the submission lands.
+
+    Why this design works: with N accounts in the pool, the effective
+    inter-submission cap shrinks by ~N×. If account A submitted 30 s
+    ago and account B is fresh, the picker returns (B, 0) — we don't
+    pay A's remaining 90 s of cooldown. With 4 accounts and a 120 s
+    cap, a sweep can submit every ~30 s instead of every 120 s.
+
+    Returns None if the pool is empty or every account is exhausted."""
+    accounts = [a for a in load_accounts()
+                if a.cookie_header and not a.is_exhausted()]
+    if not accounts:
+        return None
+    now = dt.datetime.now(dt.timezone.utc)
+    # Sort key: (next_available_at, last_used_at_or_epoch). The first
+    # axis picks the account whose cooldown clears soonest; the second
+    # axis breaks ties so a never-used account (last_used_at = None →
+    # treated as epoch) wins over a recently-used one when they both
+    # report "ready now". Without the tiebreaker, `min()` returns
+    # whatever order the file lists them in, which means the first
+    # entry monopolises every dispatch under a fresh multi-account pool.
+    _EPOCH = dt.datetime(1970, 1, 1, tzinfo=dt.timezone.utc)
+    def _last_used(a: Account) -> dt.datetime:
+        if not a.last_used_at:
+            return _EPOCH
+        try:
+            t = dt.datetime.fromisoformat(a.last_used_at)
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=dt.timezone.utc)
+            return t
+        except ValueError:
+            return _EPOCH
+    best = min(
+        accounts,
+        key=lambda a: (a.next_available_at(min_gap_s, now=now), _last_used(a)),
+    )
+    wait = max(0.0, (best.next_available_at(min_gap_s, now=now) - now).total_seconds())
+    return best, wait
+
+
+def mark_used(name: str, *, when: dt.datetime | None = None) -> None:
+    """Update `last_used_at` for one account. Called by the dispatcher
+    after every leetbot.py subprocess returns, regardless of verdict —
+    the cooldown is about RATE LIMITING, not success, so failed
+    submissions also count against the per-account budget.
+
+    No-op when `name` isn't in the pool — defends against a race where
+    an account was removed between pick and mark."""
+    when = when or dt.datetime.now(dt.timezone.utc)
+    iso = when.isoformat()
+    with _lock:
+        rows = _load_raw()
+        hit = False
+        for r in rows:
+            if r.get("name") == name:
+                r["last_used_at"] = iso
+                hit = True
+                break
+        if hit:
+            _save_raw(rows)
 
 
 def mark_exhausted(name: str, *, hours: float = EXHAUSTION_HOURS) -> None:
@@ -242,7 +384,8 @@ def pool_status() -> dict:
         "earliest_available_after": earliest.isoformat() if earliest else None,
         "accounts": [
             {"name": a.name, "exhausted_until": a.exhausted_until,
-             "is_exhausted": a.is_exhausted()}
+             "is_exhausted": a.is_exhausted(),
+             "last_used_at": a.last_used_at}
             for a in accs
         ],
     }

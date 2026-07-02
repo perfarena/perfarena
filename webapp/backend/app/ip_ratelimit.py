@@ -153,6 +153,15 @@ def check_get_request(request: Request) -> None:
     Authenticated GETs are exempted because (a) anonymous scraping is the
     real failure mode this guard is built for, and (b) authenticated users
     are already throttled at the write path via enforce_submission_limit."""
+    # Master kill-switch in app.ratelimit governs every backend rate
+    # limit, including this per-IP one. Local `_ENABLED` is the per-
+    # module knob for when an operator wants ONLY the IP limit off but
+    # wants the per-user submission cap to stay enforced; the master
+    # flag overrides that. Both checked on every request so toggling
+    # the env var at runtime takes effect immediately.
+    from .ratelimit import rate_limits_enabled
+    if not rate_limits_enabled():
+        return
     if not _ENABLED:
         return
     if request.method != "GET":

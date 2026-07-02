@@ -1,22 +1,71 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, LanguageDetailPayload } from "../lib/api";
-import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import { api, LanguageDetailPayload, LanguageTopModel } from "../lib/api";
+import {
+  formatDuration, formatEnergy, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
+} from "../lib/format";
 import PromptName from "../components/PromptName";
+
+/** Ranking criteria for the per-language leaderboard. Each entry maps to
+ *  one numeric column on `LanguageTopModel` and a direction the user
+ *  cares about: pass-rates rank descending (more is better), latency
+ *  / memory / cost / energy rank ascending (less is better). Null values
+ *  always sink to the bottom regardless of direction so unreported rows
+ *  don't pollute the top of either sort. */
+const SORT_OPTIONS: Array<{
+  key: keyof LanguageTopModel;
+  label: string;
+  direction: "asc" | "desc";
+}> = [
+  { key: "pass_at_1",                  label: "pass@1",          direction: "desc" },
+  { key: "pass_at_k",                  label: "pass@k",          direction: "desc" },
+  { key: "avg_runtime_ms",             label: "avg runtime",     direction: "asc"  },
+  { key: "avg_memory_mb",              label: "avg memory",      direction: "asc"  },
+  { key: "avg_runtime_percentile",     label: "runtime %ile",    direction: "desc" },
+  { key: "avg_memory_percentile",      label: "memory %ile",     direction: "desc" },
+  { key: "total_cost_usd",             label: "total cost ($)",  direction: "asc"  },
+  { key: "total_generation_ms",        label: "gen time",        direction: "asc"  },
+  { key: "total_generation_energy_j",  label: "gen energy",      direction: "asc"  },
+];
 
 export default function LanguageDetail() {
   const { name = "" } = useParams();
   const [d, setD] = useState<LanguageDetailPayload | null>(null);
   const [err, setErr] = useState("");
+  const [sortKey, setSortKey] = useState<keyof LanguageTopModel>("pass_at_1");
 
   useEffect(() => {
     api.languageDetail(name).then(setD).catch((e: unknown) => setErr(String(e)));
   }, [name]);
 
+  // Apply the active sort to a fresh copy so the original order from
+  // the API (eligibility-filtered, default pass@1 desc) stays as the
+  // reset baseline if we ever need it. Null-handling: rows with a null
+  // value for the active key sink to the bottom regardless of direction,
+  // so a sort on "total cost" with mostly-null legacy submissions still
+  // surfaces the rows that DO have cost data at the top.
+  const sortedTop = useMemo(() => {
+    if (!d) return [];
+    const opt = SORT_OPTIONS.find(o => o.key === sortKey);
+    if (!opt) return d.top_models;
+    const sign = opt.direction === "desc" ? -1 : 1;
+    return [...d.top_models].sort((a, b) => {
+      const av = a[sortKey] as number | null | undefined;
+      const bv = b[sortKey] as number | null | undefined;
+      const aNull = av == null;
+      const bNull = bv == null;
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;        // a sinks below b
+      if (bNull) return -1;
+      return sign * ((av as number) - (bv as number));
+    });
+  }, [d, sortKey]);
+
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
   if (!d) return <div className="empty">Loading…</div>;
 
-  const { info, stats, top_models } = d;
+  const { info, stats } = d;
+  const top_models = sortedTop;
 
   return (
     <div className="col" style={{ gap: 24 }}>
@@ -83,7 +132,20 @@ export default function LanguageDetail() {
       </section>
 
       <section className="col">
-        <h2>Top models in {info.display_name}</h2>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0 }}>Top models in {info.display_name}</h2>
+          <label className="row" style={{ gap: 6, alignItems: "center", fontSize: "0.9rem" }}>
+            Sort by:
+            <select value={sortKey as string}
+                    onChange={e => setSortKey(e.target.value as keyof LanguageTopModel)}>
+              {SORT_OPTIONS.map(o => (
+                <option key={o.key as string} value={o.key as string}>
+                  {o.label} {o.direction === "desc" ? "↓" : "↑"}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         {top_models.length === 0 ? (
           <div className="empty">No judged submissions in this language yet.</div>
         ) : (
@@ -92,8 +154,13 @@ export default function LanguageDetail() {
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th>
                 <th title="Registered prompt template used. Click to compare prompts.">Prompt</th>
-                <th>pass@1</th><th>Avg runtime</th><th>Avg memory</th>
-                <th>Runtime %ile</th><th>Memory %ile</th><th></th>
+                <th>pass@1</th><th>pass@k</th>
+                <th>Avg runtime</th><th>Avg memory</th>
+                <th>Runtime %ile</th><th>Memory %ile</th>
+                <th title="Total $ across all attempts in this submission. Recomputed live from the model's current $/1M-token rates when set on /models.">Cost</th>
+                <th title="Total generation wall-clock summed across attempts.">Gen time</th>
+                <th title="Total generation energy (Joules). Only present when the submit client measured it (NVML / RAPL / provider telemetry).">Gen energy</th>
+                <th></th>
               </tr></thead>
               <tbody>
                 {top_models.map((m, i) => (
@@ -108,10 +175,14 @@ export default function LanguageDetail() {
                     <td><Link to={`/submitters/${m.submitter_slug}`}>{m.submitter}</Link></td>
                     <td><PromptName id={m.prompt_id} name={m.prompt_name} /></td>
                     <td className="metric">{formatPassAt1(m.pass_at_1)}</td>
+                    <td className="metric">{formatPassAt1(m.pass_at_k)}</td>
                     <td className="metric">{formatRuntime(m.avg_runtime_ms)}</td>
                     <td className="metric">{formatMemory(m.avg_memory_mb)}</td>
                     <td className="metric">{formatPercentile(m.avg_runtime_percentile)}</td>
                     <td className="metric">{formatPercentile(m.avg_memory_percentile)}</td>
+                    <td className="metric">{m.total_cost_usd == null ? "–" : `$${m.total_cost_usd.toFixed(4)}`}</td>
+                    <td className="metric">{formatDuration(m.total_generation_ms)}</td>
+                    <td className="metric">{formatEnergy(m.total_generation_energy_j)}</td>
                     <td><Link to={`/submissions/${m.submission_id}`}>details →</Link></td>
                   </tr>
                 ))}

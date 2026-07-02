@@ -1,7 +1,7 @@
 """FastAPI app — LLM LeetCode Arena."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -59,14 +59,19 @@ from .schemas import (
     DiscriminationCrossRow, DiscriminationLangSummary, DiscriminationResponse,
     AppendAttemptsIn, AttemptIn, AttemptResult, AttemptRunDetail,
     BaselineBulkIn,
+    CompareByLevelRow, CompareByTagRow,
     CompareModelOnProblem, CompareProblemRow, CompareResponse, CompareSummaryRow,
     CompareWinners,
     BlogPostCard, BlogPostIn, BlogPostPublic,
     ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
+    CompetitionRef,
+    CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
+    LeetCodeAccountIn, LeetCodeAccountStatus, LeetCodeAccountsResponse,
     ModelDetail, ModelDetailLanguageStat, ModelListEntry,
     PromptTemplateIn, PromptTemplatePublic,
-    RegisteredModelIn, RegisteredModelOverview, RegisteredModelPublic, RunErrorLog,
+    RegisteredModelIn, RegisteredModelOverview, RegisteredModelPublic,
+    RegisteredModelPricingPatch, RunErrorLog,
     ProblemDetail, ProblemPublic,
     LoginRequest, LoginResponse,
     ProblemTopSolution, ProgressEntry, RankingEntry, RegisterRequest, RunPublic,
@@ -84,29 +89,376 @@ LEADERBOARD_MIN_PASS_RATE = float(
 LEADERBOARD_GATE_ON = os.environ.get(
     "ARENA_LEADERBOARD_GATE", "off"
 ).lower() in ("1", "on", "true", "yes")
+# Window after which a queued-but-never-judged attempt counts as STALE
+# (the dispatch worker started but never finished — likely a container
+# bounce or a crashed worker thread). Stale attempts don't contribute
+# toward "submission is complete" and don't show on the leaderboard;
+# the sweep client re-attempts them on the next run.
+# 30-minute default: long enough that a normal LeetCode roundtrip
+# (judge + percentile fetch + INTER_DELAY pacing) never trips it,
+# short enough that a real outage doesn't keep ghost attempts in the
+# "covered" set forever.
+ATTEMPT_STALE_AFTER_S = int(
+    os.environ.get("ARENA_ATTEMPT_STALE_AFTER_S", "1800")
+)
+# How often the background stale-marker thread wakes up to scan for
+# pending attempts that have been sitting too long. Quick enough that
+# the user doesn't see "queued" rows lingering for an hour after a
+# sweep crashed; slow enough that the scan's cost is amortised. Each
+# wakeup is one indexed SELECT + at most one UPDATE.
+STALE_MARKER_INTERVAL_S = int(
+    os.environ.get("ARENA_STALE_MARKER_INTERVAL_S", "300")
+)
+# How long a phantom-failed attempt (n_runs=0 + dispatch_warning set,
+# OR final_status NULL + dispatch_warning + n_runs=0) sticks around
+# before the marker pass HARD DELETES it. Two-stage cleanup so the
+# operator has a window to inspect the dispatch_warning text before
+# it's gone, but the attempt eventually disappears from the SPA so
+# /submissions/56 doesn't show 7 ghosts indefinitely.
+# 6h default: well past the longest legitimate LC roundtrip while
+# still short enough that a stale sweep clears within an afternoon.
+ATTEMPT_GC_AFTER_S = int(
+    os.environ.get("ARENA_ATTEMPT_GC_AFTER_S", "21600")
+)
+# Message stamped on attempts the marker decides are stuck. Distinct
+# from the runtime auth/transient warnings the dispatcher writes so
+# operators can grep for it later if the auto-fail behaviour ever
+# misclassifies something.
+_STALE_MARKER_REASON = (
+    "Auto-marked dispatch error: this attempt was queued but never "
+    "received a LeetCode verdict within "
+    "ARENA_ATTEMPT_STALE_AFTER_S. Likely cause: the dispatch worker "
+    "was killed mid-flight (container bounce, OOM, …) or LC took too "
+    "long to respond. Re-run the sweep — the attempt is still pending "
+    "server-side and will retry automatically."
+)
+
+
+def _mark_stale_pending_attempts() -> int:
+    """Stamp `dispatch_warning` on every attempt that's been queued
+    without any LeetCode contact for ARENA_ATTEMPT_STALE_AFTER_S.
+
+    Selection: `n_runs == 0 OR n_runs IS NULL` AND `dispatch_warning IS NULL`
+    AND `prefailed_reason IS NULL` AND `logged_at < cutoff` (or NULL —
+    we treat unset timestamps as ancient so they don't sit forever).
+
+    Returns the number of rows updated. Runs as one indexed UPDATE so
+    it's safe to invoke from a background thread without holding a
+    write transaction for long. Idempotent: rows already marked are
+    skipped via the `dispatch_warning IS NULL` filter."""
+    from .db import engine
+    from .models import Attempt
+    cutoff = datetime.utcnow() - timedelta(seconds=ATTEMPT_STALE_AFTER_S)
+    with Session(engine) as session:
+        stale = session.exec(
+            select(Attempt).where(
+                ((Attempt.n_runs == 0) | (Attempt.n_runs.is_(None))),
+                Attempt.dispatch_warning.is_(None),
+                Attempt.prefailed_reason.is_(None),
+                # Either logged_at is in the past OR it's null (legacy
+                # row whose timestamp never got backfilled).
+                (Attempt.logged_at < cutoff) | (Attempt.logged_at.is_(None)),
+            )
+        ).all()
+        if not stale:
+            return 0
+        for a in stale:
+            a.dispatch_warning = _STALE_MARKER_REASON
+            session.add(a)
+        session.commit()
+        return len(stale)
+
+
+def _gc_old_phantom_attempts() -> int:
+    """Hard-delete attempts that have been phantom-failed for too long.
+
+    Selection: `n_runs == 0` AND `dispatch_warning IS NOT NULL` AND
+    `logged_at < now - ATTEMPT_GC_AFTER_S`. We require BOTH the no-runs
+    state AND a non-null dispatch_warning so a still-in-flight attempt
+    is never deleted out from under the dispatcher — the warning is the
+    explicit "this attempt is dead" marker.
+
+    Why hard-delete: the SPA's status logic treats these as
+    "Dispatch failed" rows (after the relabel above), but they
+    accumulate on /submissions/<id> as scary-looking failure rows that
+    don't reflect a real verdict. The sweep's `cell_covered` set
+    already excludes phantom-failed rows from "covered" status — so the
+    next sweep run retries the underlying problem regardless of
+    whether the phantom row still exists. Deleting them just shrinks
+    the SPA's per-submission table to the rows the operator actually
+    cares about.
+
+    Also wipes the orphan Run + TraceLogEntry rows that reference the
+    deleted attempts so the transparency log doesn't keep ghost
+    references. Returns the count of attempt rows deleted."""
+    from .db import engine
+    from .models import Attempt, Run
+    from .models import TraceLogEntry         # transparency log
+    cutoff = datetime.utcnow() - timedelta(seconds=ATTEMPT_GC_AFTER_S)
+    with Session(engine) as session:
+        victims = session.exec(
+            select(Attempt).where(
+                ((Attempt.n_runs == 0) | (Attempt.n_runs.is_(None))),
+                Attempt.dispatch_warning.is_not(None),
+                # `logged_at` is the only timestamp we control: it gets
+                # set when the row is first inserted. Use it as the
+                # age clock. NULL means a legacy row never had it
+                # backfilled — treat that as ancient.
+                (Attempt.logged_at < cutoff) | (Attempt.logged_at.is_(None)),
+            )
+        ).all()
+        if not victims:
+            return 0
+        victim_ids = [a.id for a in victims]
+        # Defence-in-depth: don't kill an attempt that somehow
+        # accumulated Run rows since the SELECT (a slow dispatcher
+        # could've raced with us). The `runs` check would already have
+        # filtered it (n_runs > 0), but double-check by joining on the
+        # actual Run table.
+        with_real_runs = set(session.exec(
+            select(Run.attempt_id).where(Run.attempt_id.in_(victim_ids))
+        ).all())
+        safe_ids = [vid for vid in victim_ids if vid not in with_real_runs]
+        if not safe_ids:
+            return 0
+        # Cascade-delete the transparency-log rows first so we don't
+        # leave orphan log entries pointing at a vanished attempt.
+        session.exec(
+            TraceLogEntry.__table__.delete().where(
+                TraceLogEntry.attempt_id.in_(safe_ids)
+            )
+        )
+        # Then the attempts themselves.
+        session.exec(
+            Attempt.__table__.delete().where(Attempt.id.in_(safe_ids))
+        )
+        session.commit()
+        return len(safe_ids)
+
+
+def _start_stale_marker_thread() -> None:
+    """Background loop that periodically runs _mark_stale_pending_attempts
+    AND _gc_old_phantom_attempts.
+
+    The two passes are intentionally separate:
+      * _mark_stale_pending_attempts is fast-path: turn a "queued but
+        nothing's happening" row into a "dispatch failed" row so the
+        SPA + sweep see it for what it is. Runs at the short interval.
+      * _gc_old_phantom_attempts is slow-path: physically delete rows
+        that have been in the dispatch-failed state for ATTEMPT_GC_AFTER_S
+        so they stop cluttering /submissions/<id>. Runs at the same
+        interval but only acts on rows that have aged past the GC
+        threshold.
+
+    Daemon thread so a Ctrl-C / SIGTERM doesn't block exit. Errors are
+    swallowed-and-logged — we never want this watchdog to crash the
+    backend, the worst case is a delayed marker pass."""
+    import threading
+    import time as _time
+
+    def _loop() -> None:
+        # First pass after a short warmup so the import-time logger is
+        # ready and the connection pool has been pre-initialised.
+        _time.sleep(30)
+        while True:
+            try:
+                n = _mark_stale_pending_attempts()
+                if n:
+                    print(f"[stale-marker] auto-failed {n} stuck attempt(s) "
+                          f"(>= {ATTEMPT_STALE_AFTER_S}s pending without runs)",
+                          file=sys.stderr)
+            except Exception as e:                                 # noqa: BLE001
+                print(f"[stale-marker] pass failed: {e!r}",
+                      file=sys.stderr)
+            try:
+                deleted = _gc_old_phantom_attempts()
+                if deleted:
+                    print(f"[stale-marker] GC: hard-deleted {deleted} "
+                          f"phantom attempt(s) older than "
+                          f"{ATTEMPT_GC_AFTER_S}s",
+                          file=sys.stderr)
+            except Exception as e:                                 # noqa: BLE001
+                print(f"[stale-marker] GC pass failed: {e!r}",
+                      file=sys.stderr)
+            _time.sleep(STALE_MARKER_INTERVAL_S)
+
+    t = threading.Thread(target=_loop, name="stale-marker", daemon=True)
+    t.start()
+
+
+def _model_pricing_lookup(session: Session) -> dict[tuple[str, str], tuple[float | None, float | None]]:
+    """Build (model_name, model_version) → (input_$/1M, output_$/1M) map
+    from the RegisteredModel table. Looked up once per request that needs
+    cost recomputation — the table is small (≪ 1000 rows) so a scan is
+    cheap. Each call is a single SELECT.
+
+    Falling-back behaviour for missing rows: when a submission's
+    (model_name, model_version) has no matching RegisteredModel row, OR
+    the row has either price field null, the lookup returns (None, None)
+    and `_recompute_attempt_cost` decides whether to show the snapshot.
+    Pure read; safe to call from any request thread."""
+    rows = session.exec(
+        select(RegisteredModel).where(
+            RegisteredModel.input_price_per_1m_usd.is_not(None),
+            RegisteredModel.output_price_per_1m_usd.is_not(None),
+        )
+    ).all()
+    out: dict[tuple[str, str], tuple[float | None, float | None]] = {}
+    for rm in rows:
+        out[(rm.name, rm.version)] = (
+            rm.input_price_per_1m_usd, rm.output_price_per_1m_usd,
+        )
+    return out
+
+
+def _recompute_attempt_cost(
+    a: Attempt, model_name: str, model_version: str,
+    pricing: dict[tuple[str, str], tuple[float | None, float | None]],
+) -> float | None:
+    """Live recomputation of `attempt.cost_usd` from the model's CURRENT
+    per-1M-token rates × stored prompt+response tokens.
+
+    Returns None when:
+      * the (model_name, model_version) has no pricing row, OR
+      * the attempt is missing prompt_tokens (a pre-feature attempt; only
+        the snapshot cost_usd column is meaningful for it).
+
+    When non-None, callers prefer this value over `attempt.cost_usd` for
+    display, since the rates may have been edited after the attempt was
+    submitted. Match key is (name, version) to support multiple rows per
+    model name (e.g. different snapshots). Falls back to (name, *) by
+    trying any pricing entry that shares the name when the exact
+    version isn't pinned — common when the operator's only set rates
+    once per model name."""
+    rates = pricing.get((model_name, model_version))
+    if rates is None:
+        # Fall back to "any version for this name" — handles the common case
+        # where the admin set rates on the canonical row and the submission
+        # carries a date-pinned version string.
+        for (n, _v), r in pricing.items():
+            if n == model_name:
+                rates = r
+                break
+    if rates is None:
+        return None
+    in_rate, out_rate = rates
+    if in_rate is None or out_rate is None:
+        return None
+    pt = a.prompt_tokens
+    rt = a.response_tokens
+    if pt is None or rt is None:
+        return None
+    return (pt * in_rate + rt * out_rate) / 1_000_000.0
 
 
 def _attempt_stats_by_sub(
     session: Session, sub_ids: list[int],
 ) -> dict[int, dict]:
-    """One round-trip → {sub_id: {"problem_ids": set, "n_attempts": int}}."""
+    """One round-trip → per-submission attempt stats.
+
+    Returns a dict of:
+      {
+        sub_id: {
+          "problem_ids":          set,    # every problem the submission touched
+          "judged_problem_ids":   set,    # only those with a real LC verdict
+          "n_attempts":           int,    # everything in the submission
+          "n_judged_attempts":    int,    # attempts with real verdicts only
+        }
+      }
+
+    "Judged" = the attempt has at least one Run row AND no dispatch_warning
+    AND isn't stale-pending. This is the set the leaderboard / completeness
+    gate should use — counting auth-failed, transient-errored, or queued-
+    forever attempts as "covered" would mislabel half-broken sweeps as
+    complete and let them poison rankings.
+
+    A "stale-pending" attempt is one with n_runs == 0, no dispatch_warning,
+    and a logged_at older than ARENA_ATTEMPT_STALE_AFTER_S (default 30 min).
+    These represent dispatches that the worker started but never completed
+    — typically because the container was bounced or the worker thread
+    crashed mid-flight. They're listed in `problem_ids` (visible in detail
+    views) but excluded from `judged_problem_ids` (eligibility math).
+    """
     if not sub_ids:
         return {}
+    stale_cutoff = (datetime.utcnow()
+                    - timedelta(seconds=ATTEMPT_STALE_AFTER_S))
     out: dict[int, dict] = {}
     attempts = session.exec(
         select(Attempt).where(Attempt.submission_id.in_(sub_ids))
     ).all()
     for a in attempts:
-        entry = out.setdefault(a.submission_id,
-                               {"problem_ids": set(), "n_attempts": 0})
+        entry = out.setdefault(a.submission_id, {
+            "problem_ids": set(),
+            "judged_problem_ids": set(),
+            "n_attempts": 0,
+            "n_judged_attempts": 0,
+        })
         entry["problem_ids"].add(a.problem_id)
         entry["n_attempts"] += 1
+        has_runs = (a.n_runs or 0) > 0
+        has_warning = a.dispatch_warning is not None
+        # An attempt is "judged" (counted toward submission completeness)
+        # ONLY when it has runs AND no dispatch_warning. Stalled-pending
+        # attempts (no runs, no warning, old) also fall out — we'd rather
+        # require a retry than count a ghost as submitted.
+        if has_runs and not has_warning:
+            entry["judged_problem_ids"].add(a.problem_id)
+            entry["n_judged_attempts"] += 1
     return out
 
 
 def _attempt_stats_for(stats_map: dict[int, dict], sub_id: int) -> tuple[set[int], int]:
-    s = stats_map.get(sub_id) or {"problem_ids": set(), "n_attempts": 0}
-    return s["problem_ids"], s["n_attempts"]
+    """Returns (judged_problem_ids, n_attempts) — the FIRST element is the
+    eligibility-relevant set (real verdicts only), the second is the total
+    visible attempt count for display."""
+    s = stats_map.get(sub_id) or {
+        "problem_ids": set(), "judged_problem_ids": set(),
+        "n_attempts": 0, "n_judged_attempts": 0,
+    }
+    # First slot was once `problem_ids` (all). It's now `judged_problem_ids`
+    # so the eligibility caller short-circuits incomplete-by-failure subs.
+    return s["judged_problem_ids"], s["n_attempts"]
+
+
+def _build_universe_resolver(
+    session: Session, subs: list[Submission],
+) -> "callable[[Submission], set[int]]":
+    """Bulk-precompute the per-submission "complete" universe so the
+    eligibility loop doesn't N+1 query.
+
+    Each submission's universe = the problem set of its competition (when
+    competition_id is set) or the canonical originals fallback (legacy
+    rows where competition_id is null — they were created before
+    submissions were scoped to a single competition).
+
+    Returns a closure callable: `resolve(sub) -> set[int]` that the
+    caller invokes once per submission.
+    """
+    # 1. Canonical fallback set — built once, used for every legacy sub.
+    canonical = {
+        p.id for p in session.exec(
+            select(Problem).where(Problem.original_problem_id.is_(None))
+        ).all()
+    }
+    # 2. Per-competition memberships for every competition referenced by
+    #    the submission list — single round-trip.
+    comp_ids = {s.competition_id for s in subs if s.competition_id is not None}
+    comp_universes: dict[int, set[int]] = {}
+    if comp_ids:
+        for cp in session.exec(
+            select(CompetitionProblem).where(
+                CompetitionProblem.competition_id.in_(comp_ids)
+            )
+        ).all():
+            comp_universes.setdefault(cp.competition_id, set()).add(cp.problem_id)
+
+    def _resolve(sub: Submission) -> set[int]:
+        if sub.competition_id is None:
+            return canonical
+        return comp_universes.get(sub.competition_id, canonical)
+
+    return _resolve
 
 
 def _eligible_for_leaderboard(
@@ -181,6 +533,35 @@ async def _ip_rate_limit_middleware(request, call_next):
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    # WAL self-heal: if a prior boot was killed mid-transaction (OOM, kill -9,
+    # docker stop -t 0, …) the WAL can be left holding tens of MB of
+    # uncheckpointed frames. SQLite's automatic checkpoint kicks in on each
+    # write at a fairly large threshold, so a wedged dispatcher can grow
+    # the WAL well past 25 MB before normal traffic claws it back. Running
+    # a one-shot TRUNCATE checkpoint here is cheap when the WAL is small
+    # and reclaims the disk + clears any residual lock contention on the
+    # first writer of this boot. Failures are non-fatal — every error
+    # path here would just leave us back where we'd be without the
+    # call, so we swallow + log instead of blocking startup.
+    try:
+        import sqlite3
+        from .db import DB_PATH
+        con = sqlite3.connect(str(DB_PATH), timeout=30)
+        try:
+            res = con.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            # res = (busy, log_frames, checkpointed). busy=0 + log_frames=0
+            # is the steady-state happy path; non-zero log_frames means we
+            # actually reclaimed something and is worth logging once.
+            busy, frames, ckpted = res or (0, 0, 0)
+            if frames or busy:
+                print(f"[startup] WAL checkpoint: busy={busy} "
+                      f"frames={frames} checkpointed={ckpted}",
+                      file=sys.stderr)
+        finally:
+            con.close()
+    except Exception as e:                                         # noqa: BLE001
+        print(f"[startup] WAL checkpoint failed (non-fatal): {e!r}",
+              file=sys.stderr)
     _seed_default_prompts()
     _seed_default_competitions()
     # Backfill RegisteredModel stubs for every (name, version) the platform
@@ -191,6 +572,82 @@ def _startup() -> None:
     _backfill_registered_model_stubs_from_submissions()
     # First-boot admin bootstrap from env vars. Idempotent.
     _seed_bootstrap_admin()
+    # One eager pass FIRST — handles any attempts that were already stale
+    # from a prior boot (e.g. the container restarted while a sweep was
+    # in flight). Then start the periodic loop so anything that goes
+    # stale during this boot also gets cleaned up.
+    try:
+        n = _mark_stale_pending_attempts()
+        if n:
+            print(f"[startup] auto-failed {n} stale attempt(s) from prior boot",
+                  file=sys.stderr)
+    except Exception as e:                                         # noqa: BLE001
+        print(f"[startup] stale-marker eager pass failed: {e!r}",
+              file=sys.stderr)
+    # Re-dispatch attempts that look in-flight but young (< ATTEMPT_STALE_
+    # AFTER_S). These are the most common loss class: a BackgroundTasks
+    # job got launched by the request handler and then the container
+    # bounced (deploy, OOM, ^C) before the job could write Run rows. The
+    # stale-marker would eventually catch them but only after 30+ min;
+    # this recovery pass cuts that to "as fast as the dispatcher can
+    # re-pickup". No-op when nothing's in flight.
+    try:
+        n = _recover_in_flight_dispatches_on_startup()
+        if n:
+            print(f"[startup] re-dispatched {n} in-flight submission(s) "
+                  f"from prior boot", file=sys.stderr)
+    except Exception as e:                                         # noqa: BLE001
+        print(f"[startup] in-flight recovery failed: {e!r}",
+              file=sys.stderr)
+    _start_stale_marker_thread()
+
+
+def _recover_in_flight_dispatches_on_startup() -> int:
+    """Re-fire the BG dispatcher for any submission whose attempts look
+    like they were mid-dispatch when the process last died.
+
+    Selection: distinct submission_ids whose Attempt rows have
+    `n_runs == 0` AND `dispatch_warning IS NULL` AND
+    `prefailed_reason IS NULL` AND `logged_at` younger than
+    ATTEMPT_STALE_AFTER_S. Older rows are the stale-marker's job, so we
+    don't fight it; rows with a dispatch_warning are the GC's job.
+
+    We re-dispatch the WHOLE submission rather than just the orphan
+    attempts because `dispatch_submission` already knows how to skip
+    attempts that have completed Run rows and only act on the queued
+    ones. Threaded so a slow LC roundtrip doesn't block startup.
+    Returns the count of submissions kicked.
+    """
+    import threading
+    from .db import engine
+    from .models import Attempt, Submission
+    from .dispatch import dispatch_submission
+    cutoff = datetime.utcnow() - timedelta(seconds=ATTEMPT_STALE_AFTER_S)
+    with Session(engine) as session:
+        rows = session.exec(
+            select(Attempt.submission_id).where(
+                ((Attempt.n_runs == 0) | (Attempt.n_runs.is_(None))),
+                Attempt.dispatch_warning.is_(None),
+                Attempt.prefailed_reason.is_(None),
+                Attempt.logged_at >= cutoff,
+            ).distinct()
+        ).all()
+        # Filter out deleted submissions — they're being purged elsewhere.
+        sub_ids: list[int] = []
+        for sid in rows:
+            sub = session.get(Submission, sid)
+            if sub is not None and sub.deleted_at is None:
+                sub_ids.append(sid)
+    if not sub_ids:
+        return 0
+    # Fire each dispatch on its own thread so startup isn't blocked. Each
+    # one will obey the same per-account pacing the foreground path uses.
+    for sid in sub_ids:
+        threading.Thread(
+            target=dispatch_submission, args=(sid,),
+            name=f"recover-dispatch-{sid}", daemon=True,
+        ).start()
+    return len(sub_ids)
 
 
 def _seed_bootstrap_admin() -> None:
@@ -579,18 +1036,70 @@ def _seed_default_prompts() -> None:
 def list_problems(
     level: str | None = None,
     tag: str | None = None,
+    competition: str | None = None,
     session: Session = Depends(get_session),
 ):
+    """List problems with their competition memberships attached.
+
+    Filters:
+      * `level=Easy|Medium|Hard`  — single-difficulty filter.
+      * `tag=substring`           — case-insensitive substring match on tags.
+      * `competition=<slug>`      — restrict to problems whose
+                                    CompetitionProblem join references this slug.
+    """
+    # Competition filter is structural — resolve it to a problem-id set first
+    # so the main query can intersect with it cheaply.
+    comp_problem_ids: set[int] | None = None
+    if competition:
+        comp = session.exec(
+            select(Competition).where(Competition.slug == competition)
+        ).first()
+        if comp is None:
+            raise HTTPException(404, f"competition '{competition}' not found")
+        comp_problem_ids = {
+            cp.problem_id for cp in session.exec(
+                select(CompetitionProblem).where(
+                    CompetitionProblem.competition_id == comp.id
+                )
+            ).all()
+        }
+        if not comp_problem_ids:
+            return []
+
     q = select(Problem)
     if level:
         q = q.where(Problem.level == level)
+    if comp_problem_ids is not None:
+        q = q.where(Problem.id.in_(comp_problem_ids))
     rows = session.exec(q).all()
     if tag:
         rows = [r for r in rows if tag.lower() in r.tags.lower()]
+
+    # Bulk-load every (problem_id → [CompetitionRef, …]) mapping in one
+    # round-trip so the response includes membership without N+1 queries.
+    # We only need slug+name per link → cheap.
+    problem_ids = [r.id for r in rows]
+    memberships: dict[int, list[CompetitionRef]] = {pid: [] for pid in problem_ids}
+    if problem_ids:
+        link_rows = session.exec(
+            select(CompetitionProblem, Competition)
+            .where(CompetitionProblem.competition_id == Competition.id)
+            .where(CompetitionProblem.problem_id.in_(problem_ids))
+        ).all()
+        for cp, comp in link_rows:
+            memberships.setdefault(cp.problem_id, []).append(
+                CompetitionRef(slug=comp.slug, name=comp.name)
+            )
+        # Stable ordering: by competition name. Keeps the badge order
+        # deterministic across requests for the same problem.
+        for pid in memberships:
+            memberships[pid].sort(key=lambda c: c.name.lower())
+
     return [
         ProblemPublic(
             id=r.id, title_slug=r.title_slug, title=r.title,
             level=r.level, tags=[t.strip() for t in r.tags.split(",") if t.strip()],
+            competitions=memberships.get(r.id, []),
         )
         for r in rows
     ]
@@ -630,39 +1139,47 @@ def rankings(
         q = q.where(Submission.prompt_id == prompt_id)
     subs = session.exec(q).all()
 
-    # Competition scope: only keep submissions whose attempts touch a problem
-    # that belongs to the competition's membership set. The seed competition
-    # links every problem, so this is a no-op for `leetcode-99-perf`.
+    # Competition scope: only keep submissions whose own `competition_id`
+    # matches the filter. The old logic kept any submission that had any
+    # attempt overlapping with the competition's problem set, which meant
+    # a `leetcode-99-perf` submission with 99 attempts would leak into
+    # the `leetcode-99-hard-perf` ranking just because it covered the
+    # ~9 Hard problems too — its pass@1, runtime, etc. were computed
+    # against its OWN 99-problem universe though, so the displayed
+    # numbers were apples-to-oranges with submissions actually scoped
+    # to the Hard set.
+    #
+    # Legacy submissions (`competition_id IS NULL`) only show up when
+    # the filter is the canonical default competition (which contains
+    # every problem) — they get the canonical-99 universe via
+    # `_build_universe_resolver` further down, so their metrics line up.
     if competition:
         comp = session.exec(
             select(Competition).where(Competition.slug == competition)
         ).first()
         if comp is None:
             raise HTTPException(404, f"competition '{competition}' not found")
-        comp_pids = {
-            m.problem_id for m in session.exec(
-                select(CompetitionProblem)
-                .where(CompetitionProblem.competition_id == comp.id)
-            ).all()
-        }
-        if comp_pids:
-            keep_sids = {
-                a.submission_id for a in session.exec(
-                    select(Attempt).where(Attempt.problem_id.in_(comp_pids))   # type: ignore[arg-type]
-                ).all()
-            }
-            subs = [s for s in subs if s.id in keep_sids]
-        else:
-            subs = []
+        is_canonical_default = (competition == "leetcode-99-perf")
+        subs = [
+            s for s in subs
+            if s.competition_id == comp.id
+            or (is_canonical_default and s.competition_id is None)
+        ]
 
     # Eligibility gate: only complete (all problems attempted) submissions with
     # > 25% accepted solutions appear on the leaderboard.
-    all_problem_ids = {p.id for p in session.exec(select(Problem)).all()}
+    #
+    # "Complete" means "covers every problem in the relevant universe". The
+    # universe is per-submission: a submission stores its competition_id,
+    # so its universe is THAT competition's problems — independent of
+    # any URL-level competition filter the caller passed in. Legacy
+    # submissions with competition_id NULL fall back to the canonical-99.
+    resolve_universe = _build_universe_resolver(session, subs)
     stats_by_sub = _attempt_stats_by_sub(session, [s.id for s in subs])
     subs = [
         s for s in subs
         if _eligible_for_leaderboard(
-            s, _attempt_stats_for(stats_by_sub, s.id)[0], all_problem_ids,
+            s, _attempt_stats_for(stats_by_sub, s.id)[0], resolve_universe(s),
         )
     ]
 
@@ -700,8 +1217,42 @@ def rankings(
     prompt_name_by_id: dict[int, str] = {
         pt.id: pt.name for pt in session.exec(select(PromptTemplate)).all()
     }
+    # Single round-trip lookup of every competition referenced by these
+    # submissions so we don't N+1 query per row.
+    comp_by_id: dict[int, Competition] = {
+        c.id: c for c in session.exec(
+            select(Competition).where(Competition.id.in_(
+                {s.competition_id for s in subs if s.competition_id is not None}
+            ))
+        ).all()
+    } if subs else {}
+    # Pull per-attempt cost+token series in ONE pass keyed by submission
+    # id so we can compute the per-row total and median without an N+1.
+    # Includes prompt_tokens so we can live-recompute cost when the model
+    # has /models pricing set (otherwise we fall back to attempt.cost_usd).
+    _pricing = _model_pricing_lookup(session)
+    sub_attempts: dict[int, list[Attempt]] = {}
+    if subs:
+        for a in session.exec(
+            select(Attempt).where(Attempt.submission_id.in_({s.id for s in subs}))
+        ).all():
+            sub_attempts.setdefault(a.submission_id, []).append(a)
     for i, s in enumerate(subs, start=1):
         u = session.get(User, s.user_id)
+        comp = comp_by_id.get(s.competition_id) if s.competition_id else None
+        atts = sub_attempts.get(s.id, [])
+        # Per-attempt cost: live recompute when possible, else snapshot.
+        per_cost: list[float] = []
+        for a in atts:
+            live = _recompute_attempt_cost(a, s.model_name, s.model_version, _pricing)
+            x = live if live is not None else a.cost_usd
+            if x is not None:
+                per_cost.append(x)
+        per_tokens = [a.response_tokens for a in atts if a.response_tokens is not None]
+        per_wall = [a.wall_clock_ms for a in atts if a.wall_clock_ms is not None]
+        total_cost = sum(per_cost) if per_cost else None
+        total_tokens = sum(per_tokens) if per_tokens else s.total_response_tokens
+        total_wall = sum(per_wall) if per_wall else s.total_generation_ms
         out.append(RankingEntry(
             rank=i, model_name=s.model_name, model_version=s.model_version,
             language=s.language,
@@ -726,18 +1277,35 @@ def rankings(
             submitter_slug=_slug(_submitter_label(u)),
             prompt_id=s.prompt_id,
             prompt_name=prompt_name_by_id.get(s.prompt_id) if s.prompt_id else None,
+            competition_slug=comp.slug if comp else None,
+            competition_name=comp.name if comp else None,
+            total_response_tokens=total_tokens,
+            median_response_tokens_per_attempt=_median_or_none(per_tokens),
+            total_cost_usd=total_cost,
+            median_cost_usd_per_attempt=_median_or_none(per_cost),
+            total_generation_ms=int(total_wall) if total_wall is not None else None,
+            median_generation_ms_per_attempt=_median_or_none(per_wall),
         ))
     return out
 
 
 @app.get("/api/submissions", response_model=list[SubmissionPublic])
 def list_submissions(session: Session = Depends(get_session)):
+    # Sort by last activity (newest attempt), falling back to created_at
+    # for submissions that don't have any attempts yet. We don't have an
+    # indexed last_attempt_at column on Submission, so we sort in Python
+    # after _submission_public() computes it. Cheap for the dataset
+    # sizes we run at (≪ 10k submissions); revisit if that changes.
     subs = session.exec(
         select(Submission)
         .where(Submission.deleted_at.is_(None))
-        .order_by(Submission.created_at.desc())
     ).all()
-    return [_submission_public(s, session) for s in subs]
+    rows = [_submission_public(s, session) for s in subs]
+    rows.sort(
+        key=lambda r: r.last_attempt_at or r.created_at,
+        reverse=True,
+    )
+    return rows
 
 
 # ---------- Registered models (the curated catalog) -------------------------
@@ -780,6 +1348,8 @@ def list_registered_models(
             description=rm.description, model_type=rm.model_type,
             family=rm.family, provenance=rm.provenance,
             status=rm.status, added_at=rm.added_at,
+            input_price_per_1m_usd=rm.input_price_per_1m_usd,
+            output_price_per_1m_usd=rm.output_price_per_1m_usd,
             n_submissions=len(matching),
             n_judged=len(judged),
             last_submitted_at=max((s.created_at for s in matching), default=None),
@@ -838,6 +1408,108 @@ def delete_registered_model(
         raise HTTPException(404, "registered model not found")
     session.delete(rm); session.commit()
     return None
+
+
+# ---- Per-model pricing -----------------------------------------------------
+#
+# Inline-edit endpoint for the /models page. We keep this distinct from the
+# generic PUT above so the SPA can patch just the two cost cells without
+# round-tripping every other registered-model field — that would let an
+# operator who clicks "save price" silently revert a description someone
+# else just edited.
+
+@app.patch("/api/admin/registered-models/{rm_id}/pricing",
+           response_model=RegisteredModelPublic)
+def update_registered_model_pricing(
+    rm_id: int, payload: RegisteredModelPricingPatch,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Update ONLY the per-1M-token rates for one registered model. The
+    SPA calls this on every blur of the two cost cells; null values are
+    persisted (and clear any previously-set rate, falling cost display
+    back to per-attempt snapshots).
+    """
+    rm = session.get(RegisteredModel, rm_id)
+    if not rm:
+        raise HTTPException(404, "registered model not found")
+    rm.input_price_per_1m_usd = payload.input_price_per_1m_usd
+    rm.output_price_per_1m_usd = payload.output_price_per_1m_usd
+    session.add(rm); session.commit(); session.refresh(rm)
+    return rm
+
+
+# Default per-model pricing seeded from the same table the sweep client
+# uses. Operator can fill the rates in for every known model in one call
+# rather than copying numbers cell-by-cell. The table here mirrors
+# `webapp/examples/submit_with_local_model.py::OPENAI_PRICING_USD_PER_1M`
+# — when prices change, edit both (the client table drives at-submit
+# snapshots, this one drives the SPA-side recomputation).
+_DEFAULT_MODEL_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    "gpt-5":             {"in": 1.25, "out": 10.00},
+    "gpt-5-mini":        {"in": 0.25, "out": 2.00},
+    "gpt-5.4-mini":      {"in": 0.25, "out": 2.00},
+    "gpt-5-nano":        {"in": 0.05, "out": 0.40},
+    "gpt-5-chat":        {"in": 1.25, "out": 10.00},
+    "gpt-5-chat-latest": {"in": 1.25, "out": 10.00},
+    "gpt-4.1":           {"in": 2.00, "out": 8.00},
+    "gpt-4.1-mini":      {"in": 0.40, "out": 1.60},
+    "gpt-4.1-nano":      {"in": 0.10, "out": 0.40},
+    "gpt-4o":            {"in": 2.50, "out": 10.00},
+    "gpt-4o-mini":       {"in": 0.15, "out": 0.60},
+    "o4-mini":           {"in": 1.10, "out": 4.40},
+    "o3":                {"in": 2.00, "out": 8.00},
+    "o3-mini":           {"in": 1.10, "out": 4.40},
+}
+
+
+@app.post("/api/admin/registered-models/seed-pricing")
+def seed_registered_model_pricing(
+    overwrite: bool = False,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Populate `input_price_per_1m_usd` / `output_price_per_1m_usd` on
+    every RegisteredModel row whose `name` matches an entry in the
+    built-in defaults table (the same one the matrix_sweep client uses
+    to snapshot costs at submit time).
+
+    By default we ONLY fill rows whose pricing fields are null — that
+    way an operator who set custom rates on, say, gpt-4o-mini doesn't
+    get them clobbered on a re-seed. Pass `?overwrite=true` to force
+    re-application of the defaults across every matching row.
+
+    Returns a small summary so the SPA can show "filled N rows; skipped
+    M (already had custom rates); 0 matched by name in defaults table".
+    """
+    rms = session.exec(select(RegisteredModel)).all()
+    filled = 0
+    skipped_has_rates = 0
+    skipped_no_default = 0
+    for rm in rms:
+        defaults = _DEFAULT_MODEL_PRICING_USD_PER_1M.get(rm.name)
+        if defaults is None:
+            skipped_no_default += 1
+            continue
+        already_set = (
+            rm.input_price_per_1m_usd is not None
+            or rm.output_price_per_1m_usd is not None
+        )
+        if already_set and not overwrite:
+            skipped_has_rates += 1
+            continue
+        rm.input_price_per_1m_usd = defaults["in"]
+        rm.output_price_per_1m_usd = defaults["out"]
+        session.add(rm)
+        filled += 1
+    session.commit()
+    return {
+        "filled": filled,
+        "skipped_has_rates": skipped_has_rates,
+        "skipped_no_default": skipped_no_default,
+        "overwrite_mode": overwrite,
+        "total_registered_models": len(rms),
+    }
 
 
 # ---------- Prompt templates ------------------------------------------------
@@ -940,6 +1612,256 @@ def _competition_stats(
             sorted({s.language for s in subs}), judged)
 
 
+# ---------- Cost estimator -------------------------------------------------
+#
+# "How much would it cost me to run THIS model across PerfArena's problem set?"
+# The naive answer is `avg_tokens_per_attempt × n_attempts × $/1M-tokens`, but
+# that fakes a precision that historical data doesn't actually have — token
+# counts vary wildly between problems, prompts, and the model's verbosity
+# of the day. So instead of a single point estimate we surface the OBSERVED
+# RANGE of full-sweep token totals: every already-completed submission that
+# covers the problem set in scope contributes one (total_in, total_out)
+# datapoint, and the user gets a [min … max] envelope to multiply by their
+# own $-per-1M rate.
+#
+# We parse the per-attempt `provider_meta` out of trace JSON at query time:
+#
+#   * OpenAI:  trace.provider_meta.usage.{prompt_tokens, completion_tokens}
+#   * Ollama:  trace.provider_meta.{prompt_eval_count, eval_count}
+#
+# No schema migration — the data has been landing in the trace column since
+# day one of the OpenAI provider work. Cost stays cheap (one Python decode
+# per attempt; <1 ms in practice) because the calculator's scope is bounded
+# to full sweeps, of which there are tens at most per filter combo.
+
+
+def _extract_attempt_tokens(trace: dict | None) -> tuple[int | None, int | None]:
+    """Return (input_tokens, output_tokens) from an attempt's trace dict,
+    handling the two on-the-wire shapes we ingest. Either value is None
+    when the corresponding count isn't present (e.g. an Ollama attempt
+    where the model didn't report prompt_eval_count)."""
+    if not isinstance(trace, dict):
+        return None, None
+    meta = trace.get("provider_meta")
+    if not isinstance(meta, dict):
+        return None, None
+    # OpenAI shape — .usage is the canonical sub-object on a Chat Completions
+    # response and survives the round-trip into our trace dict untouched.
+    usage = meta.get("usage")
+    if isinstance(usage, dict):
+        pt = usage.get("prompt_tokens")
+        ct = usage.get("completion_tokens")
+        if pt is not None or ct is not None:
+            return (int(pt) if pt is not None else None,
+                    int(ct) if ct is not None else None)
+    # Ollama shape — flat counts directly on provider_meta.
+    pe = meta.get("prompt_eval_count")
+    ev = meta.get("eval_count")
+    if pe is not None or ev is not None:
+        return (int(pe) if pe is not None else None,
+                int(ev) if ev is not None else None)
+    return None, None
+
+
+@app.get("/api/cost-estimator-stats", response_model=CostEstimatorStats)
+def cost_estimator_stats(
+    prompt_id: int | None = None,
+    language: str | None = None,
+    model_name: str | None = None,
+    competition: str | None = None,
+    session: Session = Depends(get_session),
+):
+    """Token footprints of every full-sweep submission matching the filters,
+    plus the universes for each filter's dropdown. The frontend's calculator
+    multiplies the returned min/max by the user-supplied $-per-1M rates to
+    produce a cost envelope.
+
+    "Full sweep" = a submission whose attempts cover every problem in its
+    competition (or in the platform if it isn't tied to one). Partial
+    sweeps are listed but flagged `is_full_sweep=false` and excluded from
+    the min/max envelope — comparing a 30-problem sweep to a 99-problem
+    sweep would skew the range without telling the user anything useful."""
+    # --- Universes for the dropdowns. Computed BEFORE we apply filters so
+    # the user can navigate the picker from any filter state. ---
+    all_subs = session.exec(
+        select(Submission).where(Submission.deleted_at.is_(None))
+    ).all()
+    prompt_id_set = {s.prompt_id for s in all_subs if s.prompt_id is not None}
+    prompt_objs = session.exec(
+        select(PromptTemplate).where(PromptTemplate.id.in_(prompt_id_set))
+    ).all() if prompt_id_set else []
+    available_prompts = sorted(
+        [{"id": p.id, "name": p.name} for p in prompt_objs],
+        key=lambda r: r["name"].lower(),
+    )
+    available_languages = sorted({s.language for s in all_subs if s.language})
+    available_models = sorted({s.model_name for s in all_subs if s.model_name})
+    # All non-retired competitions are pickable. We don't gate by "appears
+    # in submissions" because someone may want to estimate cost for a NEW
+    # competition before any sweep has run against it.
+    comp_rows = session.exec(
+        select(Competition).where(Competition.status != "retired")
+    ).all()
+    available_competitions = sorted(
+        [{"slug": c.slug, "name": c.name} for c in comp_rows],
+        key=lambda r: r["name"].lower(),
+    )
+
+    # --- Apply the filters. ---
+    q = select(Submission).where(Submission.deleted_at.is_(None))
+    if prompt_id is not None:
+        q = q.where(Submission.prompt_id == prompt_id)
+    if language:
+        q = q.where(Submission.language == language)
+    if model_name:
+        q = q.where(Submission.model_name == model_name)
+    comp_obj: Competition | None = None
+    comp_problem_ids: set[int] | None = None
+    if competition:
+        comp_obj = session.exec(
+            select(Competition).where(Competition.slug == competition)
+        ).first()
+        if comp_obj is None:
+            raise HTTPException(404, f"competition '{competition}' not found")
+        comp_problem_ids = {
+            cp.problem_id for cp in session.exec(
+                select(CompetitionProblem).where(
+                    CompetitionProblem.competition_id == comp_obj.id
+                )
+            ).all()
+        }
+    subs = session.exec(q).all()
+
+    # Problem-count denominator — defines what "full sweep" means in scope.
+    # Without a competition filter we use the total platform problem count
+    # (the seed competition links every problem, so this matches the
+    # leetcode-99-perf size in practice).
+    if comp_problem_ids is not None:
+        n_in_scope = len(comp_problem_ids)
+    else:
+        # Count once, no need to load every row.
+        n_in_scope = len(session.exec(select(Problem.id)).all())
+
+    # Pre-fetch prompt names for the rows we'll emit.
+    sub_prompt_ids = {s.prompt_id for s in subs if s.prompt_id is not None}
+    prompt_name_by_id = {
+        p.id: p.name for p in session.exec(
+            select(PromptTemplate).where(PromptTemplate.id.in_(sub_prompt_ids))
+        ).all()
+    } if sub_prompt_ids else {}
+
+    # Each submission's competition memberships (light-weight; via the join
+    # table). We pick the first matching competition for display — most
+    # submissions belong to one.
+    sub_ids = [s.id for s in subs]
+    sub_competitions: dict[int, tuple[str, str]] = {}
+    if sub_ids:
+        # Reach competitions via the problems the submission's attempts hit.
+        # That's the only link between Submission and Competition today.
+        attempt_problems = session.exec(
+            select(Attempt.submission_id, Attempt.problem_id)
+            .where(Attempt.submission_id.in_(sub_ids))
+        ).all()
+        # problem_id -> first (slug, name) it competes under
+        per_problem_comp: dict[int, tuple[str, str]] = {}
+        for cp, comp in session.exec(
+            select(CompetitionProblem, Competition)
+            .where(CompetitionProblem.competition_id == Competition.id)
+        ).all():
+            per_problem_comp.setdefault(cp.problem_id, (comp.slug, comp.name))
+        for sid, pid in attempt_problems:
+            if sid in sub_competitions:
+                continue
+            hit = per_problem_comp.get(pid)
+            if hit:
+                sub_competitions[sid] = hit
+
+    rows: list[CostEstimatorSubmission] = []
+    full_input_totals: list[int] = []
+    full_output_totals: list[int] = []
+    for s in subs:
+        attempts = session.exec(
+            select(Attempt).where(Attempt.submission_id == s.id)
+        ).all()
+        if not attempts:
+            continue
+        # Restrict to attempts hitting the competition's problem set when a
+        # competition filter is active — protects against a cross-competition
+        # submission inflating "n_problems_attempted".
+        if comp_problem_ids is not None:
+            attempts = [a for a in attempts if a.problem_id in comp_problem_ids]
+        if not attempts:
+            continue
+
+        total_in: int | None = None
+        total_out: int | None = None
+        n_with_tokens = 0
+        for a in attempts:
+            in_tok, out_tok = _extract_attempt_tokens(a.trace)
+            if in_tok is not None or out_tok is not None:
+                n_with_tokens += 1
+            if in_tok is not None:
+                total_in = (total_in or 0) + in_tok
+            if out_tok is not None:
+                total_out = (total_out or 0) + out_tok
+
+        n_attempted = len({a.problem_id for a in attempts})
+        is_full = n_in_scope > 0 and n_attempted >= n_in_scope
+
+        comp_hit = sub_competitions.get(s.id)
+        rows.append(CostEstimatorSubmission(
+            submission_id=s.id,
+            model_name=s.model_name,
+            model_version=s.model_version,
+            language=s.language,
+            prompt_id=s.prompt_id,
+            prompt_name=prompt_name_by_id.get(s.prompt_id) if s.prompt_id else None,
+            competition_slug=comp_hit[0] if comp_hit else None,
+            competition_name=comp_hit[1] if comp_hit else None,
+            n_attempts=len(attempts),
+            n_problems_attempted=n_attempted,
+            n_problems_in_scope=n_in_scope,
+            is_full_sweep=is_full,
+            total_input_tokens=total_in,
+            total_output_tokens=total_out,
+            n_attempts_with_token_data=n_with_tokens,
+        ))
+        # Only full sweeps with at least one token-bearing attempt go into
+        # the envelope — half-instrumented partial sweeps would lie.
+        if is_full and n_with_tokens > 0:
+            if total_in is not None:
+                full_input_totals.append(total_in)
+            if total_out is not None:
+                full_output_totals.append(total_out)
+
+    def _range(xs: list[int]) -> CostEstimatorRange:
+        if not xs:
+            return CostEstimatorRange(min=None, max=None, median=None, n=0)
+        s = sorted(xs)
+        mid = s[len(s) // 2] if len(s) % 2 else (s[len(s) // 2 - 1] + s[len(s) // 2]) // 2
+        return CostEstimatorRange(min=s[0], max=s[-1], median=mid, n=len(s))
+
+    # Order rows newest-first by submission id so the table reads top-down
+    # as recent → older — consistent with the rest of the platform.
+    rows.sort(key=lambda r: r.submission_id, reverse=True)
+
+    return CostEstimatorStats(
+        applied={
+            "prompt_id": prompt_id,
+            "language": language,
+            "model_name": model_name,
+            "competition": competition,
+        },
+        available_prompts=available_prompts,
+        available_languages=available_languages,
+        available_models=available_models,
+        available_competitions=available_competitions,
+        submissions=rows,
+        input_tokens=_range(full_input_totals),
+        output_tokens=_range(full_output_totals),
+    )
+
+
 @app.get("/api/competitions", response_model=list[CompetitionPublic])
 def list_competitions(
     include_retired: bool = False,
@@ -993,19 +1915,100 @@ def get_competition(slug: str, session: Session = Depends(get_session)):
 
     n_subs, n_models, langs, judged = _competition_stats(session, member_pids)
 
-    # Top models by best pass@1 within the competition's problems. Cap at 5.
+    # Per-model leaderboard SCOPED to this competition.
+    #
+    # Previously this picked each submission's own `pass_at_1` directly
+    # — which was wrong when the submission was created against a DIFFERENT
+    # competition (e.g. the canonical `leetcode-99-perf` 99-problem set)
+    # but happens to overlap on a few problems with the one being viewed
+    # (`leetcode-99-hard-perf`). The submission's own pass_at_1 reflects
+    # ITS competition's universe (the full 99), not this competition's
+    # smaller subset, so the displayed number was misleading.
+    #
+    # Now we recompute every metric from scratch over the per-(model,
+    # version) attempts that touch THIS competition's problem set. Each
+    # problem contributes ONE data point (best accepted attempt, same
+    # picker the rest of the SPA uses); pass_at_1 is then accepted /
+    # total-in-competition.
+    n_comp_problems = max(len(member_pids), 1)
+    # Pull every attempt on the competition's problems in one query so
+    # we don't N+1 per submission.
+    comp_attempts_by_sub: dict[int, list[Attempt]] = {}
+    if member_pids and judged:
+        judged_ids = {s.id for s in judged}
+        for a in session.exec(
+            select(Attempt).where(
+                Attempt.submission_id.in_(judged_ids),
+                Attempt.problem_id.in_(member_pids),
+            )
+        ).all():
+            comp_attempts_by_sub.setdefault(a.submission_id, []).append(a)
+
     by_model: dict[tuple[str, str], list[Submission]] = {}
     for s in judged:
         by_model.setdefault((s.model_name, s.model_version), []).append(s)
     top: list[dict] = []
     for (name, ver), subs in by_model.items():
-        best = max((s.pass_at_1 for s in subs if s.pass_at_1 is not None), default=None)
-        if best is None:
+        # Per-problem best attempt across this model's submissions on
+        # the competition's problems. A model that submitted twice for
+        # the same problem only contributes its WINNING attempt to the
+        # competition metrics — same `accepted-runs-share, lowest avg
+        # runtime` picker `_compute_winners` uses elsewhere.
+        per_problem: dict[int, Attempt] = {}
+        for s in subs:
+            for a in comp_attempts_by_sub.get(s.id, []):
+                cur = per_problem.get(a.problem_id)
+                # Picker: highest accepted share, then lowest avg runtime.
+                a_share = ((a.n_accepted_runs or 0) / a.n_runs) if a.n_runs else 0
+                if cur is None:
+                    per_problem[a.problem_id] = a
+                else:
+                    cur_share = ((cur.n_accepted_runs or 0) / cur.n_runs) if cur.n_runs else 0
+                    if a_share > cur_share:
+                        per_problem[a.problem_id] = a
+                    elif a_share == cur_share:
+                        a_rt = a.avg_runtime_ms if a.avg_runtime_ms is not None else float("inf")
+                        cur_rt = cur.avg_runtime_ms if cur.avg_runtime_ms is not None else float("inf")
+                        if a_rt < cur_rt:
+                            per_problem[a.problem_id] = a
+        if not per_problem:
             continue
-        top.append({"model_name": name, "model_version": ver,
-                    "best_pass_at_1": best,
-                    "n_submissions": len(subs)})
-    top.sort(key=lambda r: r["best_pass_at_1"], reverse=True)
+        accepted_atts = [
+            a for a in per_problem.values()
+            if a.final_status == "Accepted"
+        ]
+        n_acc = len(accepted_atts)
+        n_attempted = len(per_problem)
+        # pass@1 is the universal "fraction of the competition solved".
+        # pass@k is "of the problems attempted, what share got an Accept"
+        # — same definitions as everywhere else in the SPA.
+        pass_at_1 = n_acc / n_comp_problems
+        pass_at_k = (n_acc / n_attempted) if n_attempted else 0.0
+        rt = [a.avg_runtime_ms for a in accepted_atts if a.avg_runtime_ms is not None]
+        mem = [a.avg_memory_mb for a in accepted_atts if a.avg_memory_mb is not None]
+        rtp = [a.avg_runtime_percentile for a in accepted_atts if a.avg_runtime_percentile is not None]
+        memp = [a.avg_memory_percentile for a in accepted_atts if a.avg_memory_percentile is not None]
+        top.append({
+            "model_name": name,
+            "model_version": ver,
+            "best_pass_at_1": pass_at_1,
+            "pass_at_k": pass_at_k,
+            "n_submissions": len(subs),
+            "n_solved": n_acc,
+            "n_attempted": n_attempted,
+            "n_problems": n_comp_problems,
+            "avg_runtime_ms": _mean_or_none(rt),
+            "avg_memory_mb": _mean_or_none(mem),
+            "avg_runtime_percentile": _mean_or_none(rtp),
+            "avg_memory_percentile": _mean_or_none(memp),
+        })
+    # Primary sort: pass@1 desc. Tiebreak: runtime-percentile desc, then
+    # memory-percentile desc — same "more is better" semantics as /rankings.
+    top.sort(key=lambda r: (
+        -(r["best_pass_at_1"] or 0),
+        -(r.get("avg_runtime_percentile") or 0),
+        -(r.get("avg_memory_percentile") or 0),
+    ))
 
     return CompetitionDetail(
         id=c.id, slug=c.slug, name=c.name,
@@ -1292,6 +2295,12 @@ def compare_models(
     slug_to_id = {p.title_slug: pid for pid, p in all_problems.items()}
 
     summary: list[CompareSummaryRow] = []
+    by_level_rows: list[CompareByLevelRow] = []
+    # Per-(model, tag) → {n_attempted, n_accepted, avg_rt[], avg_mem[]}.
+    # Filled inside the same per-problem loop we already walk for
+    # by_level so we don't pay a second pass. Tags come from
+    # Problem.tags (comma-separated string the parquet stores them in).
+    by_tag_acc: dict[tuple[str, str], dict] = {}
     # Cache per (model, problem) → "best attempt" (accepted-first, then fastest).
     best_atts: dict[tuple[str, int], Attempt] = {}
     for model_name in models:
@@ -1329,7 +2338,63 @@ def compare_models(
         avg_rtp, avg_memp = [], []
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
         n_accepted = 0
+        # Per-level breakdown buckets. We tally attempted/accepted counts
+        # PER LEVEL so the SPA can chart Easy/Medium/Hard side-by-side,
+        # not just the all-levels aggregate. Mirrors the overall lists
+        # above but keyed by Problem.level. Models that touched only some
+        # levels get 0-attempted entries for the others below (the SPA
+        # still needs a cell to render the bar at zero).
+        BY_LEVEL = ("Easy", "Medium", "Hard")
+        per_level: dict[str, dict] = {
+            lvl: {
+                "n_attempted": 0, "n_accepted": 0,
+                "avg_rt": [], "avg_mem": [],
+                "avg_rtp": [], "avg_memp": [],
+                # generator-side accumulators — summed across ALL attempts
+                # for the problem, then averaged across problems below.
+                # Costs etc. are per-attempt LLM spend, so a model that
+                # retries 3 times for one problem at level X spends 3×
+                # the per-call cost on that problem. Honest to roll that
+                # up rather than picking the cheapest attempt.
+                "cost_per_problem": [],
+                "tokens_per_problem": [],
+                "wall_per_problem": [],
+            }
+            for lvl in BY_LEVEL
+        }
         for pid, atts in by_pid.items():
+            problem = all_problems.get(pid)
+            lvl = (problem.level if problem else "") or ""
+            bucket = per_level.get(lvl)
+            if bucket is not None:
+                bucket["n_attempted"] += 1
+                # Sum generator-side spend across every attempt for this
+                # problem, then push the per-problem total as a single
+                # data point. None entries are skipped so a partially-
+                # instrumented submission doesn't lie about the average.
+                costs = [a.cost_usd for a in atts if a.cost_usd is not None]
+                if costs:
+                    bucket["cost_per_problem"].append(sum(costs))
+                toks = [a.response_tokens for a in atts if a.response_tokens is not None]
+                if toks:
+                    bucket["tokens_per_problem"].append(sum(toks))
+                wcs = [a.wall_clock_ms for a in atts if a.wall_clock_ms is not None]
+                if wcs:
+                    bucket["wall_per_problem"].append(sum(wcs))
+            # Per-tag attempted-count tally — runs for EVERY problem this
+            # model touched, accept-status independent. The accepted +
+            # runtime/memory tallies happen later inside the accepted branch
+            # (we don't have perf numbers for failed attempts).
+            problem_tags = [
+                t.strip() for t in ((problem.tags if problem else "") or "").split(",")
+                if t.strip()
+            ]
+            for tag in problem_tags:
+                cell = by_tag_acc.setdefault((model_name, tag), {
+                    "n_attempted": 0, "n_accepted": 0,
+                    "avg_rt": [], "avg_mem": [],
+                })
+                cell["n_attempted"] += 1
             accepted = [a for a in atts if a.final_status == "Accepted"]
             if accepted:
                 best = max(accepted, key=lambda a: (
@@ -1337,6 +2402,8 @@ def compare_models(
                     -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
                 ))
                 n_accepted += 1
+                if bucket is not None:
+                    bucket["n_accepted"] += 1
             else:
                 best = max(atts, key=lambda a: a.id)
             best_atts[(model_name, pid)] = best
@@ -1347,7 +2414,28 @@ def compare_models(
             if best.avg_memory_mb is not None:     avg_mem.append(best.avg_memory_mb)
             if best.best_memory_mb is not None:    best_mem.append(best.best_memory_mb)
             if best.avg_runtime_percentile is not None: avg_rtp.append(best.avg_runtime_percentile)
+            # Per-level perf accumulators — only over accepted attempts so
+            # the runtime/memory averages aren't dragged by failed code.
+            if bucket is not None and best.avg_runtime_ms is not None:
+                bucket["avg_rt"].append(best.avg_runtime_ms)
+            if bucket is not None and best.avg_memory_mb is not None:
+                bucket["avg_mem"].append(best.avg_memory_mb)
+            if bucket is not None and best.avg_runtime_percentile is not None:
+                bucket["avg_rtp"].append(best.avg_runtime_percentile)
+            if bucket is not None and best.avg_memory_percentile is not None:
+                bucket["avg_memp"].append(best.avg_memory_percentile)
             if best.avg_memory_percentile is not None:  avg_memp.append(best.avg_memory_percentile)
+            # Per-tag accepted + perf tallies. n_attempted was already
+            # bumped earlier in the loop regardless of acceptance; here
+            # we just bump n_accepted and push runtime/memory from the
+            # winning attempt for each tag the problem carries.
+            for tag in problem_tags:
+                cell = by_tag_acc[(model_name, tag)]
+                cell["n_accepted"] += 1
+                if best.avg_runtime_ms is not None:
+                    cell["avg_rt"].append(best.avg_runtime_ms)
+                if best.avg_memory_mb is not None:
+                    cell["avg_mem"].append(best.avg_memory_mb)
 
             sub_of_best = next((s for s in model_subs if s.id == best.submission_id), None)
             baseline = session.exec(
@@ -1385,6 +2473,27 @@ def compare_models(
             mem_human_expert=_mean_or_none(m_h_exp),
             leading_submission_id=leading.id if leading else None,
         ))
+        # Emit one CompareByLevelRow per (model, level), in Easy→Medium→Hard
+        # order so the SPA can iterate the rows directly to populate its
+        # grouped bar charts.
+        for lvl in BY_LEVEL:
+            b = per_level[lvl]
+            n_att = b["n_attempted"]
+            n_acc = b["n_accepted"]
+            by_level_rows.append(CompareByLevelRow(
+                model_name=model_name,
+                level=lvl,
+                n_attempted=n_att,
+                n_accepted=n_acc,
+                pass_rate=(n_acc / n_att) if n_att else 0.0,
+                avg_runtime_ms=_mean_or_none(b["avg_rt"]),
+                avg_memory_mb=_mean_or_none(b["avg_mem"]),
+                avg_runtime_percentile=_mean_or_none(b["avg_rtp"]),
+                avg_memory_percentile=_mean_or_none(b["avg_memp"]),
+                avg_cost_usd=_mean_or_none(b["cost_per_problem"]),
+                avg_response_tokens=_mean_or_none(b["tokens_per_problem"]),
+                avg_wall_clock_ms=_mean_or_none(b["wall_per_problem"]),
+            ))
 
     # Per-problem matrix: every problem any model touched (capped to the
     # filter subset if provided).
@@ -1429,11 +2538,291 @@ def compare_models(
             per_model=per_model,
         ))
 
+    # Flatten the per-tag accumulator into typed rows. One row per
+    # (model, tag); models that never touched a tag get no row for it
+    # — the SPA can fold the absent cells to "no data" spokes on the
+    # radar. Sort by tag for stable axis order on the chart.
+    by_tag_rows: list[CompareByTagRow] = []
+    for (mn, tag), cell in sorted(by_tag_acc.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        n_att = cell["n_attempted"]
+        n_acc = cell["n_accepted"]
+        by_tag_rows.append(CompareByTagRow(
+            model_name=mn, tag=tag,
+            n_attempted=n_att, n_accepted=n_acc,
+            pass_rate=(n_acc / n_att) if n_att else 0.0,
+            avg_runtime_ms=_mean_or_none(cell["avg_rt"]),
+            avg_memory_mb=_mean_or_none(cell["avg_mem"]),
+        ))
+
     return CompareResponse(
         models=models, language=language,
         problem_slugs=sorted(wanted_slugs) if wanted_slugs else None,
         summary=summary, problems=problems_out,
         winners=_compute_winners(summary, single_language=language is not None),
+        by_level=by_level_rows,
+        by_tag=by_tag_rows,
+    )
+
+
+# ---- per-submission comparison ---------------------------------------------
+#
+# Same response shape as /api/compare (so the SPA reuses every render
+# component on its new "Compare submissions" tab), but the axis is the
+# SUBMISSION id rather than the model name. Each picked submission is
+# its own "row" — useful when you want to compare two snapshots of the
+# same model (different prompt, different temperature, different sweep
+# run) without aggregating them together.
+
+@app.get("/api/compare/submissions", response_model=CompareResponse)
+def compare_submissions(
+    ids: list[int] = Query(..., min_length=2,
+                           description="repeat ?ids=N for each submission to compare"),
+    problems: str | None = Query(
+        None, description="comma-separated problem slugs to restrict to"),
+    session: Session = Depends(get_session),
+):
+    """Head-to-head comparison across specific submission IDs. Each
+    submission contributes one row; the response shape is identical to
+    /api/compare so the SPA reuses the same SummaryTable, CompareByLevel,
+    and PerProblemMatrix renderers. Labels for the per-row "model" field
+    are synthesised as `#<id> <model_name> · <language>` so the operator
+    can tell two submissions from the same model apart."""
+    wanted_slugs: set[str] | None = None
+    if problems:
+        wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
+
+    subs_by_id: dict[int, Submission] = {}
+    for sid in ids:
+        sub = session.get(Submission, sid)
+        if sub is None or sub.deleted_at is not None:
+            raise HTTPException(404, f"submission {sid} not found")
+        subs_by_id[sid] = sub
+    # Each submission's label is its own "model_name" in the response,
+    # so the SPA can colour-code and label them without ambiguity.
+    labels_in_order: list[str] = [
+        f"#{sid} {subs_by_id[sid].model_name} · {subs_by_id[sid].language}"
+        for sid in ids
+    ]
+    label_by_id: dict[int, str] = dict(zip(ids, labels_in_order))
+
+    all_problems = {p.id: p for p in session.exec(select(Problem)).all()}
+    slug_to_id = {p.title_slug: pid for pid, p in all_problems.items()}
+
+    summary: list[CompareSummaryRow] = []
+    by_level_rows: list[CompareByLevelRow] = []
+    # Same shape as the /api/compare model-axis route: (label, tag) →
+    # rolling tallies. Drives the radar charts in the SPA's Submissions
+    # tab so a viewer can ask "which submission is strongest on Graph
+    # problems?" the same way they ask the model-axis question.
+    by_tag_acc: dict[tuple[str, str], dict] = {}
+    best_atts: dict[tuple[str, int], Attempt] = {}
+
+    BY_LEVEL = ("Easy", "Medium", "Hard")
+    for sid in ids:
+        sub = subs_by_id[sid]
+        label = label_by_id[sid]
+        attempts = session.exec(
+            select(Attempt).where(Attempt.submission_id == sid)
+        ).all()
+        # Restrict to the requested slug subset (if any).
+        attempted_pids: set[int] = set()
+        by_pid: dict[int, list[Attempt]] = {}
+        for a in attempts:
+            if wanted_slugs is not None:
+                p = all_problems.get(a.problem_id)
+                if p is None or p.title_slug not in wanted_slugs:
+                    continue
+            attempted_pids.add(a.problem_id)
+            by_pid.setdefault(a.problem_id, []).append(a)
+
+        avg_rt, best_rt, avg_mem, best_mem = [], [], [], []
+        avg_rtp, avg_memp = [], []
+        t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
+        n_accepted = 0
+        per_level: dict[str, dict] = {
+            lvl: {
+                "n_attempted": 0, "n_accepted": 0,
+                "avg_rt": [], "avg_mem": [],
+                "avg_rtp": [], "avg_memp": [],
+                "cost_per_problem": [], "tokens_per_problem": [],
+                "wall_per_problem": [],
+            }
+            for lvl in BY_LEVEL
+        }
+        for pid, atts in by_pid.items():
+            problem = all_problems.get(pid)
+            lvl = (problem.level if problem else "") or ""
+            bucket = per_level.get(lvl)
+            if bucket is not None:
+                bucket["n_attempted"] += 1
+                costs = [a.cost_usd for a in atts if a.cost_usd is not None]
+                if costs:
+                    bucket["cost_per_problem"].append(sum(costs))
+                toks = [a.response_tokens for a in atts if a.response_tokens is not None]
+                if toks:
+                    bucket["tokens_per_problem"].append(sum(toks))
+                wcs = [a.wall_clock_ms for a in atts if a.wall_clock_ms is not None]
+                if wcs:
+                    bucket["wall_per_problem"].append(sum(wcs))
+            # Per-tag attempted tally — runs for every problem this
+            # submission touched. We index by `label` (the submission's
+            # display label) so each submission shows up as its own
+            # polygon on the radar.
+            problem_tags = [
+                t.strip() for t in ((problem.tags if problem else "") or "").split(",")
+                if t.strip()
+            ]
+            for tag in problem_tags:
+                cell = by_tag_acc.setdefault((label, tag), {
+                    "n_attempted": 0, "n_accepted": 0,
+                    "avg_rt": [], "avg_mem": [],
+                })
+                cell["n_attempted"] += 1
+            accepted = [a for a in atts if a.final_status == "Accepted"]
+            if accepted:
+                best = max(accepted, key=lambda a: (
+                    (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
+                    -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
+                ))
+                n_accepted += 1
+                if bucket is not None:
+                    bucket["n_accepted"] += 1
+            else:
+                best = max(atts, key=lambda a: a.id)
+            best_atts[(label, pid)] = best
+            if best.final_status != "Accepted":
+                continue
+            # Per-tag accepted + perf tallies. n_attempted was already
+            # bumped above so we only bump n_accepted here and push the
+            # winning attempt's perf numbers.
+            for tag in problem_tags:
+                cell = by_tag_acc[(label, tag)]
+                cell["n_accepted"] += 1
+                if best.avg_runtime_ms is not None:
+                    cell["avg_rt"].append(best.avg_runtime_ms)
+                if best.avg_memory_mb is not None:
+                    cell["avg_mem"].append(best.avg_memory_mb)
+            if best.avg_runtime_ms is not None:    avg_rt.append(best.avg_runtime_ms)
+            if best.best_runtime_ms is not None:   best_rt.append(best.best_runtime_ms)
+            if best.avg_memory_mb is not None:     avg_mem.append(best.avg_memory_mb)
+            if best.best_memory_mb is not None:    best_mem.append(best.best_memory_mb)
+            if best.avg_runtime_percentile is not None: avg_rtp.append(best.avg_runtime_percentile)
+            if best.avg_memory_percentile is not None:  avg_memp.append(best.avg_memory_percentile)
+            if bucket is not None and best.avg_runtime_ms is not None:
+                bucket["avg_rt"].append(best.avg_runtime_ms)
+            if bucket is not None and best.avg_memory_mb is not None:
+                bucket["avg_mem"].append(best.avg_memory_mb)
+            if bucket is not None and best.avg_runtime_percentile is not None:
+                bucket["avg_rtp"].append(best.avg_runtime_percentile)
+            if bucket is not None and best.avg_memory_percentile is not None:
+                bucket["avg_memp"].append(best.avg_memory_percentile)
+            baseline = session.exec(
+                select(Baseline).where(
+                    Baseline.problem_id == pid, Baseline.language == sub.language)
+            ).first()
+            if baseline and best.avg_runtime_ms and best.avg_runtime_ms > 0:
+                t_h_avg.append(baseline.runtime_ms_avg / best.avg_runtime_ms)
+                t_h_exp.append(baseline.runtime_ms_expert / best.avg_runtime_ms)
+            if baseline and best.avg_memory_mb and best.avg_memory_mb > 0:
+                m_h_avg.append(baseline.memory_mb_avg / best.avg_memory_mb)
+                m_h_exp.append(baseline.memory_mb_expert / best.avg_memory_mb)
+
+        summary.append(CompareSummaryRow(
+            model_name=label, n_submissions=1,
+            n_problems_accepted=n_accepted,
+            n_problems_attempted=len(attempted_pids),
+            languages=[sub.language],
+            pass_at_1_max=sub.pass_at_1,
+            pass_at_k_max=sub.pass_at_k,
+            pass_at_full_max=sub.pass_at_full,
+            avg_runtime_ms=_mean_or_none(avg_rt),
+            best_runtime_ms=_mean_or_none(best_rt),
+            avg_memory_mb=_mean_or_none(avg_mem),
+            best_memory_mb=_mean_or_none(best_mem),
+            avg_runtime_percentile=_mean_or_none(avg_rtp),
+            avg_memory_percentile=_mean_or_none(avg_memp),
+            time_human_avg=_mean_or_none(t_h_avg),
+            time_human_expert=_mean_or_none(t_h_exp),
+            mem_human_avg=_mean_or_none(m_h_avg),
+            mem_human_expert=_mean_or_none(m_h_exp),
+            leading_submission_id=sub.id,
+        ))
+        for lvl in BY_LEVEL:
+            b = per_level[lvl]
+            n_att = b["n_attempted"]
+            n_acc = b["n_accepted"]
+            by_level_rows.append(CompareByLevelRow(
+                model_name=label, level=lvl,
+                n_attempted=n_att, n_accepted=n_acc,
+                pass_rate=(n_acc / n_att) if n_att else 0.0,
+                avg_runtime_ms=_mean_or_none(b["avg_rt"]),
+                avg_memory_mb=_mean_or_none(b["avg_mem"]),
+                avg_runtime_percentile=_mean_or_none(b["avg_rtp"]),
+                avg_memory_percentile=_mean_or_none(b["avg_memp"]),
+                avg_cost_usd=_mean_or_none(b["cost_per_problem"]),
+                avg_response_tokens=_mean_or_none(b["tokens_per_problem"]),
+                avg_wall_clock_ms=_mean_or_none(b["wall_per_problem"]),
+            ))
+
+    # Per-problem matrix: every problem any submission touched.
+    matrix_pids = {pid for (_label, pid) in best_atts}
+    if wanted_slugs:
+        matrix_pids &= {slug_to_id[s] for s in wanted_slugs if s in slug_to_id}
+    matrix_pids_sorted = sorted(
+        matrix_pids,
+        key=lambda pid: (all_problems[pid].level, all_problems[pid].title_slug),
+    )
+    problems_out: list[CompareProblemRow] = []
+    for pid in matrix_pids_sorted:
+        p = all_problems[pid]
+        per_label: dict[str, CompareModelOnProblem] = {}
+        for label in labels_in_order:
+            best = best_atts.get((label, pid))
+            if best is None:
+                per_label[label] = CompareModelOnProblem(
+                    accepted=False, submission_id=None, attempt_id=None,
+                    language=None, status=None,
+                    runtime_ms=None, memory_mb=None,
+                    runtime_percentile=None, memory_percentile=None,
+                )
+                continue
+            sub_of = session.get(Submission, best.submission_id)
+            per_label[label] = CompareModelOnProblem(
+                accepted=best.final_status == "Accepted",
+                submission_id=best.submission_id, attempt_id=best.id,
+                language=sub_of.language if sub_of else None,
+                status=best.final_status,
+                runtime_ms=best.avg_runtime_ms, memory_mb=best.avg_memory_mb,
+                runtime_percentile=best.avg_runtime_percentile,
+                memory_percentile=best.avg_memory_percentile,
+            )
+        problems_out.append(CompareProblemRow(
+            problem_slug=p.title_slug, problem_title=p.title, level=p.level,
+            per_model=per_label,
+        ))
+
+    # Flatten the per-tag accumulator into typed rows. Same flatten
+    # logic as the model-axis route (sort by tag then label so the
+    # radar's axis order is stable across reloads).
+    by_tag_rows: list[CompareByTagRow] = []
+    for (lbl, tag), cell in sorted(by_tag_acc.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        n_att = cell["n_attempted"]
+        n_acc = cell["n_accepted"]
+        by_tag_rows.append(CompareByTagRow(
+            model_name=lbl, tag=tag,
+            n_attempted=n_att, n_accepted=n_acc,
+            pass_rate=(n_acc / n_att) if n_att else 0.0,
+            avg_runtime_ms=_mean_or_none(cell["avg_rt"]),
+            avg_memory_mb=_mean_or_none(cell["avg_mem"]),
+        ))
+
+    return CompareResponse(
+        models=labels_in_order, language=None,
+        problem_slugs=sorted(wanted_slugs) if wanted_slugs else None,
+        summary=summary, problems=problems_out,
+        winners=_compute_winners(summary, single_language=False),
+        by_level=by_level_rows,
+        by_tag=by_tag_rows,
     )
 
 
@@ -1701,6 +3090,21 @@ def _compute_winners(
 
 def _mean_or_none(xs: list[float]) -> float | None:
     return sum(xs) / len(xs) if xs else None
+
+
+def _median_or_none(xs: list[float]) -> float | None:
+    """Median of a numeric series — None when the series is empty. Used
+    by the rankings/submissions tables to surface per-attempt typical
+    spend without leaking the long tail of a submission with one
+    blown-budget attempt at the top of a chart."""
+    if not xs:
+        return None
+    s = sorted(xs)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 0:
+        return (s[mid - 1] + s[mid]) / 2
+    return s[mid]
 
 
 def _pearson(xs: list[float], ys: list[float]) -> float | None:
@@ -2138,6 +3542,34 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
     attempted = {a.problem_id for a in atts}
     all_pids = {p.id for p in session.exec(select(Problem)).all()}
     reason = _leaderboard_reason(s, attempted, all_pids)
+    # Competition reference for the new SPA column. None on legacy rows
+    # that pre-date the per-submission competition scope.
+    comp = session.get(Competition, s.competition_id) if s.competition_id is not None else None
+    # Last-attempt timestamp — drives the SPA's "When" sort on the
+    # /submissions table so a running sweep stays at the top of the
+    # list while it's still landing attempts. None when the submission
+    # has zero attempts (just created).
+    last_attempt_at = max((a.logged_at for a in atts if a.logged_at is not None), default=None)
+    # Live-recomputed total $: sum live per-attempt costs when the model
+    # has pricing rows AND the attempt has prompt_tokens; fall back to the
+    # snapshot cost_usd captured at submit on legacy attempts. Yields one
+    # consistent total an operator can act on. Null when no attempt has
+    # either a live or snapshot cost to contribute.
+    _pricing = _model_pricing_lookup(session)
+    live_total: float | None = None
+    # Per-attempt cost series — also feeds the median below.
+    per_attempt_costs: list[float] = []
+    for a in atts:
+        live = _recompute_attempt_cost(a, s.model_name, s.model_version, _pricing)
+        per_attempt = live if live is not None else a.cost_usd
+        if per_attempt is not None:
+            live_total = (live_total or 0.0) + per_attempt
+            per_attempt_costs.append(per_attempt)
+    # Per-attempt response_tokens series for the typical-spend median.
+    per_attempt_tokens = [a.response_tokens for a in atts if a.response_tokens is not None]
+    # Per-attempt generation-time series — same shape, used by the new
+    # "Median gen time" column on the rankings + submissions tables.
+    per_attempt_wall = [a.wall_clock_ms for a in atts if a.wall_clock_ms is not None]
     return SubmissionPublic(
         id=s.id, user_display_name=u.display_name if u else "?",
         user_org=u.org if u else None,
@@ -2170,10 +3602,20 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         n_rounds=s.n_rounds or 1,
         include_hints=bool(s.include_hints),
         optimization_target=s.optimization_target,
-        total_cost_usd=s.total_cost_usd,
+        # Prefer the LIVE total (current rates × stored tokens). When no
+        # attempt had stored tokens AND the model has no pricing row,
+        # `live_total` is None and we fall back to the snapshot column.
+        total_cost_usd=live_total if live_total is not None else s.total_cost_usd,
+        total_cost_usd_snapshot=s.total_cost_usd,
         total_response_tokens=s.total_response_tokens,
+        median_response_tokens_per_attempt=_median_or_none(per_attempt_tokens),
+        median_cost_usd_per_attempt=_median_or_none(per_attempt_costs),
+        median_generation_ms_per_attempt=_median_or_none(per_attempt_wall),
         total_generation_ms=s.total_generation_ms,
         total_generation_energy_j=s.total_generation_energy_j,
+        competition_slug=comp.slug if comp else None,
+        competition_name=comp.name if comp else None,
+        last_attempt_at=last_attempt_at,
     )
 
 
@@ -2186,22 +3628,69 @@ def get_captcha():
 
 @app.get("/api/languages")
 def list_languages(session: Session = Depends(get_session)):
-    counts: dict[str, int] = {}
-    fully: dict[str, int] = {}
-    for s in session.exec(
+    """One row per language the platform knows about. Enriched with the
+    SPA's at-a-glance card metadata: paradigms list, TIOBE rank, distinct
+    model count, and the top 3 submissions ranked by pass@k (then by
+    avg_runtime_ms as tiebreaker). The /languages page renders each row
+    as a card so the operator can scan languages without drilling in."""
+    all_subs = session.exec(
         select(Submission).where(Submission.deleted_at.is_(None))
-    ).all():
-        counts[s.language] = counts.get(s.language, 0) + 1
-        if s.total_problems > 0 and s.total_solved >= s.total_problems:
-            fully[s.language] = fully.get(s.language, 0) + 1
+    ).all()
+    # Bucket submissions by language so we can compute n_submissions,
+    # n_fully_accepted, n_distinct_models, and the per-language top-3
+    # in a single pass.
+    by_lang: dict[str, list[Submission]] = {}
+    for s in all_subs:
+        by_lang.setdefault(s.language, []).append(s)
     out = []
     for name, info in langs_mod.LANGUAGES.items():
+        subs = by_lang.get(name, [])
+        # "Fully accepted" = the submission solved every problem in its
+        # competition. Matches the existing /languages/:name semantics.
+        n_fully = sum(
+            1 for s in subs
+            if s.total_problems > 0 and s.total_solved >= s.total_problems
+        )
+        # Distinct models — same key the rest of the SPA uses (name, version).
+        n_models = len({(s.model_name, s.model_version) for s in subs})
+        # Top-3 by pass@k; tie-break by avg_runtime_ms ascending so a
+        # faster solution wins among models with the same pass-rate.
+        # `pass_at_k or 0` and `avg_runtime_ms or inf` keep rows with
+        # null metrics at the bottom rather than crashing the sort.
+        ranked = sorted(
+            (s for s in subs if s.status == SubmissionStatus.judged),
+            key=lambda s: (
+                -(s.pass_at_k if s.pass_at_k is not None else -1.0),
+                s.avg_runtime_ms if s.avg_runtime_ms is not None else float("inf"),
+            ),
+        )
+        top_subs = []
+        for s in ranked[:3]:
+            u = session.get(User, s.user_id)
+            top_subs.append({
+                "submission_id": s.id,
+                "model_name": s.model_name,
+                "model_version": s.model_version,
+                "submitter": _submitter_label(u),
+                "pass_at_1": s.pass_at_1,
+                "pass_at_k": s.pass_at_k,
+                "avg_runtime_ms": s.avg_runtime_ms,
+                "avg_memory_mb": s.avg_memory_mb,
+                "avg_runtime_percentile": s.avg_runtime_percentile,
+                "avg_memory_percentile": s.avg_memory_percentile,
+            })
         out.append({
             "name": name,
             "display_name": info.display_name,
             "category": info.category,
-            "n_submissions": counts.get(name, 0),
-            "n_fully_accepted": fully.get(name, 0),
+            # Card metadata for the /languages page.
+            "paradigms": info.paradigms,
+            "tiobe_rank_2025": info.tiobe_rank_2025,
+            # Activity counts.
+            "n_submissions": len(subs),
+            "n_fully_accepted": n_fully,
+            "n_models": n_models,
+            "top_submissions": top_subs,
         })
     out.sort(key=lambda x: (-x["n_submissions"], x["name"]))
     return out
@@ -2222,19 +3711,29 @@ def language_detail(name: str, session: Session = Depends(get_session)):
     judged = [s for s in subs if s.status == SubmissionStatus.judged]
     fully_n = sum(1 for s in judged if s.total_problems > 0 and s.total_solved >= s.total_problems)
 
-    # Leaderboard slice on the language page — same eligibility rules as /api/rankings.
-    all_problem_ids = {p.id for p in session.exec(select(Problem)).all()}
+    # Leaderboard slice on the language page — same eligibility rules as
+    # /api/rankings, including the per-submission universe (competition's
+    # problem set or canonical fallback) so the language page agrees with
+    # the main leaderboard on what counts as "complete".
+    resolve_universe = _build_universe_resolver(session, judged)
     stats_by_sub = _attempt_stats_by_sub(session, [s.id for s in judged])
     eligible = [
         s for s in judged
         if _eligible_for_leaderboard(
-            s, _attempt_stats_for(stats_by_sub, s.id)[0], all_problem_ids,
+            s, _attempt_stats_for(stats_by_sub, s.id)[0], resolve_universe(s),
         )
     ]
+    # Return EVERY eligible submission rather than the top-5 — the SPA
+    # offers a sort-by dropdown (pass@1, pass@k, runtime, memory, energy,
+    # cost) and lets the user pick the ranking criterion. Eligibility
+    # gating still applies so the list mirrors the leaderboard universe.
+    # Default sort is pass@1 desc + runtime percentile desc, same as the
+    # old "top 5" picker, so an SPA that doesn't pass a sort still sees
+    # the most-relevant rows first.
     top = sorted(
         eligible,
         key=lambda s: (-(s.pass_at_1 or 0), -(s.avg_runtime_percentile or 0)),
-    )[:5]
+    )
     # Single lookup so we don't re-query PromptTemplate per row.
     prompt_name_by_id = {
         pt.id: pt.name for pt in session.exec(select(PromptTemplate)).all()
@@ -2247,10 +3746,20 @@ def language_detail(name: str, session: Session = Depends(get_session)):
             "submitter": _submitter_label(session.get(User, s.user_id)),
             "submitter_slug": _slug(_submitter_label(session.get(User, s.user_id))),
             "pass_at_1": s.pass_at_1,
+            "pass_at_k": s.pass_at_k,
             "avg_runtime_ms": s.avg_runtime_ms,
             "avg_memory_mb": s.avg_memory_mb,
             "avg_runtime_percentile": s.avg_runtime_percentile,
             "avg_memory_percentile": s.avg_memory_percentile,
+            # Cost / energy / generation-time — additional sort axes the
+            # SPA's dropdown exposes. Nullable on legacy rows; the SPA
+            # treats null as "worst" when sorting ascending and "best"
+            # when sorting descending so unreported rows sink to the
+            # bottom regardless of direction.
+            "total_cost_usd": s.total_cost_usd,
+            "total_response_tokens": s.total_response_tokens,
+            "total_generation_ms": s.total_generation_ms,
+            "total_generation_energy_j": s.total_generation_energy_j,
             # Prompt-template attribution so the table can render which
             # registered template produced the row. Two submissions for the
             # same model+language but different prompts are different cells
@@ -2647,9 +4156,32 @@ def problem_detail(slug: str, session: Session = Depends(get_session)):
         ),
     )
 
+    # If this is an anti-contamination variant, look up the original so the
+    # SPA can render a "Variant of X" badge. One cheap lookup; null on
+    # canonical problems (vast majority).
+    original_slug = original_title = None
+    if p.original_problem_id is not None:
+        original = session.get(Problem, p.original_problem_id)
+        if original is not None:
+            original_slug = original.title_slug
+            original_title = original.title
+
+    # Competition memberships — the detail endpoint had been omitting these,
+    # so the variant-page chip in the Problems list didn't carry over.
+    comp_links = session.exec(
+        select(CompetitionProblem, Competition)
+        .where(CompetitionProblem.problem_id == p.id)
+        .where(CompetitionProblem.competition_id == Competition.id)
+    ).all()
+    competitions = [
+        CompetitionRef(slug=c.slug, name=c.name) for _, c in comp_links
+    ]
+    competitions.sort(key=lambda c: c.name.lower())
+
     return ProblemDetail(
         id=p.id, title_slug=p.title_slug, title=p.title, level=p.level,
         tags=[t.strip() for t in p.tags.split(",") if t.strip()],
+        competitions=competitions,
         content=p.content,
         hints=p.hints,
         code_snippets=p.code_snippets or {},
@@ -2660,7 +4192,63 @@ def problem_detail(slug: str, session: Session = Depends(get_session)):
         best_per_language=best_per_language,
         n_attempts_by_language=n_attempts_by_lang,
         n_accepted_by_language=n_accepted_by_lang,
+        original_slug=original_slug,
+        original_title=original_title,
+        original_function_name=p.original_function_name,
+        function_name=p.function_name,
     )
+
+
+def _supersede_pending_attempts_for_slugs(
+    session: Session, sub: Submission, slug_to_id: dict[str, int],
+    incoming: list[AttemptIn],
+) -> int:
+    """For every slug in the incoming append, hard-DELETE any phantom
+    pending attempt in this submission for that slug. The caller's POST
+    explicitly says "abandon the queued one and try again" — same
+    semantics the dispatch worker would reach by itself after
+    ATTEMPT_STALE_AFTER_S, but immediately.
+
+    A "phantom pending" attempt is one with `n_runs == 0` AND
+    `dispatch_warning IS NULL` AND `prefailed_reason IS NULL`. Those
+    are the ones the budget check would otherwise count, blocking the
+    retry with "sample budget exceeded".
+
+    Why hard-delete instead of stamping a sentinel: the retry POST
+    triggers a BackgroundTask that dispatches every "pending" attempt
+    (no Run rows). If the phantom is still in the table, it gets
+    dispatched alongside the new attempt, breaking the k=1 budget
+    cap silently. Deletion is the only race-proof option.
+
+    No audit loss: a phantom by definition never reached LeetCode, has
+    no Run rows, and its trace is preserved on the new (replacing)
+    attempt's POST. The append-only provenance hash chain still has
+    its leaf entry from the original POST — that's the tamper-evidence
+    record, not the Attempt row.
+
+    Returns the number of rows deleted. Real verdicts (n_runs > 0) and
+    already-warned/prefailed phantoms are untouched."""
+    incoming_pids = {
+        slug_to_id[a.title_slug] for a in incoming
+        if a.title_slug in slug_to_id
+    }
+    if not incoming_pids:
+        return 0
+    candidates = session.exec(
+        select(Attempt).where(
+            Attempt.submission_id == sub.id,
+            Attempt.problem_id.in_(incoming_pids),
+            (Attempt.n_runs == 0) | (Attempt.n_runs.is_(None)),
+            Attempt.dispatch_warning.is_(None),
+            Attempt.prefailed_reason.is_(None),
+        )
+    ).all()
+    if not candidates:
+        return 0
+    for a in candidates:
+        session.delete(a)
+    session.commit()
+    return len(candidates)
 
 
 def _reject_oversampling(
@@ -2673,7 +4261,14 @@ def _reject_oversampling(
     Single-shot (n_rounds=1) → exactly the legacy pass@k cap. Refinement
     chains (n_rounds=N) get N times the budget per problem so each round
     can submit a fresh code attempt for the same slug. The chain link
-    itself (previous_attempt_id) is validated separately in _ingest_attempts."""
+    itself (previous_attempt_id) is validated separately in _ingest_attempts.
+
+    System-failure attempts DO NOT count against the budget. An attempt
+    with `dispatch_warning` set and `n_runs == 0` never received a LeetCode
+    verdict — it represents a retry the sweep should be allowed to make.
+    Counting it would lock the operator out of recovering from auth/pool
+    outages with a "sample budget exceeded" 400, even though the slot the
+    failed attempt is meant to occupy is still effectively vacant."""
     k = sub.n_samples_per_problem or 1
     n_rounds = sub.n_rounds or 1
     cap = k * n_rounds
@@ -2682,6 +4277,10 @@ def _reject_oversampling(
     ).all()
     counts: dict[int, int] = {}
     for a in existing:
+        # Phantom attempts (no runs + dispatch_warning) are retry slots.
+        # Don't burn the budget on them.
+        if (a.n_runs or 0) == 0 and a.dispatch_warning:
+            continue
         counts[a.problem_id] = counts.get(a.problem_id, 0) + 1
     overflows: list[str] = []
     for a in incoming:
@@ -2887,6 +4486,7 @@ def _ingest_attempts(
             round_index=a.round_index,
             previous_attempt_id=a.previous_attempt_id,
             response_tokens=a.response_tokens,
+            prompt_tokens=a.prompt_tokens,
             generation_energy_j=a.generation_energy_j,
             prefailed_reason=a.prefailed_reason,
         )
@@ -2943,11 +4543,36 @@ def submit_batch(
     rate-limit still runs so a runaway admin script can't spam the queue."""
     enforce_submission_limit(user, session)
 
-    all_problems = session.exec(select(Problem)).all()
-    slug_to_id = {p.title_slug: p.id for p in all_problems}
+    # Resolve the competition scope first — every other validation below
+    # restricts to its problem set. The default of `leetcode-99-perf`
+    # matches the legacy "canonical 99 problems" sweep behaviour for
+    # callers that don't explicitly target a competition.
+    comp_slug = (payload.competition_slug or "leetcode-99-perf").strip()
+    comp = session.exec(
+        select(Competition).where(Competition.slug == comp_slug)
+    ).first()
+    if comp is None:
+        raise HTTPException(
+            400, f"competition_slug={comp_slug!r} does not exist")
+    comp_problem_ids = {
+        cp.problem_id for cp in session.exec(
+            select(CompetitionProblem).where(
+                CompetitionProblem.competition_id == comp.id
+            )
+        ).all()
+    }
+    # Problem-slug → id, RESTRICTED to the competition. Slug lookups for
+    # problems outside the scope fall through to the "unknown slug" 400.
+    comp_problems = session.exec(
+        select(Problem).where(Problem.id.in_(comp_problem_ids))
+    ).all() if comp_problem_ids else []
+    slug_to_id = {p.title_slug: p.id for p in comp_problems}
     bad = [a.title_slug for a in payload.attempts if a.title_slug not in slug_to_id]
     if bad:
-        raise HTTPException(400, f"unknown problem slugs: {bad[:5]}")
+        raise HTTPException(
+            400,
+            f"problem slugs not in competition {comp_slug!r}: {bad[:5]}",
+        )
     _reject_invalid_attempts(payload.attempts, payload.language)
 
     # Validate optional prompt_id reference up-front so a bad id surfaces as
@@ -2965,7 +4590,8 @@ def submit_batch(
         n_rounds=payload.n_rounds,
         include_hints=payload.include_hints,
         optimization_target=payload.optimization_target,
-        total_problems=len(all_problems),
+        competition_id=comp.id,
+        total_problems=len(comp_problems),
     )
     session.add(sub)
     session.commit()
@@ -3003,12 +4629,47 @@ def append_attempts(
     if not sub or sub.deleted_at is not None:
         raise HTTPException(404, "submission not found")
 
-    all_problems = session.exec(select(Problem)).all()
-    slug_to_id = {p.title_slug: p.id for p in all_problems}
-    bad = [a.title_slug for a in payload.attempts if a.title_slug not in slug_to_id]
-    if bad:
-        raise HTTPException(400, f"unknown problem slugs: {bad[:5]}")
+    # Scope slug lookup to the submission's competition (when set) so
+    # appends can't smuggle in a problem outside the original scope —
+    # otherwise pass@k denominators would silently drift from "k out of N"
+    # to "k out of N+rogue". Legacy submissions with competition_id NULL
+    # keep the all-problems behaviour.
+    if sub.competition_id is not None:
+        comp_problem_ids = {
+            cp.problem_id for cp in session.exec(
+                select(CompetitionProblem).where(
+                    CompetitionProblem.competition_id == sub.competition_id
+                )
+            ).all()
+        }
+        scoped_problems = session.exec(
+            select(Problem).where(Problem.id.in_(comp_problem_ids))
+        ).all() if comp_problem_ids else []
+        slug_to_id = {p.title_slug: p.id for p in scoped_problems}
+        bad = [a.title_slug for a in payload.attempts if a.title_slug not in slug_to_id]
+        if bad:
+            raise HTTPException(
+                400,
+                f"problem slugs not in submission's competition: {bad[:5]}",
+            )
+    else:
+        all_problems = session.exec(select(Problem)).all()
+        slug_to_id = {p.title_slug: p.id for p in all_problems}
+        bad = [a.title_slug for a in payload.attempts if a.title_slug not in slug_to_id]
+        if bad:
+            raise HTTPException(400, f"unknown problem slugs: {bad[:5]}")
     _reject_invalid_attempts(payload.attempts, sub.language)
+    # Supersede ANY phantom pending attempts for the slugs we're about
+    # to append. The operator's POST is an explicit "retry" signal —
+    # the budget check below would otherwise count the phantom and
+    # reject with "sample budget exceeded" even when no LC verdict
+    # ever landed for it.
+    n_superseded = _supersede_pending_attempts_for_slugs(
+        session, sub, slug_to_id, payload.attempts,
+    )
+    if n_superseded:
+        print(f"[append] superseded {n_superseded} phantom pending "
+              f"attempt(s) on submission #{sub.id}", file=sys.stderr)
     _reject_oversampling(session, sub, slug_to_id, payload.attempts)
 
     _ingest_attempts(session, sub, payload.attempts, slug_to_id)
@@ -3099,6 +4760,10 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             )
         ).all()
     } if attempts else {}
+    # One pricing snapshot for the whole response — keeps the per-row
+    # `_recompute_attempt_cost` calls O(1) lookups and avoids hammering
+    # the RegisteredModel table N times. The map is small (≪ 1000 rows).
+    _pricing = _model_pricing_lookup(session)
     out: list[AttemptResult] = []
     for a in attempts:
         p = session.get(Problem, a.problem_id)
@@ -3106,7 +4771,17 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             select(Run).where(Run.attempt_id == a.id).order_by(Run.run_index)
         ).all()
         if not runs:
-            status = "queued"
+            # No Run rows yet. Differentiate truly-pending from already-
+            # known-dead. An attempt with `dispatch_warning` set has been
+            # auto-failed by the stale-marker (or explicitly stamped by
+            # the dispatcher when LeetCode auth blew up) — labelling it
+            # "queued" makes the SPA look like there are 20 active
+            # submissions when nothing's actually moving. "Dispatch
+            # failed" matches the dispatch_warning copy on the row.
+            if a.dispatch_warning:
+                status = "Dispatch failed"
+            else:
+                status = "queued"
         else:
             status = a.final_status or "Pending"
         out.append(AttemptResult(
@@ -3114,15 +4789,21 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             problem_slug=p.title_slug if p else "?",
             problem_title=p.title if p else "?",
             level=p.level if p else "?",
+            tags=(p.tags or "") if p else "",
             status=status,
             accepted=a.final_status == "Accepted",
             round_index=a.round_index or 0,
             previous_attempt_id=a.previous_attempt_id,
             cost_usd=a.cost_usd,
             response_tokens=a.response_tokens,
+            prompt_tokens=a.prompt_tokens,
+            cost_usd_live=_recompute_attempt_cost(
+                a, sub.model_name, sub.model_version, _pricing
+            ) if sub is not None else None,
             wall_clock_ms=a.wall_clock_ms,
             generation_energy_j=a.generation_energy_j,
             prefailed_reason=a.prefailed_reason,
+            dispatch_warning=a.dispatch_warning,
             n_runs=a.n_runs,
             n_accepted_runs=a.n_accepted_runs,
             avg_runtime_ms=a.avg_runtime_ms,
@@ -3388,7 +5069,12 @@ from . import export_import                                              # noqa:
 
 # Tables you can pick on /admin/export. Exposed so the frontend can render
 # the right set of checkboxes without hard-coding the list twice.
-_EXPORTABLE_TABLE_NAMES = [name for name, _ in export_import.EXPORTABLE]
+# DB tables PLUS the file-backed `leetcode_accounts` slot — the SPA
+# renders one checkbox per entry. LC accounts are handled by a special
+# branch inside export_import.export_json / import_bundle (they're a
+# JSON file on disk, not a SQLModel) and ship with cookies REDACTED
+# unless the operator passes include_credentials=true.
+_EXPORTABLE_TABLE_NAMES = list(export_import.ALL_EXPORT_NAMES)
 
 
 @app.get("/api/admin/export/tables")
@@ -3407,6 +5093,14 @@ def admin_export(
                     "/api/admin/export/tables for the menu.",
     ),
     format: str = Query("json", regex="^(json|csv)$"),
+    include_credentials: bool = Query(
+        False,
+        description="When `leetcode_accounts` is selected, include the raw "
+                    "session cookies in the bundle. DEFAULT FALSE — cookies "
+                    "are redacted unless this flag is explicitly true. The "
+                    "bundle becomes a secret when set, so callers must treat "
+                    "it accordingly (encrypt at rest, do not commit to git).",
+    ),
     _: User = Depends(current_admin),
     session: Session = Depends(get_session),
 ):
@@ -3423,7 +5117,9 @@ def admin_export(
         raise HTTPException(400, {"detail": "unknown tables", "unknown": unknown})
 
     if format == "json":
-        bundle = export_import.export_json(session, requested)
+        bundle = export_import.export_json(
+            session, requested, include_credentials=include_credentials,
+        )
         stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         return StreamingResponse(
             iter([json.dumps(bundle, default=str).encode()]),
@@ -3431,7 +5127,9 @@ def admin_export(
             headers={"Content-Disposition": f"attachment; filename=perfarena-export-{stamp}.json"},
         )
     # CSV → zip.
-    blob = export_import.export_csv_zip(session, requested)
+    blob = export_import.export_csv_zip(
+        session, requested, include_credentials=include_credentials,
+    )
     stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return StreamingResponse(
         iter([blob]),
@@ -3470,6 +5168,296 @@ async def admin_import(
     except ValueError as e:
         raise HTTPException(400, str(e))
     return result
+
+
+# ---------- LeetCode credential pool management ----------------------------
+#
+# Thin HTTP shell over app.leetcode_accounts so admins can manage the pool
+# from the SPA. The CLI (`python -m app.leetcode_accounts …`) remains the
+# canonical interface — these endpoints just forward to the same functions
+# under admin auth, so behaviour stays consistent and we don't fork logic.
+
+from . import leetcode_accounts as _lc_accounts
+
+
+def _build_lc_status_response(*, probe: bool = False) -> LeetCodeAccountsResponse:
+    """Snapshot the pool. If `probe=True` we additionally hit LC's
+    userStatus GraphQL once per account — slow (5 accounts ≈ 25-50 s
+    worst case) so it's only called from the dedicated probe endpoint."""
+    s = _lc_accounts.pool_status()
+    accts_by_name = {a.name: a for a in _lc_accounts.load_accounts()}
+    rows: list[LeetCodeAccountStatus] = []
+    for raw in s["accounts"]:
+        row = LeetCodeAccountStatus(
+            name=raw["name"],
+            is_exhausted=raw["is_exhausted"],
+            exhausted_until=raw["exhausted_until"],
+            last_used_at=raw.get("last_used_at"),
+        )
+        if probe:
+            acc = accts_by_name.get(raw["name"])
+            if acc is not None:
+                ok, info = _lc_accounts.whoami(acc)
+                row.is_signed_in = ok
+                row.probe_message = info
+                # `info` looks like "signed in as v69KdKlFf8" on success or
+                # a freeform error string on failure; extract username from
+                # the success shape so the UI can show it discretely.
+                if ok and "signed in as " in info:
+                    row.username = info.split("signed in as ", 1)[1].strip()
+        rows.append(row)
+    # Surface the server's configured per-account inter-submission gap so
+    # external pacing clients (matrix_sweep, mostly) don't have to assume
+    # a value. Imported lazily to avoid a circular import at module-load.
+    from .dispatch import INTER_DELAY as _inter_delay
+    return LeetCodeAccountsResponse(
+        total=s["total"],
+        available=s["available"],
+        exhausted=s["exhausted"],
+        earliest_available_after=s["earliest_available_after"],
+        min_gap_s=_inter_delay,
+        accounts=rows,
+    )
+
+
+@app.get("/api/admin/leetcode-accounts", response_model=LeetCodeAccountsResponse)
+def admin_list_leetcode_accounts(
+    _: User = Depends(current_admin),
+):
+    """List the credential pool — fast, no LC probe. Use /probe to refresh
+    signed-in status for each account (more expensive)."""
+    return _build_lc_status_response(probe=False)
+
+
+@app.post("/api/admin/leetcode-accounts/probe", response_model=LeetCodeAccountsResponse)
+def admin_probe_leetcode_accounts(
+    _: User = Depends(current_admin),
+):
+    """Probe LC's userStatus for every account in the pool. Returns the
+    same shape as the LIST endpoint but with is_signed_in / username /
+    probe_message populated. Slow (N × ~5 s) — call sparingly."""
+    return _build_lc_status_response(probe=True)
+
+
+@app.post("/api/admin/leetcode-accounts", response_model=LeetCodeAccountsResponse,
+          status_code=status.HTTP_201_CREATED)
+def admin_add_leetcode_account(
+    body: LeetCodeAccountIn,
+    _: User = Depends(current_admin),
+):
+    """Add (or update by name) a credential set.
+
+    Accepts EITHER:
+      * `session_token` + `csrf_token` — the two cookies copied out of
+        DevTools → Application → Cookies → leetcode.com. Preferred.
+      * `cookie_header` — full `Cookie:` request header pasted from
+        DevTools Network panel. Legacy back-compat for CLI callers.
+
+    Either way, the stored cookie_header is always assembled as
+    "LEETCODE_SESSION=...; csrftoken=..." so downstream readers
+    (leetbot.py, etc.) see one canonical shape."""
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    session_token = (body.session_token or "").strip()
+    csrf_token = (body.csrf_token or "").strip()
+
+    if session_token or csrf_token:
+        # Split-field path. Both are required when one is provided so we
+        # don't silently store a half-formed credential set.
+        if not session_token or not csrf_token:
+            raise HTTPException(
+                400,
+                "both session_token and csrf_token are required when using "
+                "the split fields (got one, missing the other).",
+            )
+        cookie = f"LEETCODE_SESSION={session_token}; csrftoken={csrf_token}"
+    else:
+        # Legacy full-header path.
+        cookie = (body.cookie_header or "").strip()
+        if "LEETCODE_SESSION=" not in cookie or "csrftoken=" not in cookie:
+            raise HTTPException(
+                400,
+                "supply either session_token + csrf_token, OR a cookie_header "
+                "that contains LEETCODE_SESSION=… and csrftoken=…",
+            )
+
+    _lc_accounts.add_account(name, cookie)
+    return _build_lc_status_response(probe=False)
+
+
+@app.delete("/api/admin/leetcode-accounts/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_remove_leetcode_account(
+    name: str,
+    _: User = Depends(current_admin),
+):
+    """Drop an account from the pool. 404 if no such name."""
+    ok = _lc_accounts.remove_account(name)
+    if not ok:
+        raise HTTPException(404, f"no pool account named {name!r}")
+    return
+
+
+@app.post("/api/admin/leetcode-accounts/{name}/clear-exhaustion",
+          response_model=LeetCodeAccountsResponse)
+def admin_clear_leetcode_account_exhaustion(
+    name: str,
+    _: User = Depends(current_admin),
+):
+    """Manually clear the 24h cooldown timer on an account. Useful when
+    you've confirmed the rate limit has actually rolled over and want the
+    pool to start picking the account again without waiting for the timer
+    to expire on its own. Pass name='*' to clear ALL accounts at once."""
+    if name == "*":
+        _lc_accounts.clear_exhaustion(None)
+    else:
+        # `clear_exhaustion` is a no-op for unknown names; treat that as
+        # 404 here so the UI can show a clear error message.
+        accounts = {a.name for a in _lc_accounts.load_accounts()}
+        if name not in accounts:
+            raise HTTPException(404, f"no pool account named {name!r}")
+        _lc_accounts.clear_exhaustion(name)
+    return _build_lc_status_response(probe=False)
+
+
+_DELETABLE_SYSTEM_FAILURE_STATUSES = {
+    "Auth failed",
+    "Dispatch error",
+    "Dispatch timeout",
+    "Dispatch parse error",
+    "LeetCode transient error",
+    "Rate limited",
+}
+
+
+@app.post("/api/admin/attempts/purge-failed", status_code=status.HTTP_200_OK)
+def admin_purge_failed_attempts(
+    _: User = Depends(current_admin),
+):
+    """Hard-DELETE every attempt that's stuck in a system-failure state.
+    Two flavours both qualify:
+
+      1. Modern (post-dispatch-warning): `dispatch_warning IS NOT NULL`
+         AND `n_runs ∈ {0, NULL}`. Never received any LeetCode verdict.
+
+      2. Legacy (pre-dispatch-warning, when the old dispatcher synthesised
+         5 fake failure runs per attempt): every Run row for the attempt
+         has a status_msg in the system-failure set (Auth failed,
+         Dispatch error, Dispatch timeout, Dispatch parse error, LeetCode
+         transient error, Rate limited). These are the "44 synthetic
+         failure attempts under #46" pattern — the runs look real but
+         they never reached LC.
+
+    Cleanup includes the Run rows pointing at each deleted attempt so the
+    schema stays consistent (SQLite doesn't cascade by default).
+
+    Real verdicts (any Accepted/WA/TLE/RE/MLE/CE run) and client-side
+    prefailed attempts are NEVER touched — those carry audit value.
+
+    Idempotent: re-running on a clean DB returns `deleted: 0`."""
+    deleted_ids: list[int] = []
+    with Session(engine) as session:
+        # Flavour 1 — modern dispatch_warning'd phantoms.
+        flavour1 = session.exec(
+            select(Attempt).where(
+                Attempt.dispatch_warning.isnot(None),
+                ((Attempt.n_runs == 0) | (Attempt.n_runs.is_(None))),
+            )
+        ).all()
+
+        # Flavour 2 — legacy attempts where ALL Run rows are
+        # system-failure status_msgs. We have to inspect runs per attempt
+        # because the predicate "ALL runs have status X" doesn't map onto
+        # one SELECT cleanly. Bounded query: pulls candidates that have
+        # at least ONE such run, then filters down in Python by checking
+        # that EVERY run is a system failure.
+        candidate_ids = {
+            r.attempt_id for r in session.exec(
+                select(Run).where(
+                    Run.status_msg.in_(_DELETABLE_SYSTEM_FAILURE_STATUSES)
+                )
+            ).all()
+            if r.attempt_id is not None
+        }
+        flavour2: list[Attempt] = []
+        for aid in candidate_ids:
+            runs = session.exec(select(Run).where(Run.attempt_id == aid)).all()
+            if not runs:
+                continue
+            if all(r.status_msg in _DELETABLE_SYSTEM_FAILURE_STATUSES
+                   for r in runs):
+                att = session.get(Attempt, aid)
+                if att is not None:
+                    flavour2.append(att)
+
+        # De-dup (an attempt could match both flavours).
+        to_delete: dict[int, Attempt] = {a.id: a for a in (*flavour1, *flavour2)}
+
+        for aid, a in to_delete.items():
+            # Wipe the Run rows first so the SQL DELETE on attempt doesn't
+            # trip a foreign-key check on databases that enforce them.
+            for r in session.exec(select(Run).where(Run.attempt_id == aid)).all():
+                session.delete(r)
+            deleted_ids.append(aid)
+            session.delete(a)
+        if to_delete:
+            session.commit()
+    return {
+        "deleted": len(deleted_ids),
+        "deleted_attempt_ids": deleted_ids[:100],   # cap for response size
+        "by_flavour": {
+            "dispatch_warning_phantoms": len([
+                a for a in flavour1 if a.id in to_delete
+            ]),
+            "all_runs_system_failure_legacy": len([
+                a for a in flavour2 if a.id in to_delete
+            ]),
+        },
+    }
+
+
+@app.post("/api/admin/attempts/mark-stale", status_code=status.HTTP_200_OK)
+def admin_mark_stale_attempts(
+    _: User = Depends(current_admin),
+):
+    """On-demand version of the background stale-marker. Useful when
+    you've just bumped ARENA_ATTEMPT_STALE_AFTER_S or want to drain
+    visible "queued" rows before waiting for the next periodic pass.
+    Also triggers the phantom-GC pass so old dispatch-failed rows can
+    be cleared in the same call."""
+    n = _mark_stale_pending_attempts()
+    gc = _gc_old_phantom_attempts()
+    return {
+        "marked": n,
+        "threshold_seconds": ATTEMPT_STALE_AFTER_S,
+        "gc_deleted": gc,
+        "gc_threshold_seconds": ATTEMPT_GC_AFTER_S,
+    }
+
+
+@app.post("/api/admin/submissions/{submission_id}/dispatch",
+          status_code=status.HTTP_202_ACCEPTED)
+def admin_redispatch_submission(
+    submission_id: int,
+    bg: BackgroundTasks,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Re-trigger the dispatch worker on a submission. Used by the sweep
+    client when it has waited out a credential-pool exhaustion: pending
+    attempts (those with no Run rows — including ones that hit
+    `dispatch_warning` on the previous run) get re-processed from scratch.
+
+    Returns 202 immediately; the worker runs in the background and the
+    sweep keeps polling /api/submissions/{id}/attempts to see the verdict
+    or a fresh dispatch_warning. Idempotent: a submission with no pending
+    attempts is a no-op."""
+    sub = session.get(Submission, submission_id)
+    if not sub or sub.deleted_at is not None:
+        raise HTTPException(404, "submission not found")
+    bg.add_task(dispatch_submission, sub.id)
+    return {"submission_id": sub.id, "status": "queued"}
 
 
 @app.get("/api/admin/pending")

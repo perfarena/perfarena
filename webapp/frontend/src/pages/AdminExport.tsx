@@ -16,6 +16,12 @@ export default function AdminExport() {
   const [tables, setTables] = useState<string[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [format, setFormat] = useState<"json" | "csv">("json");
+  // Opt-in for shipping session cookies in the leetcode_accounts slot.
+  // Default OFF — when the user picks that table without this flag, the
+  // bundle includes account names + cooldowns but redacts cookies. Setting
+  // this makes the bundle a secret (full session JWTs), so we render a
+  // banner whenever it's true.
+  const [includeCreds, setIncludeCreds] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -51,7 +57,10 @@ export default function AdminExport() {
       const key = getApiKey();
       if (!key) throw new Error("not authenticated");
       const ordered = tables.filter(t => picked.has(t));   // keep server's order
-      const url = api.adminExportUrl(ordered, format);
+      // Only request credentials when leetcode_accounts is actually selected;
+      // otherwise the flag is a no-op and confuses the audit log.
+      const wantCreds = includeCreds && ordered.includes("leetcode_accounts");
+      const url = api.adminExportUrl(ordered, format, wantCreds);
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${key}` },
       });
@@ -136,6 +145,37 @@ export default function AdminExport() {
             ))}
           </div>
 
+          {picked.has("leetcode_accounts") && (
+            <div className="col" style={{ gap: 6, padding: "8px 10px",
+                                          background: "rgba(250, 204, 21, 0.08)",
+                                          border: "1px solid rgba(250, 204, 21, 0.4)",
+                                          borderRadius: 6 }}>
+              <label className="row" style={{ gap: 6 }}>
+                <input type="checkbox"
+                       checked={includeCreds}
+                       onChange={e => setIncludeCreds(e.target.checked)} />
+                <span><b>Include session cookies</b> in <code>leetcode_accounts</code></span>
+              </label>
+              <div className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.5 }}>
+                {includeCreds ? (
+                  <>
+                    ⚠ The bundle will ship every account's raw{" "}
+                    <code>LEETCODE_SESSION</code> JWT. Treat the download as a
+                    secret — encrypt at rest, don't commit to git, and rotate
+                    the cookies on the target instance after import.
+                  </>
+                ) : (
+                  <>
+                    Account names + cooldown timestamps export normally;{" "}
+                    cookies appear as <code>&lt;head&gt;…&lt;redacted&gt;</code>.
+                    Tick the box only when migrating an actual credential pool
+                    to another instance.
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="row" style={{ gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <span className="muted" style={{ fontSize: "0.85rem" }}>Format:</span>
             <label className="row" style={{ gap: 6 }}>
@@ -175,6 +215,16 @@ export default function AdminExport() {
             <code>attempts</code>, <code>runs</code>) — rows are <b>always
             inserted</b> with new local ids, FKs remapped so replicas with
             overlapping integer ids merge cleanly.
+          </li>
+          <li>
+            <code>leetcode_accounts</code> (file-backed credential pool) —
+            merged into <code>data/leetcode_accounts.json</code> by name.
+            Names that already exist locally are <b>skipped</b> (local cookies
+            win). Rows whose <code>cookie_header</code> looks redacted (no
+            <code>LEETCODE_SESSION</code>, or marked{" "}
+            <code>&lt;redacted&gt;</code>) are silently skipped — so importing
+            a sanitized bundle is safe and just brings over the account-list
+            shape.
           </li>
           <li>
             The append-only transparency hash chain (<code>TraceLogEntry</code>)

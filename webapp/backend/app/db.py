@@ -4,13 +4,39 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlmodel import SQLModel, Session, create_engine
 
 DB_PATH = Path(os.environ.get("ARENA_DB", Path(__file__).parent.parent / "arena.db"))
 DB_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+
+
+# Concurrency hardening for the dispatch worker + HTTP handler combo.
+# Without these, every concurrent writer hits "database is locked" the
+# moment the worker is mid-transaction and the API tries to commit a
+# submission append.
+#
+#   * WAL  — Write-Ahead Logging lets writers append to a side journal
+#            while readers see the pre-write state from the main file.
+#            One writer at a time still applies, but concurrent readers
+#            no longer block it. Persistent (set on the file itself), so
+#            once enabled it survives container restarts.
+#   * synchronous=NORMAL — safe with WAL (fsync only at checkpoint, not
+#            every write). Still durable; just trades a microsecond
+#            sub-checkpoint window for substantially less write latency.
+#   * busy_timeout=30000 — when a writer DOES collide, wait 30 s instead
+#            of erroring after the default 5 s. Most lock waits clear in
+#            milliseconds; a longer ceiling absorbs the dispatcher's
+#            occasional multi-row commit bursts without leaking a 500.
+@event.listens_for(engine, "connect")
+def _sqlite_concurrency_pragmas(dbapi_conn, _):
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
+    cur.execute("PRAGMA synchronous=NORMAL")
+    cur.execute("PRAGMA busy_timeout=30000")
+    cur.close()
 
 
 # Tiny additive-only migrations applied on startup. Idempotent: each entry is
@@ -89,6 +115,34 @@ _ADDITIVE_COLUMNS = [
     # recorded but dispatch synthesizes a failure Run (no LeetCode call) so
     # the raw model response is preserved without burning a submission quota.
     ("attempt", "prefailed_reason", "VARCHAR"),
+    # System-level dispatch failure that's NOT a verdict from LeetCode:
+    # expired credentials, LC frontend 5xx after retries, etc. When set we
+    # write ZERO Run rows for the attempt — those would be pure noise in
+    # pass@k and on the leaderboard — and the next dispatch call retries
+    # the attempt automatically (pending = no Run rows). The sweep client
+    # surfaces the warning so the user knows whether to refresh cookies
+    # or just wait the transient out.
+    ("attempt", "dispatch_warning", "VARCHAR"),
+    # Submission is now SCOPED to a single competition — pass@k and
+    # "complete" math use the competition's problem count as the
+    # denominator (not "every Problem row in the system", which would
+    # double-count canonical+variant problems and report 45/198 instead
+    # of 45/99). NULL on legacy submissions; the leaderboard math falls
+    # back to the canonical-99 universe for those.
+    ("submission", "competition_id", "INTEGER"),
+    # Anti-contamination problem variants — see app/rewrite_competition.py.
+    # A "variant" Problem is the same task as `original_problem_id`, but
+    # the title / statement / function name have been rephrased so a model
+    # that memorised the original training set can't pattern-match its way
+    # to the answer. Dispatch redirects variant submissions to the
+    # original's title_slug AND substitutes `function_name` → `original_function_name`
+    # in the code before sending to LeetCode (since LC's judge only knows
+    # the canonical signature).
+    #
+    # Columns on originals stay null. On variants all three are set.
+    ("problem", "original_problem_id", "INTEGER"),
+    ("problem", "function_name", "VARCHAR"),
+    ("problem", "original_function_name", "VARCHAR"),
     # Rich admin-curated metadata on registered models. Auto-stubbed rows
     # start with these all null and admins fill them in via /models edit.
     ("registeredmodel", "description", "TEXT"),
@@ -100,6 +154,18 @@ _ADDITIVE_COLUMNS = [
     # column / stat when every row in scope is null.
     ("attempt", "generation_energy_j", "FLOAT"),
     ("submission", "total_generation_energy_j", "FLOAT"),
+    # Per-model USD/1M token pricing — admin-configurable on /models. When
+    # set, the SPA recomputes attempt.cost_usd dynamically from these
+    # rates × stored prompt+response tokens, so an operator who edits a
+    # rate after a sweep instantly sees the new $-totals everywhere
+    # (per-attempt, per-submission, leaderboards). When null we fall
+    # back to the snapshot cost_usd stamped on the attempt at submit.
+    ("registeredmodel", "input_price_per_1m_usd", "FLOAT"),
+    ("registeredmodel", "output_price_per_1m_usd", "FLOAT"),
+    # Prompt-token count per attempt — required for the live-recomputed
+    # cost above. New submissions populate it; older attempts where it's
+    # null fall back to the snapshot cost (no recomputation possible).
+    ("attempt", "prompt_tokens", "INTEGER"),
 ]
 
 

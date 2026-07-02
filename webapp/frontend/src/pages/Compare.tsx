@@ -4,10 +4,13 @@ import {
   api, CompareResponse, CompareSummaryRow, CompareWinners,
   ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
   ModelListEntry, ProblemPublic, PromptTemplatePublic,
+  SubmissionPublic,
 } from "../lib/api";
 import CompareBars, {
   MODEL_COLOURS, shouldShowEnergyColumn,
 } from "../components/CompareHistogram";
+import CompareByLevel from "../components/CompareByLevel";
+import CompareByTag from "../components/CompareByTag";
 import LanguageLink from "../components/LanguageLink";
 import LevelBadge from "../components/LevelBadge";
 import PromptName from "../components/PromptName";
@@ -22,10 +25,10 @@ const LANGS = [
   "golang","kotlin","swift","scala","ruby","php",
 ];
 
-type Tab = "models" | "prompts" | "perf-vs-correctness";
+type Tab = "models" | "submissions" | "prompts" | "perf-vs-correctness";
 
 const VALID_TABS: ReadonlySet<Tab> = new Set([
-  "models", "prompts", "perf-vs-correctness",
+  "models", "submissions", "prompts", "perf-vs-correctness",
 ]);
 
 /* /compare hosts three sibling views that share the same audience (someone
@@ -64,10 +67,12 @@ export default function Compare() {
     <div className="col" style={{ gap: 16 }}>
       <div className="row" style={{ gap: 4, borderBottom: "1px solid var(--border)" }}>
         <TabBtn active={tab === "models"}             onClick={() => setTab("models")}>Models</TabBtn>
+        <TabBtn active={tab === "submissions"}        onClick={() => setTab("submissions")}>Submissions</TabBtn>
         <TabBtn active={tab === "prompts"}            onClick={() => setTab("prompts")}>Prompt strategies</TabBtn>
         <TabBtn active={tab === "perf-vs-correctness"} onClick={() => setTab("perf-vs-correctness")}>Correctness vs Performance</TabBtn>
       </div>
       {tab === "models"             && <CompareView />}
+      {tab === "submissions"        && <SubmissionsCompareView />}
       {tab === "prompts"            && <PromptStrategiesView />}
       {tab === "perf-vs-correctness" && <CorrectnessVsPerformance />}
     </div>
@@ -287,6 +292,12 @@ function CompareView() {
       })()}
       {data && <WinnersBanner winners={data.winners} />}
       {data && <SummaryTable rows={data.summary} winners={data.winners} />}
+      {data && data.by_level && data.by_level.length > 0 && (
+        <CompareByLevel models={data.models} rows={data.by_level} />
+      )}
+      {data && data.by_tag && data.by_tag.length > 0 && (
+        <CompareByTag models={data.models} rows={data.by_tag} />
+      )}
       {data && data.problems.length > 0 && (
         <PerProblemMatrix models={data.models} rows={data.problems} />
       )}
@@ -813,5 +824,145 @@ function PromptSummaryTable({
         </table>
       </div>
     </section>
+  );
+}
+
+
+/* "Submissions" tab — same response shape as the Models tab, but the
+ * axis is specific submission IDs. Lets you compare two snapshots of
+ * the same model (different prompts/temperatures/sweep runs) or pit any
+ * two arbitrary submissions head-to-head — without the implicit
+ * aggregation the Models tab does over every submission a model has
+ * ever made. */
+function SubmissionsCompareView() {
+  const [submissions, setSubmissions] = useState<SubmissionPublic[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [filter, setFilter] = useState("");
+  const [data, setData] = useState<CompareResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api.submissions()
+      .then(rows => setSubmissions(
+        rows.slice().sort((a, b) => b.id - a.id)))    // newest first
+      .catch((e: unknown) => setErr(String(e)));
+  }, []);
+
+  async function run() {
+    setErr(""); setLoading(true);
+    try {
+      const r = await api.compareSubmissions({ ids: picked });
+      setData(r);
+    } catch (e: unknown) { setErr(String(e)); }
+    finally { setLoading(false); }
+  }
+
+  function toggle(id: number) {
+    setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  }
+
+  // Visible list — substring match across model, language, or "#id". A picked
+  // submission stays visible even when the filter would otherwise hide it,
+  // so you can't accidentally drop a selection by typing.
+  const visible = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return submissions;
+    return submissions.filter(s =>
+      picked.includes(s.id) ||
+      s.model_name.toLowerCase().includes(needle) ||
+      s.language.toLowerCase().includes(needle) ||
+      String(s.id).includes(needle) ||
+      (s.prompt_name?.toLowerCase().includes(needle) ?? false));
+  }, [submissions, filter, picked]);
+
+  return (
+    <div className="col">
+      <div className="hero">
+        <h1>Compare submissions</h1>
+        <p>Pick two or more submissions to compare head-to-head. Useful for
+          comparing the same model under different prompts, sweep runs, or
+          settings without averaging them together (which is what the
+          Models tab does). The summary, per-difficulty charts, and the
+          per-problem matrix below all render with the same component the
+          Models tab uses.</p>
+      </div>
+
+      <section className="col">
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input placeholder="Search by model / language / #id / prompt…"
+                 value={filter} onChange={e => setFilter(e.target.value)}
+                 style={{ minWidth: 320 }} />
+          {filter && <button className="secondary" onClick={() => setFilter("")}>clear</button>}
+          <span className="muted">
+            {visible.length} / {submissions.length} shown · picked: <b>{picked.length}</b>
+          </span>
+        </div>
+        <div className="card tbl-scroll" style={{ padding: 0, maxHeight: 360 }}>
+          <table className="tbl">
+            <thead><tr>
+              <th></th>
+              <th>#</th>
+              <th>Model</th>
+              <th>Lang</th>
+              <th>Prompt</th>
+              <th>pass@1</th>
+              <th>Solved</th>
+              <th>When</th>
+            </tr></thead>
+            <tbody>
+              {visible.slice(0, 200).map(s => {
+                const isPicked = picked.includes(s.id);
+                return (
+                  <tr key={s.id}
+                      style={isPicked ? { background: "var(--panel-2)" } : undefined}>
+                    <td>
+                      <input type="checkbox"
+                             checked={isPicked}
+                             onChange={() => toggle(s.id)} />
+                    </td>
+                    <td><Link to={`/submissions/${s.id}`}>#{s.id}</Link></td>
+                    <td><b>{s.model_name}</b>{" "}<span className="muted">{s.model_version}</span></td>
+                    <td>{s.language}</td>
+                    <td className="muted">{s.prompt_name ?? "—"}</td>
+                    <td className="metric">{formatPassAt1(s.pass_at_1)}</td>
+                    <td className="metric">{s.total_solved}/{s.total_problems}</td>
+                    <td className="muted">{new Date(s.created_at).toLocaleDateString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {visible.length > 200 && (
+            <div className="empty">Showing first 200 of {visible.length} matches.</div>
+          )}
+        </div>
+
+        <div className="row" style={{ gap: 8, alignItems: "center" }}>
+          <button onClick={run} disabled={picked.length < 2 || loading}>
+            {loading ? "Comparing…" : `Compare ${picked.length} submission${picked.length === 1 ? "" : "s"}`}
+          </button>
+          {picked.length > 0 && (
+            <button className="secondary" onClick={() => setPicked([])}>clear selection</button>
+          )}
+          {err && <span style={{ color: "var(--bad)" }}>{err}</span>}
+        </div>
+      </section>
+
+      {data && <WinnersBanner winners={data.winners} />}
+      {data && <SummaryTable rows={data.summary} winners={data.winners} />}
+      {data && data.by_level && data.by_level.length > 0 && (
+        <CompareByLevel models={data.models} rows={data.by_level} />
+      )}
+      {data && data.by_tag && data.by_tag.length > 0 && (
+        <CompareByTag models={data.models} rows={data.by_tag} />
+      )}
+      {data && data.problems.length > 0 && (
+        <PerProblemMatrix models={data.models} rows={data.problems} />
+      )}
+      {data && data.summary.every(s => s.n_problems_attempted === 0) && (
+        <div className="empty">The selected submissions have no attempts.</div>
+      )}
+    </div>
   );
 }

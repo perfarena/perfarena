@@ -1,19 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ProblemPublic } from "../lib/api";
+import { api, CompetitionPublic, ProblemPublic } from "../lib/api";
 import LevelBadge from "../components/LevelBadge";
 
 export default function Problems() {
   const [rows, setRows] = useState<ProblemPublic[]>([]);
+  // Competition list for the filter dropdown — loaded once, then cached
+  // in component state. We don't need n_* counts here, just slug + name,
+  // but we get the full CompetitionPublic for free from the list endpoint.
+  const [competitions, setCompetitions] = useState<CompetitionPublic[]>([]);
   const [q, setQ] = useState("");
   const [level, setLevel] = useState("");
+  // Competition slug currently filtered on. "" means no filter. Passed
+  // straight through to /api/problems?competition=<slug> so the server
+  // intersects with the CompetitionProblem join before returning.
+  const [competition, setCompetition] = useState("");
   const [err, setErr] = useState("");
   const [methodologyOpen, setMethodologyOpen] = useState(false);
 
+  // Re-fetch whenever level / competition change. The search-box `q`
+  // stays client-side (no round-trip on every keystroke).
   useEffect(() => {
-    api.problems({ level })
+    api.problems({ level, competition })
       .then(setRows).catch((e: unknown) => setErr(String(e)));
-  }, [level]);
+  }, [level, competition]);
+
+  // Load the competition list ONCE for the filter dropdown. Hide retired
+  // competitions from the picker — same default as the Competitions page.
+  useEffect(() => {
+    api.competitions(false).then(setCompetitions).catch(() => {
+      // Soft-fail: an empty dropdown is fine, the table still works.
+    });
+  }, []);
 
   const filtered = useMemo(() => {
     const needle = q.toLowerCase();
@@ -36,9 +54,17 @@ export default function Problems() {
 
       <div className="filter-bar">
         <input placeholder="Search title, slug, or tag…" value={q} onChange={e => setQ(e.target.value)} className="grow" />
-        <select value={level} onChange={e => setLevel(e.target.value)}>
+        <select value={level} onChange={e => setLevel(e.target.value)}
+                aria-label="Filter by difficulty">
           <option value="">All difficulties</option>
           <option>Easy</option><option>Medium</option><option>Hard</option>
+        </select>
+        <select value={competition} onChange={e => setCompetition(e.target.value)}
+                aria-label="Filter by competition">
+          <option value="">All competitions</option>
+          {competitions.map(c => (
+            <option key={c.slug} value={c.slug}>{c.name}</option>
+          ))}
         </select>
       </div>
 
@@ -47,7 +73,7 @@ export default function Problems() {
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
           <thead><tr>
-            <th>Title</th><th>Slug</th><th>Level</th><th>Tags</th>
+            <th>Title</th><th>Slug</th><th>Level</th><th>Competition</th><th>Tags</th>
           </tr></thead>
           <tbody>
             {filtered.slice(0, 500).map(p => (
@@ -57,6 +83,7 @@ export default function Problems() {
                   <Link to={`/problems/${p.title_slug}`}><code>{p.title_slug}</code></Link>
                 </td>
                 <td><LevelBadge level={p.level} /></td>
+                <td><CompetitionBadges comps={p.competitions} /></td>
                 <td className="muted">{p.tags.slice(0, 4).join(", ")}{p.tags.length > 4 ? " …" : ""}</td>
               </tr>
             ))}
@@ -64,6 +91,31 @@ export default function Problems() {
         </table>
         {filtered.length > 500 && <div className="empty">Showing first 500 of {filtered.length} matches.</div>}
       </div>
+    </div>
+  );
+}
+
+
+/** Renders each competition this problem belongs to as a small pill
+ *  linking to /competitions/<slug>. Empty → an em-dash (orphan problem;
+ *  legacy data with no competition link). */
+function CompetitionBadges({ comps }: { comps: { slug: string; name: string }[] }) {
+  if (!comps || comps.length === 0) {
+    return <span className="muted">—</span>;
+  }
+  return (
+    <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+      {comps.map(c => (
+        <Link key={c.slug} to={`/competitions/${c.slug}`}
+              title={`Open ${c.name}`}
+              style={{
+                padding: "2px 8px", borderRadius: 999,
+                background: "var(--panel-2)", border: "1px solid var(--border)",
+                fontSize: "0.8rem", whiteSpace: "nowrap", textDecoration: "none",
+              }}>
+          {c.name}
+        </Link>
+      ))}
     </div>
   );
 }

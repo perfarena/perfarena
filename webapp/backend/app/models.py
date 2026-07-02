@@ -57,6 +57,15 @@ class Problem(SQLModel, table=True):
     # to it avoids "class/method not found" judge errors. Populated by
     # `python -m app.fetch_code_snippets`; nullable until that script runs.
     code_snippets: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Anti-contamination variants (see app/rewrite_competition.py). When
+    # `original_problem_id` is set this Problem is a rephrased copy of
+    # another — dispatch redirects to the original's title_slug AND
+    # rewrites the LLM's code by substituting `function_name` (what the
+    # variant's snippets expose) → `original_function_name` (what LC's
+    # judge expects). All three columns are null on canonical problems.
+    original_problem_id: int | None = Field(default=None, foreign_key="problem.id", index=True)
+    function_name: str | None = None
+    original_function_name: str | None = None
 
 
 class SubmissionStatus(str, Enum):
@@ -76,6 +85,12 @@ class Submission(SQLModel, table=True):
     model_params: dict = Field(sa_column=Column(JSON))
     status: SubmissionStatus = SubmissionStatus.received
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Competition this submission is scoped to. total_problems uses THIS
+    # competition's problem count (not "every Problem row in the system").
+    # NULL on legacy rows; the leaderboard math defaults to the canonical
+    # universe for those so pre-feature submissions stay comparable.
+    competition_id: int | None = Field(
+        default=None, foreign_key="competition.id", index=True)
 
     # Sample budget per problem (= "k" the submitter commits to upfront,
     # locked at creation, used for pass@k semantics).
@@ -168,12 +183,29 @@ class Attempt(SQLModel, table=True):
     # so the model's behavior is preserved for analysis. Set ⇒ dispatch skips
     # LeetCode entirely and synthesizes one failure Run with this string.
     prefailed_reason: str | None = None
+    # System-level dispatch failure that's NOT a LeetCode verdict. Set when
+    # the credential pool is dead, leetbot can't reach LC after retries, etc.
+    # When set we write ZERO Run rows for this attempt (avoiding pass@k
+    # pollution); the next dispatch call re-picks the attempt up (the
+    # `pending` filter is "no Run rows yet"), so this also doubles as a
+    # retry signal. Polling endpoints surface it so the sweep client can
+    # tell the user WHY rather than hanging on a useless poll loop.
+    dispatch_warning: str | None = None
     # $ cost of the single LLM call that produced THIS sample. 0 for local /
     # Ollama models; for paid APIs the client computes it from token pricing.
+    # Snapshot value — captured at submit time using the rates configured on
+    # the client at that moment. The SPA prefers to recompute this on-the-fly
+    # from RegisteredModel.input_price_per_1m_usd × prompt_tokens +
+    # output_price_per_1m_usd × response_tokens when those are available.
     cost_usd: float | None = None
     # Token count of the CODE-only response (the extracted solution, excluding
     # any reasoning/thinking channel). Best-effort — the client estimates it.
     response_tokens: int | None = None
+    # Token count of the PROMPT side of the same LLM call. Added so the SPA
+    # can recompute cost dynamically when the operator edits per-model
+    # pricing on /models. Null on attempts ingested before this column
+    # existed — those rows fall back to the snapshot cost_usd above.
+    prompt_tokens: int | None = None
 
     # Provenance (see provenance.py). trace_hash binds code+summary+trace and
     # is anchored in the append-only TraceLogEntry chain at ingest time.
@@ -297,6 +329,13 @@ class RegisteredModel(SQLModel, table=True):
     status: str = Field(default="active", index=True)
     added_at: datetime = Field(default_factory=datetime.utcnow)
     added_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+    # Per-model USD pricing per 1M tokens. Admin-editable on /models. When
+    # both are set, the SPA recomputes attempt.cost_usd dynamically from
+    # these × stored prompt/response tokens — so editing a rate after a
+    # sweep instantly updates every $-stat that touches this model. Null
+    # = falls back to the snapshot cost_usd captured at submit time.
+    input_price_per_1m_usd: float | None = None
+    output_price_per_1m_usd: float | None = None
 
 
 class Competition(SQLModel, table=True):

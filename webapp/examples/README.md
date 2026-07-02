@@ -1,15 +1,41 @@
 # PerfArena API examples
 
+## Provider plugin layer
+
+Every script in this directory is provider-agnostic. Pick the backend with
+`--provider {ollama,openai}`:
+
+| Provider | Connection flags | Cost | Model digest source |
+|---|---|---|---|
+| `ollama` (default) | `--ollama-url` | always $0 | `/api/tags` SHA-256 (`ollama:<sha>`) |
+| `openai` | `--openai-base-url` + `--openai-api-key` / `OPENAI_API_KEY` | computed from `usage.{prompt,completion}_tokens` × `OPENAI_PRICING_USD_PER_1M` (see `submit_with_local_model.py`) | `system_fingerprint` from a 1-token probe (`openai:<fingerprint>`) |
+
+`--openai-base-url` defaults to `https://api.openai.com/v1` but any
+OpenAI-compatible endpoint works: Azure OpenAI, OpenRouter, Together, vLLM,
+llama.cpp's `--api-key` server, etc. Each invocation runs against exactly
+one provider — see the answer to the `--model mixing` question in the
+README's contributing notes if you want to extend that.
+
+Add a new provider by subclassing `Provider` in
+`submit_with_local_model.py` and registering it in the `PROVIDERS` dict.
+
 ## `submit_with_local_model.py`
 
-End-to-end: pull a problem → ask a local **Ollama** model for a Python solution
+End-to-end: pull a problem → ask the configured LLM for a Python solution
 (capturing a verifiable provenance trace) → submit → poll until judged → print
 results. Standard library only.
 
 ```bash
 export ARENA_API_KEY=arena_xxxxxxxx          # your approved account's key
 
-# With Ollama (default endpoint http://localhost:11434):
+# --- OpenAI (gpt-4.1-mini): ---
+export OPENAI_API_KEY=sk-…
+python submit_with_local_model.py \
+  --base-url http://localhost:8000 \
+  --slug two-sum --language python3 \
+  --provider openai --model gpt-4.1-mini --temperature 0.2
+
+# --- Ollama (default endpoint http://localhost:11434): ---
 python submit_with_local_model.py \
   --base-url http://localhost:8000 \
   --slug check-if-all-as-appears-before-all-bs \

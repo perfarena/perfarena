@@ -69,6 +69,11 @@ RUN pip install -r /app/requirements.txt
 # Backend source.
 COPY webapp/backend/ /app/
 
+# LeetCode submission CLI — lives at the repo root in the source tree,
+# but the runtime expects to subprocess it from /app/leetbot.py (and
+# app.dispatch._resolve_leetbot() looks here first inside the container).
+COPY leetbot.py /app/leetbot.py
+
 # Reference data (anchors, baselines, discrimination, sampled problems).
 # Path matches the one app/* scripts default to (repo-root / data).
 COPY data /app/data

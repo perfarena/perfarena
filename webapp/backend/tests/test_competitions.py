@@ -179,3 +179,61 @@ def test_existing_submissions_preserved_on_seed(client):
     raw2 = client.get("/api/submissions").json()
     sub_count_after = len(raw2) if isinstance(raw2, list) else len(raw2.get("items", raw2))
     assert sub_count_after == sub_count_before + 1
+
+
+# ---------- /api/problems competition awareness ----------------------------
+
+def test_problems_listing_includes_competitions(client):
+    """Every problem row carries the competitions it belongs to. The seed
+    creates `leetcode-99-perf` and links every problem to it, so the
+    field is non-empty by default."""
+    rows = client.get("/api/problems").json()
+    assert rows, "seed should produce problems"
+    for r in rows:
+        assert "competitions" in r, f"missing 'competitions' on {r['title_slug']!r}"
+        assert isinstance(r["competitions"], list)
+        # Each ref has just slug + name — light pointer, not the full
+        # CompetitionPublic shape with stats.
+        for c in r["competitions"]:
+            assert set(c) == {"slug", "name"}
+    # Default seed must link every problem to leetcode-99-perf.
+    assert all(
+        any(c["slug"] == "leetcode-99-perf" for c in r["competitions"])
+        for r in rows
+    )
+
+
+def test_problems_listing_filters_by_competition_slug(client):
+    """`?competition=<slug>` filters to that competition's membership. We
+    create a second 5-problem competition and verify the filter cuts the
+    listing down accordingly."""
+    # Build a small 5-problem competition off the existing seed.
+    with Session(engine) as s:
+        seed_problems = s.exec(select(Problem)).all()[:5]
+        comp = Competition(slug="filter-test", name="Filter Test",
+                           kind="other", status="active")
+        s.add(comp); s.commit(); s.refresh(comp)
+        for p in seed_problems:
+            s.add(CompetitionProblem(competition_id=comp.id, problem_id=p.id))
+        s.commit()
+        seed_slugs = {p.title_slug for p in seed_problems}
+
+    rows = client.get("/api/problems?competition=filter-test").json()
+    assert {r["title_slug"] for r in rows} == seed_slugs
+    # And every returned row claims the new competition in its memberships.
+    for r in rows:
+        assert any(c["slug"] == "filter-test" for c in r["competitions"])
+
+
+def test_problems_listing_unknown_competition_returns_404(client):
+    """A typo'd `?competition=` is a hard fail — silently returning the
+    full listing would be worse than the URL bar making it obvious."""
+    r = client.get("/api/problems?competition=does-not-exist")
+    assert r.status_code == 404
+
+
+def test_problems_listing_filter_intersects_with_level(client):
+    """`?level=` and `?competition=` compose; result is the intersection."""
+    rows = client.get("/api/problems?competition=leetcode-99-perf&level=Easy").json()
+    assert rows, "default seed should have Easy problems in the 99-perf comp"
+    assert all(r["level"] == "Easy" for r in rows)

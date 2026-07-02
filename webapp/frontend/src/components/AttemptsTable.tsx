@@ -224,6 +224,19 @@ export default function AttemptsTable({ rows }: { rows: AttemptResultPayload[] }
   // Energy column appears only when at least one attempt reports a measurement.
   // LeetCode-only data paths leave every row null and the column stays hidden.
   const showEnergy = rows.some(a => a.generation_energy_j != null);
+  // Newest first. Sort by `submitted_at` when present (it's the trace log
+  // timestamp, set at ingest), and fall back to attempt_id for any row
+  // where the timestamp didn't get backfilled. Both are monotonic with
+  // creation order, so the fallback never reorders relative to itself.
+  // Sort on a defensive COPY so the parent's rows array stays untouched
+  // (React state immutability + downstream consumers that rely on stable
+  // input ordering for memoisation).
+  const sorted = [...rows].sort((a, b) => {
+    const ta = a.submitted_at ? Date.parse(a.submitted_at) : 0;
+    const tb = b.submitted_at ? Date.parse(b.submitted_at) : 0;
+    if (ta !== tb) return tb - ta;
+    return b.attempt_id - a.attempt_id;
+  });
   return (
     <div className="card tbl-scroll" style={{ padding: 0 }}>
       <table className="tbl">
@@ -242,7 +255,7 @@ export default function AttemptsTable({ rows }: { rows: AttemptResultPayload[] }
           <th></th>
         </tr></thead>
         <tbody>
-          {rows.map(a => <AttemptRow key={a.attempt_id} a={a} showEnergy={showEnergy} />)}
+          {sorted.map(a => <AttemptRow key={a.attempt_id} a={a} showEnergy={showEnergy} />)}
         </tbody>
       </table>
     </div>

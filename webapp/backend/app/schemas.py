@@ -30,12 +30,25 @@ class LoginResponse(BaseModel):
     api_key: str
 
 
+class CompetitionRef(BaseModel):
+    """Light-weight pointer to a competition — slug + name only. Used
+    everywhere we need to show "this thing belongs to competition X"
+    without dragging stats / leaderboard / membership lists along."""
+    slug: str
+    name: str
+
+
 class ProblemPublic(BaseModel):
     id: int
     title_slug: str
     title: str
     level: str
     tags: list[str]
+    # Competitions this problem is a member of. Usually one — the platform
+    # pivoted to "every problem lives under a competition" — but the
+    # CompetitionProblem join is many-to-many so a problem MAY appear in
+    # several. Empty list = orphan (no competition links it; legacy data).
+    competitions: list[CompetitionRef] = []
 
 
 class ProblemTopSolution(BaseModel):
@@ -75,6 +88,15 @@ class ProblemDetail(ProblemPublic):
     # signature LeetCode expects for this problem. Populated by
     # `app.fetch_code_snippets`; empty dict when not yet fetched.
     code_snippets: dict[str, str] = {}
+    # When this Problem is an anti-contamination variant of another (created
+    # by app.rewrite_competition), surface the original so researchers can
+    # verify the mapping at a glance. None for canonical problems. The model
+    # being evaluated only sees the variant's content/snippets — these
+    # fields are metadata for human reviewers in the SPA.
+    original_slug: str | None = None
+    original_title: str | None = None
+    original_function_name: str | None = None
+    function_name: str | None = None
     testcases: int | None
     n_attempts: int
     n_accepted: int
@@ -128,6 +150,14 @@ class AttemptIn(BaseModel):
         default=None,
         description="Token count of the code-only response (excludes any "
                     "reasoning channel). Best-effort estimate from the client.",
+    )
+    prompt_tokens: int | None = Field(
+        default=None,
+        description="Token count of the PROMPT for the LLM call that produced "
+                    "this attempt. Lets the backend recompute cost dynamically "
+                    "when the operator edits per-model pricing on /models. "
+                    "Optional for older clients; when omitted the snapshot "
+                    "cost_usd above is the only cost the SPA can show.",
     )
     model_digest: str | None = Field(
         default=None,
@@ -183,6 +213,16 @@ class SubmissionIn(BaseModel):
         default=None,
         pattern="^(latency|memory)$",
         description="Per-attempt optimization steer; one of latency|memory or null",
+    )
+    # Which competition this submission targets. The server uses the
+    # competition's problem count for total_problems / pass@k denominators,
+    # and rejects any attempt whose title_slug isn't in that competition's
+    # membership. Default = leetcode-99-perf so the legacy sweep behaviour
+    # (canonical 99 problems) is preserved when callers don't pass anything.
+    competition_slug: str | None = Field(
+        default="leetcode-99-perf",
+        description="Competition slug — defaults to leetcode-99-perf. "
+                    "Pass-at-k denominator is the size of this competition.",
     )
     attempts: list[AttemptIn] = Field(default_factory=list)
 
@@ -253,13 +293,42 @@ class SubmissionPublic(BaseModel):
     include_hints: bool = False
     optimization_target: str | None = None
     # Cost + token totals across all attempts (k samples included).
+    # total_cost_usd is the LIVE value: when the model has pricing rows
+    # set on /models AND attempts have stored prompt+response tokens, we
+    # recompute from the current rates and sum across attempts (falling
+    # back to each attempt's snapshot when its tokens are missing). When
+    # the model has no rates configured, this stays at the historical
+    # snapshot below. `total_cost_usd_snapshot` preserves the original
+    # at-submit value so an operator can still see "what we actually
+    # paid" vs "what it would cost today" by comparing the two.
     total_cost_usd: float | None = None
+    total_cost_usd_snapshot: float | None = None
     total_response_tokens: int | None = None
+    # Per-attempt medians — let the SPA rank submissions by "typical $/
+    # tokens spent per problem" rather than just the total, which scales
+    # with attempt count and would unfairly punish a submission that
+    # covers more problems. Both are null when no attempt in the
+    # submission has the corresponding field populated.
+    median_response_tokens_per_attempt: float | None = None
+    median_cost_usd_per_attempt: float | None = None
+    median_generation_ms_per_attempt: float | None = None
     # Total generation wall-clock (ms) summed across all attempts.
     total_generation_ms: int | None = None
     # Total generation energy (Joules) summed across all attempts. None when
     # no attempt reported it — the UI omits the stat in that case.
     total_generation_energy_j: float | None = None
+    # Competition this submission targets. Used by the SPA tables to render
+    # a pill in the new "Competition" column. None on legacy rows where the
+    # backfill script wasn't run.
+    competition_slug: str | None = None
+    competition_name: str | None = None
+    # Last attempt's `logged_at` for this submission — when something
+    # actually moved on the row. The /submissions table sorts by this
+    # rather than `created_at` so a long-running sweep stays at the
+    # top of the list while it's still landing attempts. None when the
+    # submission has no attempts yet (just created, dispatch hasn't
+    # fired). Falls back to `created_at` in the UI.
+    last_attempt_at: datetime | None = None
 
 
 class RankingEntry(BaseModel):
@@ -289,6 +358,27 @@ class RankingEntry(BaseModel):
     submitter_slug: str
     prompt_id: int | None = None
     prompt_name: str | None = None
+    # Competition this submission targets — None on legacy rows.
+    competition_slug: str | None = None
+    competition_name: str | None = None
+    # Token + cost accounting — surfaced as sortable columns on the SPA
+    # rankings table. `total_*` is the sum across every attempt in this
+    # submission; `median_*_per_attempt` is the per-attempt median so two
+    # submissions with different attempt counts compare on the same axis.
+    # All four are null on submissions whose attempts didn't report
+    # tokens/cost (e.g. legacy ingests, all-Ollama runs with no cost
+    # accounting). `total_cost_usd` is the LIVE value when the model has
+    # /models pricing set, falling back to the snapshot per attempt.
+    total_response_tokens: int | None = None
+    median_response_tokens_per_attempt: float | None = None
+    total_cost_usd: float | None = None
+    median_cost_usd_per_attempt: float | None = None
+    # Generation wall-clock — sum across attempts (ms) + per-attempt median.
+    # The median is the apples-to-apples "how long does ONE solution from
+    # this model typically take to generate" — comparable across submissions
+    # that cover different numbers of problems.
+    total_generation_ms: int | None = None
+    median_generation_ms_per_attempt: float | None = None
 
 
 class RunPublic(BaseModel):
@@ -404,6 +494,57 @@ class CompareWinners(BaseModel):
     overall_wins_by_model: dict[str, int]   # {model_name: number of metrics won}
 
 
+class CompareByLevelRow(BaseModel):
+    """One (model × difficulty level) cell of the comparison's difficulty
+    breakdown. Lets the SPA chart Easy / Medium / Hard performance side
+    by side so the operator can see which model is strongest at each
+    level rather than averaging them together.
+
+    Two metric families coexist on this row:
+      * judge-side: pass_rate, runtime/memory (the LeetCode verdict)
+      * generator-side: cost_usd, response_tokens, wall_clock_ms (what
+        the LLM spent producing the code — the model pays for these
+        regardless of whether LC accepted the result, so they're averaged
+        over n_attempted problems, not n_accepted)"""
+    model_name: str
+    level: str                                # "Easy" | "Medium" | "Hard"
+    n_attempted: int
+    n_accepted: int
+    pass_rate: float                          # n_accepted / n_attempted (0 if 0)
+    # Judge-side perf (Accepted attempts only — failing code doesn't have
+    # a runtime/memory we want to mix in).
+    avg_runtime_ms: float | None              # mean over each problem's best accepted
+    avg_memory_mb: float | None
+    avg_runtime_percentile: float | None
+    avg_memory_percentile: float | None
+    # Generator-side cost & throughput per PROBLEM in scope. Includes
+    # every attempt the model made for that problem (failed attempts
+    # cost the same as accepted ones to generate). None when no attempt
+    # at this level reported the metric.
+    avg_cost_usd: float | None
+    avg_response_tokens: float | None
+    avg_wall_clock_ms: float | None
+
+
+class CompareByTagRow(BaseModel):
+    """One (model × problem tag) cell. Same metric vocabulary as the
+    by_level breakdown — pass_rate, runtime, memory — but the axis is the
+    tag (Dynamic Programming, Math, Array, …) rather than difficulty.
+
+    Powers the SPA's three radar charts on /compare?tab=models: one
+    polygon per model, axes = the tags any selected model touched.
+    Per-(model, tag) attempt counts are emitted alongside the metrics
+    so the SPA can grey out spokes where a model has insufficient
+    coverage (<3 problems with the tag, by default)."""
+    model_name: str
+    tag: str
+    n_attempted: int
+    n_accepted: int
+    pass_rate: float                          # n_accepted / n_attempted (0 if 0)
+    avg_runtime_ms: float | None              # mean over each problem's best-accepted
+    avg_memory_mb: float | None
+
+
 class CompareResponse(BaseModel):
     models: list[str]
     language: str | None
@@ -411,6 +552,14 @@ class CompareResponse(BaseModel):
     summary: list[CompareSummaryRow]
     problems: list[CompareProblemRow]
     winners: CompareWinners
+    # Per-(model, level) breakdown — 3 levels × N models cells, used by the
+    # SPA's "Performance by difficulty" grouped bar charts.
+    by_level: list[CompareByLevelRow] = []
+    # Per-(model, tag) breakdown — used by the SPA's three radar charts
+    # (pass rate / runtime / memory across problem categories). One row
+    # per (model, tag) for every tag any selected model touched. Empty
+    # when the selected models have no judged attempts.
+    by_tag: list[CompareByTagRow] = []
 
 
 # ---- prompt-strategy comparison (one model, many prompts) -------------------
@@ -560,6 +709,12 @@ class RegisteredModelPublic(BaseModel):
     provenance: str | None = None       # links / citations / model-card URL (markdown)
     status: str                         # active | retired | unverified
     added_at: datetime
+    # Per-million-token pricing. When both are set, the SPA recomputes
+    # attempt.cost_usd dynamically from these × stored prompt/response
+    # tokens. Null on either ⇒ the snapshot cost stamped on each attempt
+    # at submit time is used as the fallback display.
+    input_price_per_1m_usd: float | None = None
+    output_price_per_1m_usd: float | None = None
 
 
 class RegisteredModelOverview(RegisteredModelPublic):
@@ -585,6 +740,16 @@ class RegisteredModelIn(BaseModel):
     family: str | None = None
     provenance: str | None = None
     status: str = "active"
+    input_price_per_1m_usd: float | None = None
+    output_price_per_1m_usd: float | None = None
+
+
+class RegisteredModelPricingPatch(BaseModel):
+    """Inline-edit payload for the /models pricing cells. Either field
+    may be None to clear the rate (which falls back to snapshot cost
+    on every attempt for this model)."""
+    input_price_per_1m_usd: float | None = None
+    output_price_per_1m_usd: float | None = None
 
 
 class CompetitionPublic(BaseModel):
@@ -735,14 +900,30 @@ class AttemptResult(BaseModel):
     problem_slug: str
     problem_title: str
     level: str
+    # Comma-separated LeetCode problem tags (Array, Dynamic Programming,
+    # Math, …). Empty string when the problem row has no tags. Used by
+    # the SubmissionDetail page's per-tag radar charts to bucket each
+    # attempt without needing a second API call per problem. Empty
+    # default keeps older API consumers happy.
+    tags: str = ""
     status: str            # "Accepted" | a rejection reason | "queued"
     accepted: bool
     # Refinement-chain link — same defaults as the DB.
     round_index: int = 0
     previous_attempt_id: int | None = None
     # Cost + tokens of the LLM call that produced this attempt.
+    # cost_usd is the SNAPSHOT value the client computed at submit time.
+    # The SPA prefers to recompute cost dynamically from the RegisteredModel's
+    # current per-1M-token rates × prompt_tokens / response_tokens — see
+    # `cost_usd_live` below for the recomputed value.
     cost_usd: float | None = None
     response_tokens: int | None = None
+    prompt_tokens: int | None = None
+    # Recomputed cost from the model's current per-1M-token rates. Null when
+    # the registered model has no rates set, or when the attempt is missing
+    # prompt_tokens. The SPA prefers this for display; cost_usd is the
+    # fallback for legacy attempts whose tokens weren't captured.
+    cost_usd_live: float | None = None
     # Generation wall-clock of this attempt's solution (ms).
     wall_clock_ms: int | None = None
     # Generation energy of this attempt's solution (Joules). None when the
@@ -752,6 +933,12 @@ class AttemptResult(BaseModel):
     # marked failed without LeetCode dispatch (the trace still holds the
     # raw model response).
     prefailed_reason: str | None = None
+    # System-level dispatch failure (auth dead, retries exhausted, …). When
+    # set, n_runs is 0 and the attempt is pending a future dispatch retry.
+    # Sweep clients should NOT treat this as a verdict — show the message
+    # to the user and either retry or give up the run, but don't roll it
+    # into pass@k.
+    dispatch_warning: str | None = None
     n_runs: int
     n_accepted_runs: int
     avg_runtime_ms: float | None
@@ -768,3 +955,118 @@ class AttemptResult(BaseModel):
     inference_trace: str | None = None
     trace: dict | None = None
     provenance: dict | None = None
+
+
+# ---------- Cost estimator ---------------------------------------------------
+#
+# Powers the "how much would it cost me to run THIS model across the platform"
+# calculator. Instead of multiplying noisy per-attempt averages, we report the
+# observed RANGE (min / max) of total input+output tokens across already-
+# completed full sweeps. Multiplying that range by the user's $-per-1M rates
+# gives a defensible cost envelope rather than a single point estimate that
+# pretends to be precise.
+
+class CostEstimatorSubmission(BaseModel):
+    """One full-sweep submission's token footprint, used as a data point in
+    the min/max envelope. We compute input + output totals at query time by
+    summing per-attempt usage out of each attempt's trace.provider_meta
+    (no schema migration needed; the data is already there for every
+    OpenAI and Ollama attempt the platform has ingested)."""
+    submission_id: int
+    model_name: str
+    model_version: str
+    language: str
+    prompt_id: int | None
+    prompt_name: str | None
+    competition_slug: str | None
+    competition_name: str | None
+    n_attempts: int                        # how many attempts in the submission
+    n_problems_attempted: int              # unique problems hit
+    n_problems_in_scope: int               # the comparison floor (competition size, or 99)
+    is_full_sweep: bool                    # n_problems_attempted >= n_problems_in_scope
+    total_input_tokens: int | None         # sum of provider_meta input tokens
+    total_output_tokens: int | None        # sum of provider_meta output tokens
+    n_attempts_with_token_data: int        # how many of the n_attempts had usage stats
+
+
+class CostEstimatorRange(BaseModel):
+    """Min / max / median over the full sweeps in scope. None when no full
+    sweep with token data exists for the requested filter combo."""
+    min: int | None = None
+    max: int | None = None
+    median: int | None = None
+    n: int = 0                             # sample size feeding this range
+
+
+class CostEstimatorStats(BaseModel):
+    """The full payload the calculator page consumes."""
+    # Echo of the filters that were applied, so the frontend can display
+    # "filtered to language=python3, prompt=experiment-system" without
+    # re-deriving from the URL.
+    applied: dict
+    # Universes for the dropdowns. Each filter dropdown shows the values
+    # that actually appear in the platform's data (not a hard-coded list).
+    available_prompts: list[dict]          # {id, name}
+    available_languages: list[str]
+    available_models: list[str]
+    available_competitions: list[dict]     # {slug, name}
+    # All full-sweep submissions matching the filters — drives the bottom
+    # table of the calculator page so the user can see which runs the
+    # envelope came from.
+    submissions: list[CostEstimatorSubmission]
+    # Min / max / median over the matching full sweeps. These are the
+    # numbers the user multiplies by their $-per-1M rates.
+    input_tokens: CostEstimatorRange
+    output_tokens: CostEstimatorRange
+
+
+# ---------- LeetCode credential pool (admin) --------------------------------
+#
+# Wraps app.leetcode_accounts (which manages data/leetcode_accounts.json) so
+# admins can manage the pool from the SPA instead of having to docker-exec
+# in and run the CLI. Probe results are populated only on the dedicated
+# /probe endpoint (one LC GraphQL call per account is slow enough that we
+# don't want to inline it into a plain LIST).
+
+class LeetCodeAccountStatus(BaseModel):
+    name: str
+    is_exhausted: bool
+    exhausted_until: str | None = None
+    # When the dispatcher last submitted with this account. ISO 8601 UTC,
+    # null when the account has never been used. Lets the matrix_sweep
+    # client (or any external pacing tool) compute the per-account 120 s
+    # cooldown without guessing — pair with `min_gap_s` on the parent
+    # response to know when `last_used_at + min_gap_s` is reached.
+    last_used_at: str | None = None
+    # Populated by the /probe endpoint; null on the plain LIST.
+    is_signed_in: bool | None = None
+    username: str | None = None
+    probe_message: str | None = None
+
+
+class LeetCodeAccountIn(BaseModel):
+    """Accepts either a full cookie header OR the two cookies split out.
+    Pre-SPA-era callers used `cookie_header`; the new SPA form posts the
+    session_token + csrf_token pair directly because that's easier to grab
+    from DevTools (Application → Cookies → leetcode.com, two clicks each)
+    than copying the entire concatenated Cookie request header."""
+    name: str
+    # New shape — preferred. Either field alone is rejected.
+    session_token: str | None = None
+    csrf_token: str | None = None
+    # Legacy shape — kept for back-compat with the CLI and existing scripts.
+    cookie_header: str | None = None
+
+
+class LeetCodeAccountsResponse(BaseModel):
+    total: int
+    available: int
+    exhausted: int
+    earliest_available_after: str | None = None
+    # Backend's configured per-account inter-submission gap (seconds) —
+    # what `pick_for_submission` enforces. Exposed so the matrix_sweep
+    # client can compute the pacing it should observe locally without
+    # hardcoding 120 s in two places. Default 0 keeps older clients
+    # safe (they just don't pace by it).
+    min_gap_s: float = 0.0
+    accounts: list[LeetCodeAccountStatus]

@@ -35,6 +35,7 @@ from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
     Problem, PromptTemplate, RegisteredModel, Run, Submission, User,
 )
+from . import leetcode_accounts as _lc_accounts
 
 
 # ---------- which tables can be exported / imported -------------------------
@@ -56,6 +57,16 @@ EXPORTABLE: list[tuple[str, type]] = [
     ("runs",                 Run),
 ]
 TABLE_BY_NAME = {name: model for name, model in EXPORTABLE}
+
+# LeetCode accounts are file-backed (data/leetcode_accounts.json) rather
+# than a SQLModel, so they're listed separately and handled with a special-
+# case branch in export_json / import_bundle. Wire name lives next to the
+# DB tables so a UI can offer it as just another checkbox.
+LC_ACCOUNTS_NAME = "leetcode_accounts"
+# Public name that admin_export_tables surfaces — DB tables first, then the
+# file-backed leetcode_accounts slot. Order kept stable so the SPA can
+# preserve its rendered list without per-version changes.
+ALL_EXPORT_NAMES = [name for name, _ in EXPORTABLE] + [LC_ACCOUNTS_NAME]
 
 
 # ---------- serialization helpers -------------------------------------------
@@ -100,9 +111,65 @@ def _coerce_for_table(model: type, row: dict) -> dict:
 
 # ---------- export ----------------------------------------------------------
 
-def export_json(session: Session, tables: list[str]) -> dict:
+def _redact_cookie(cookie_header: str) -> str:
+    """Mask the LEETCODE_SESSION JWT and csrftoken in a cookie header,
+    keeping name=keyhint pairs for human inspection. Lets an operator
+    audit "is account X still in the bundle?" without leaking the
+    actual session secret."""
+    if not cookie_header:
+        return cookie_header
+    out_pieces: list[str] = []
+    for piece in cookie_header.split(";"):
+        piece = piece.strip()
+        if "=" in piece:
+            k, _, v = piece.partition("=")
+            kl = k.strip().lower()
+            if kl in ("leetcode_session", "csrftoken") and v:
+                # Keep just enough characters to identify the account
+                # while making the cookie unusable. 4 chars × 2 → 8.
+                head = v.strip()[:4]
+                out_pieces.append(f"{k.strip()}={head}…<redacted>")
+            else:
+                out_pieces.append(piece)
+        else:
+            out_pieces.append(piece)
+    return "; ".join(out_pieces)
+
+
+def _serialize_leetcode_accounts(*, include_credentials: bool) -> list[dict]:
+    """Read the file-backed account pool and return JSON-safe dicts.
+
+    With `include_credentials=False` (default) every cookie value is
+    redacted to <head>…<redacted> so the bundle can be inspected without
+    leaking session JWTs. With `include_credentials=True` the raw
+    `cookie_header` is shipped — the caller is responsible for treating
+    the bundle as secret (encrypt at rest, do not commit to git, etc.)."""
+    accounts = _lc_accounts.load_accounts()
+    out: list[dict] = []
+    for a in accounts:
+        out.append({
+            "name": a.name,
+            "cookie_header": (
+                a.cookie_header if include_credentials
+                else _redact_cookie(a.cookie_header)
+            ),
+            "exhausted_until": a.exhausted_until,
+            "last_used_at": a.last_used_at,
+            # Audit hint for operators reading a redacted bundle. Never
+            # surfaces the secret itself, just whether the row is usable.
+            "has_cookie": bool(a.cookie_header),
+        })
+    return out
+
+
+def export_json(session: Session, tables: list[str],
+                *, include_credentials: bool = False) -> dict:
     """Build the canonical export envelope. Tables that aren't recognised
-    are dropped silently (the endpoint validates input separately)."""
+    are dropped silently (the endpoint validates input separately).
+
+    `include_credentials` only affects the leetcode_accounts slot — when
+    False (default), session cookies are redacted. The flag is a no-op
+    for DB tables (none of them store credentials)."""
     selected = [(name, m) for name, m in EXPORTABLE if name in tables]
     data: dict[str, list[dict]] = {}
     counts: dict[str, int] = {}
@@ -110,16 +177,33 @@ def export_json(session: Session, tables: list[str]) -> dict:
         rows = [_row_to_dict(r) for r in session.exec(select(model)).all()]
         data[name] = rows
         counts[name] = len(rows)
-    return {
+    # File-backed leetcode_accounts — listed in `tables` like any other
+    # checkbox the SPA renders. Special-cased here because the source
+    # is a JSON file rather than a SQLModel.
+    if LC_ACCOUNTS_NAME in tables:
+        rows = _serialize_leetcode_accounts(
+            include_credentials=include_credentials,
+        )
+        data[LC_ACCOUNTS_NAME] = rows
+        counts[LC_ACCOUNTS_NAME] = len(rows)
+    envelope = {
         "version": 1,
         "exported_at": datetime.utcnow().isoformat(),
-        "tables": [name for name, _ in selected],
+        "tables": [name for name, _ in selected] + (
+            [LC_ACCOUNTS_NAME] if LC_ACCOUNTS_NAME in tables else []
+        ),
         "counts": counts,
         "data": data,
     }
+    if LC_ACCOUNTS_NAME in tables:
+        envelope["leetcode_accounts_credentials_included"] = bool(
+            include_credentials
+        )
+    return envelope
 
 
-def export_csv_zip(session: Session, tables: list[str]) -> bytes:
+def export_csv_zip(session: Session, tables: list[str],
+                   *, include_credentials: bool = False) -> bytes:
     """Zip with one CSV per table — handy for spreadsheet inspection.
     JSON columns are serialised inline as their JSON string so the cell
     is a string a human can read; round-trip via CSV import isn't
@@ -142,12 +226,32 @@ def export_csv_zip(session: Session, tables: list[str]) -> bytes:
                     for c in cols
                 })
             zf.writestr(f"{name}.csv", sio.getvalue())
+        if LC_ACCOUNTS_NAME in tables:
+            rows = _serialize_leetcode_accounts(
+                include_credentials=include_credentials,
+            )
+            cols = ["name", "cookie_header", "exhausted_until",
+                    "last_used_at", "has_cookie"]
+            sio = io.StringIO()
+            writer = csv.DictWriter(sio, fieldnames=cols)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow({c: r.get(c) for c in cols})
+            zf.writestr(f"{LC_ACCOUNTS_NAME}.csv", sio.getvalue())
         # Drop a manifest so the recipient knows what's in the zip.
-        zf.writestr("manifest.json", json.dumps({
+        manifest = {
             "version": 1,
             "exported_at": datetime.utcnow().isoformat(),
-            "tables": [n for n, _ in EXPORTABLE if n in tables],
-        }, indent=2))
+            "tables": (
+                [n for n, _ in EXPORTABLE if n in tables]
+                + ([LC_ACCOUNTS_NAME] if LC_ACCOUNTS_NAME in tables else [])
+            ),
+        }
+        if LC_ACCOUNTS_NAME in tables:
+            manifest["leetcode_accounts_credentials_included"] = bool(
+                include_credentials
+            )
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2))
     return buf.getvalue()
 
 
@@ -328,6 +432,48 @@ def import_bundle(session: Session, bundle: dict) -> dict:
         except Exception:                                    # noqa: BLE001
             report["runs"]["errored"] += 1
     session.commit()
+
+    # 4b) LeetCode accounts — file-backed, merge by name.
+    #
+    # Semantics:
+    #   * If the incoming `cookie_header` looks REDACTED (no LEETCODE_SESSION,
+    #     or it ends in "<redacted>"), the row is skipped silently — useful
+    #     when an operator merges a sanitized bundle to pick up account
+    #     metadata (exhausted_until, name list) without touching local
+    #     creds.
+    #   * If a usable cookie_header is present AND the name doesn't exist
+    #     locally yet → ADD it.
+    #   * If the name already exists locally → SKIP (local cookies win,
+    #     same admin-curation rule as the natural-key DB tables). Operator
+    #     can `--remove` the local row first if they want to overwrite.
+    incoming_accounts = incoming.get(LC_ACCOUNTS_NAME) or []
+    if incoming_accounts:
+        existing_local = {a.name for a in _lc_accounts.load_accounts()}
+        for row in incoming_accounts:
+            try:
+                name = (row or {}).get("name")
+                cookie = (row or {}).get("cookie_header") or ""
+                if not name:
+                    report[LC_ACCOUNTS_NAME]["errored"] += 1
+                    continue
+                cookie_low = cookie.lower()
+                looks_redacted = (
+                    "<redacted>" in cookie_low
+                    or "leetcode_session" not in cookie_low
+                    or "csrftoken" not in cookie_low
+                )
+                if looks_redacted or not cookie:
+                    report[LC_ACCOUNTS_NAME]["skipped"] += 1
+                    continue
+                if name in existing_local:
+                    # Same precedence rule as natural-key DB tables.
+                    report[LC_ACCOUNTS_NAME]["skipped"] += 1
+                    continue
+                _lc_accounts.add_account(name, cookie)
+                existing_local.add(name)
+                report[LC_ACCOUNTS_NAME]["inserted"] += 1
+            except Exception:                                    # noqa: BLE001
+                report[LC_ACCOUNTS_NAME]["errored"] += 1
 
     # 5) Competition membership — composite join, FKs remap via parents.
     for row in incoming.get("competition_problems") or []:

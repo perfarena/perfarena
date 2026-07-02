@@ -23,11 +23,37 @@ export default function ProblemDetailPage() {
   return (
     <div className="col">
       <div>
-        <div className="row" style={{ gap: 16, alignItems: "baseline" }}>
+        <div className="row" style={{ gap: 16, alignItems: "baseline", flexWrap: "wrap" }}>
           <h1 style={{ marginBottom: 0 }}>{p.title}</h1>
           <LevelBadge level={p.level} />
+          {p.original_slug && (
+            /* Anti-contamination variant indicator. Visible only to humans
+             * loading the SPA — the model being evaluated never sees
+             * this; it only sees the variant's content + snippets via
+             * the prompt the sweep script builds. The badge links back
+             * to the canonical problem so reviewers can compare the
+             * rewrite against the source at one click. */
+            <Link to={`/problems/${p.original_slug}`}
+                  title={`This is a rephrased variant of "${p.original_title}". Click to view the original problem.`}
+                  style={{
+                    padding: "2px 10px", borderRadius: 999,
+                    background: "var(--panel-2)",
+                    border: "1px solid var(--accent)",
+                    color: "var(--accent)",
+                    fontSize: "0.8rem", whiteSpace: "nowrap",
+                    textDecoration: "none",
+                  }}>
+              ↩ variant of <b>{p.original_title}</b>
+            </Link>
+          )}
         </div>
         <div className="muted"><code>{p.title_slug}</code> · {p.tags.join(", ")}</div>
+        {p.original_function_name && p.function_name && (
+          <div className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
+            Function name <code>{p.function_name}</code> is rewritten back to{" "}
+            <code>{p.original_function_name}</code> in submitted code before dispatch to LeetCode.
+          </div>
+        )}
       </div>
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>

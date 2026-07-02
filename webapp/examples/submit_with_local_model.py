@@ -248,10 +248,11 @@ def find_existing_submission(
     include_hints: bool = False,
     optimization_target: str | None = None,
     n_rounds: int = 1,
+    competition_slug: str | None = None,
 ) -> dict | None:
     """Most recent ongoing submission for this user that matches the FULL
     experiment cell — model + language + prompt + every placeholder-affecting
-    knob.
+    knob + competition.
 
     "Ongoing" = `fully_accepted` is False (still room to add more problems).
 
@@ -266,6 +267,7 @@ def find_existing_submission(
       include_hints                            ← was {{hints_block}} filled
       optimization_target                      ← latency / memory / none steer
       n_rounds                                 ← single-shot vs refinement
+      competition_slug                         ← which problem set is in scope
 
     `prompt_id=None` matches against submissions that ALSO have no
     prompt_id (i.e. ad-hoc prompts). The text snapshot in
@@ -273,6 +275,14 @@ def find_existing_submission(
     id is more robust than diffing prose, and an ad-hoc-with-different-text
     case is rare enough that the small risk of accidental merge is
     acceptable.
+
+    Competition match: when `competition_slug` is None we tolerate any
+    submission's competition (back-compat with older callers). When it's
+    set, only submissions targeting THAT exact competition (or legacy
+    rows with no competition_slug at all) match — otherwise a sweep run
+    against `leetcode-99-rewritten` would auto-append to an existing
+    `leetcode-99-perf` submission and the backend would 400 every attempt
+    with "problem slugs not in submission's competition".
 
     Returns the matched submission dict or None.
     """
@@ -287,12 +297,25 @@ def find_existing_submission(
         if bool(s.get("include_hints", False)) != bool(include_hints): continue
         if (s.get("optimization_target") or None) != (optimization_target or None): continue
         if int(s.get("n_rounds") or 1) != int(n_rounds): continue
+        if competition_slug is not None:
+            existing_slug = s.get("competition_slug") or None
+            # Legacy rows with no competition_slug still match — they
+            # pre-date the per-submission scope and aren't bound to any
+            # competition. New rows must match exactly.
+            if existing_slug is not None and existing_slug != competition_slug:
+                continue
         matches.append(s)
     matches.sort(key=lambda s: s.get("created_at", ""), reverse=True)
     return matches[0] if matches else None
 
 
 def ollama_model_digest(ollama_url: str, model: str) -> str | None:
+    """Back-compat shim — delegates to the Ollama-specific impl below so
+    the OllamaProvider class and direct callers share one source of truth."""
+    return _ollama_model_digest_impl(ollama_url, model)
+
+
+def _ollama_model_digest_impl(ollama_url: str, model: str) -> str | None:
     """Real, provider-native model identity: Ollama's sha256 from /api/tags."""
     try:
         tags = http_json("GET", ollama_url.rstrip("/") + "/api/tags", timeout=10)
@@ -314,8 +337,38 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
                    r"^\s*from\s+\w+\s+import\b", r"->\s*[\w\[]"],
     "cpp":        [r"^\s*#include", r"\bvector\s*<", r"^\s*class\s+\w+\s*\{",
                    r"\bpublic\s*:", r"\bstd::"],
+    # C is hardest to fingerprint by entry point — LeetCode C solutions are
+    # JUST one function definition, no #include / main / struct / printf.
+    # E.g. `int countGoodRectangles(int** rectangles, int rectanglesSize, …)`.
+    # We add patterns covering the LC convention: pointer-style arg lists
+    # (`int*` / `int**`), the `arrSize` parameter idiom LC auto-passes, and
+    # the typed return shape with C-style pointer notation. Standalone C
+    # code (with #include / main / struct / printf) is still caught by the
+    # legacy patterns above.
+    # C is hard to fingerprint by entry point because LC C solutions are
+    # JUST one function definition (no #include / main / struct def /
+    # printf). We accept the legacy patterns above AND any C-shape
+    # function signature: primitive-or-struct-pointer return type, then
+    # an identifier, then an arg list whose first arg is primitive- or
+    # pointer-typed. Examples that must match:
+    #   int countGoodRectangles(int** rectangles, int rectanglesSize, …)
+    #   char* longestPalindrome(char* s)
+    #   bool isPalindrome(int x)
+    #   void rotate(int* nums, int numsSize, int k)
+    #   struct ListNode* mergeTwoLists(struct ListNode* a, struct ListNode* b)
     "c":          [r"^\s*#include", r"\bint\s+main\s*\(",
-                   r"\bstruct\s+\w+\s*\{", r"\bprintf\s*\("],
+                   r"\bstruct\s+\w+\s*\{", r"\bprintf\s*\(",
+                   # LC C: function returning primitive or struct-ptr, with
+                   # a primitive- or pointer-typed first arg. Covers the
+                   # vast majority of LC C signatures.
+                   r"(?m)^\s*(?:int|char|bool|void|double|float|long|short|struct\s+\w+)\s*\*?\s*\*?\s*\w+\s*\(\s*(?:int|char|bool|void|double|float|long|short|struct\s+\w+)",
+                   # LC C: `int** matrix` matrix-style arg appearing anywhere.
+                   r"\bint\s*\*\*\s*\w+\b",
+                   # LC C: auto-passed size parameter convention (`int numsSize`).
+                   r"\bint\s+\w+Size\b",
+                   # LC C linked-list / tree convention: `struct ListNode*`
+                   # used as a type reference (not a struct definition).
+                   r"\bstruct\s+\w+\s*\*"],
     "java":       [r"^\s*public\s+class\s+\w+",
                    r"\bpublic\s+[\w\[\]<>]+\s+\w+\s*\([^)]*\)\s*\{",
                    r"\bSystem\.out\.", r"\bimport\s+java\.",
@@ -341,6 +394,40 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
     "rust":       [r"^\s*fn\s+\w+\s*\(", r"\blet\s+(mut\s+)?\w+",
                    r"\bimpl\s+\w+", r"\buse\s+std::"],
 }
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Return True for OpenAI SKUs that reject custom `temperature` /
+    `top_p` (they return HTTP 400 "Only the default value is supported").
+
+    The match is name-prefix based and case-insensitive so we catch:
+      * gpt-5, gpt-5-mini, gpt-5-nano, gpt-5.5, gpt-5.4-mini, …
+      * o1, o1-mini, o1-pro
+      * o3, o3-mini, o3-pro
+      * o4, o4-mini
+      * Future o5, o6 if they ship under the same contract
+      * Date-pinned variants (gpt-5-mini-2025-08-07, o1-2024-12-17, …)
+
+    We DON'T match gpt-4.* or gpt-3.5 (those accept custom temperature)
+    or chat-tuned `gpt-5-chat` (which the docs say *does* accept
+    temperature — separate SKU from the reasoning family that shares
+    the gpt-5 name).
+    """
+    if not model:
+        return False
+    m = model.lower().strip()
+    # gpt-5-chat / gpt-5-chat-latest specifically ARE chat-tuned and
+    # accept temperature — opt them out before the broader gpt-5 prefix
+    # match below catches them.
+    if m.startswith("gpt-5-chat") or m.startswith("gpt-5.0-chat"):
+        return False
+    # gpt-5 family (reasoning by default).
+    if m.startswith("gpt-5"):
+        return True
+    # o-series reasoning models (o1, o3, o4, future o5/o6).
+    if re.match(r"^o[1-9](-|$)", m):
+        return True
+    return False
 
 
 def _looks_like(code: str, language: str) -> bool:
@@ -375,6 +462,47 @@ def _extract_code(text: str, fence_lang: str | None = None) -> str:
             return m.group(1).strip()
     m = re.search(r"```[A-Za-z0-9_+-]*\s*\n(.*?)```", text, re.DOTALL)
     return (m.group(1) if m else text).strip()
+
+
+def _normalize_code_for_lc(code: str, language: str) -> str:
+    """Per-language post-extraction cleanup for the few cases where
+    LC's submission format diverges from how models naturally write
+    the code in a fenced block.
+
+    Currently handles ONE case:
+
+      * **PHP**: LC's PHP runner wraps the user code in an already-open
+        `<?php ... ?>` context, so user code must NOT start with `<?php`
+        (and must not end with `?>`). When the model emits the natural
+        full-file shape, LC trips a parse error on every submission
+        ("unexpected token `<`, expecting end of file") — which is what
+        caused submission #54 to fail on all 99 PHP attempts. We strip
+        a leading `<?php` (with optional `declare(...)` line right
+        after) and any trailing `?>`. Idempotent: a code body that's
+        already in LC's expected shape is a no-op.
+
+    Add other languages here only if/when LC's wrapper requires a
+    similarly non-obvious stripping pass — most languages accept the
+    natural full-file shape unchanged.
+    """
+    if not code:
+        return code
+    if language == "php":
+        # Strip a leading `<?php` tag plus any blank or
+        # `declare(strict_types=1);`-style line that conventionally
+        # follows it. We anchor to the start of the string AFTER
+        # stripping any whitespace the extractor might have left in.
+        stripped = code.lstrip()
+        m = re.match(
+            r"<\?php\s*(?:declare\s*\([^)]*\)\s*;\s*)?",
+            stripped, re.IGNORECASE,
+        )
+        if m:
+            stripped = stripped[m.end():].lstrip()
+        # Symmetrically, drop a trailing `?>` (with any trailing whitespace).
+        stripped = re.sub(r"\s*\?>\s*$", "", stripped)
+        return stripped
+    return code
 
 
 def _expand_template(text: str, *, slug: str, statement: str, language: str,
@@ -497,14 +625,127 @@ def estimate_code_tokens(code: str) -> int:
         return max(1, len(code) // 4)
 
 
-def call_cost_usd(provider: str | None) -> float:
-    """$ cost of one LLM call. Ollama / canned / local are free (0.0). For a
-    paid API you'd plug provider pricing × tokens here; until then anything
-    non-local returns 0.0 too (the submitter can override per attempt)."""
-    # Per the requirement: Ollama models cost 0. Everything we currently
-    # drive is local, so 0.0 is correct; left as a function so paid-provider
-    # pricing has an obvious home later.
+def call_cost_usd(trace_or_provider) -> float:
+    """$ cost of one LLM call. Accepts EITHER:
+
+      * a trace dict (preferred) — looked up against provider-specific
+        pricing tables using provider_meta.usage when present, or
+      * a bare provider name string (legacy back-compat shim).
+
+    Local providers (ollama, canned-fallback) always return 0.0. For
+    OpenAI the cost is computed from provider_meta.usage and the
+    OPENAI_PRICING_USD_PER_1M table; unrecognised models or providers
+    fall back to 0.0 (submitter can override per attempt)."""
+    if isinstance(trace_or_provider, str) or trace_or_provider is None:
+        # Legacy call site: call_cost_usd(trace.get("provider")). We can't
+        # know usage from just the provider name, so return 0.0 — same
+        # behaviour the original function had.
+        return 0.0
+    trace = trace_or_provider
+    provider = trace.get("provider")
+    if provider in ("ollama", "canned-fallback", None):
+        return 0.0
+    if provider == "openai":
+        return _openai_cost_from_trace(trace)
     return 0.0
+
+
+# Per-1M token USD pricing for OpenAI models we support. Keys match what
+# the model returns in `model` (post-4.1 / gpt-5 era). Lookup also tries
+# the base name after stripping a trailing -YYYY-MM-DD date pin, so a
+# response with model="gpt-5-mini-2025-08-07" still resolves to the
+# "gpt-5-mini" row.
+#
+# Numbers reflect OpenAI's published API pricing as of mid-2026 — when
+# prices change, edit here. Unknown models fall through to 0.0 (the
+# sweep keeps running, the leaderboard's $-column just under-reports
+# until the row is added).
+# Each row carries:
+#   in     — fresh prompt tokens / 1M
+#   cached — cached prompt tokens / 1M (10× discount on gpt-5/o-series,
+#            ~50% discount on gpt-4* per OpenAI's prompt-caching pricing)
+#   out    — completion tokens / 1M (reasoning_tokens are folded into
+#            completion_tokens by the Responses API by design, so the
+#            out rate covers them)
+#
+# When `cached` is omitted we conservatively bill the cached portion at
+# the same rate as fresh — better to over-report than silently underbill.
+OPENAI_PRICING_USD_PER_1M: dict[str, dict[str, float]] = {
+    # ---- gpt-5 family (reasoning-native; reasoning tokens billed as output) ----
+    "gpt-5":                {"in": 1.25,  "cached": 0.125, "out": 10.00},
+    "gpt-5-mini":           {"in": 0.25,  "cached": 0.025, "out": 2.00},
+    "gpt-5-nano":           {"in": 0.05,  "cached": 0.005, "out": 0.40},
+    # gpt-5.4-mini / gpt-5.5 are codenames the matrix_sweep operator's been
+    # using; they're not on OpenAI's public list (canonical is `gpt-5-mini`).
+    # Because unrecognised model names get alias-routed rather than rejected,
+    # the request still completes — we price them at the gpt-5-mini SKU
+    # class. Edit if the operator's private pricing differs.
+    "gpt-5.4-mini":         {"in": 0.25,  "cached": 0.025, "out": 2.00},
+    "gpt-5.5":              {"in": 0.25,  "cached": 0.025, "out": 2.00},
+    # gpt-5-chat is the non-reasoning chat-tuned SKU — same wire prices as
+    # gpt-5 today but kept as its own row so future divergence is one edit
+    # away.
+    "gpt-5-chat":           {"in": 1.25,  "cached": 0.125, "out": 10.00},
+    "gpt-5-chat-latest":    {"in": 1.25,  "cached": 0.125, "out": 10.00},
+    # ---- gpt-4.1 family ----
+    "gpt-4.1":              {"in": 2.00,  "cached": 0.50,  "out": 8.00},
+    "gpt-4.1-mini":         {"in": 0.40,  "cached": 0.10,  "out": 1.60},
+    "gpt-4.1-nano":         {"in": 0.10,  "cached": 0.025, "out": 0.40},
+    # ---- gpt-4o family ----
+    "gpt-4o":               {"in": 2.50,  "cached": 1.25,  "out": 10.00},
+    "gpt-4o-mini":          {"in": 0.15,  "cached": 0.075, "out": 0.60},
+    # ---- o-series reasoning models (reasoning tokens billed at output rate) ----
+    "o4-mini":              {"in": 1.10,  "cached": 0.275, "out": 4.40},
+    "o3":                   {"in": 2.00,  "cached": 0.50,  "out": 8.00},
+    "o3-mini":              {"in": 1.10,  "cached": 0.55,  "out": 4.40},
+}
+
+
+def _cached_prompt_tokens(usage: dict) -> int:
+    """Pull the cached portion of the prompt from either API shape.
+
+    The Chat Completions API exposes cached input as
+    `prompt_tokens_details.cached_tokens`; the Responses API uses
+    `input_tokens_details.cached_tokens`. We accept either. When OpenAI
+    didn't report a cached count (older trace, no cache hit), this
+    returns 0 and the caller bills the full prompt at the fresh rate."""
+    details = (usage.get("prompt_tokens_details")
+               or usage.get("input_tokens_details") or {})
+    return int(details.get("cached_tokens") or 0)
+
+
+def _openai_cost_from_trace(trace: dict) -> float:
+    """Cost = fresh_in × in_rate + cached_in × cached_rate + out × out_rate.
+
+    Three pieces of the bill we account for:
+      1. Fresh prompt tokens  → priced at `price["in"]`
+      2. Cached prompt tokens → priced at `price["cached"]` (10× discount
+         on gpt-5/o-series, ~50% on gpt-4*). OpenAI applies this
+         automatically for repeated prompt prefixes ≥1024 tokens.
+      3. Completion tokens   → priced at `price["out"]`. Reasoning tokens
+         (gpt-5 / o-series) are folded into completion_tokens by both
+         the Chat Completions and Responses APIs, so out_rate covers them.
+
+    Unknown models or a missing usage block return 0.0 — better to
+    under-report than to invent a number. When `price["cached"]` is
+    absent we fall back to `price["in"]` (no discount), keeping the old
+    over-estimating behaviour rather than under-billing silently."""
+    model = trace.get("model") or ""
+    # Allow date-suffixed pins (e.g. "gpt-4.1-mini-2025-04-14") to match the
+    # base entry — strip a trailing -YYYY-MM-DD if present.
+    base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)
+    price = OPENAI_PRICING_USD_PER_1M.get(model) or OPENAI_PRICING_USD_PER_1M.get(base)
+    if not price:
+        return 0.0
+    usage = (trace.get("provider_meta") or {}).get("usage") or {}
+    pt = int(usage.get("prompt_tokens") or 0)
+    ct = int(usage.get("completion_tokens") or 0)
+    cached = min(_cached_prompt_tokens(usage), pt)  # guard against bad data
+    fresh = pt - cached
+    cached_rate = price.get("cached", price["in"])
+    return (fresh * price["in"]
+            + cached * cached_rate
+            + ct * price["out"]) / 1_000_000.0
 
 
 def fetch_prompt(base: str, name: str) -> dict:
@@ -517,10 +758,455 @@ def fetch_prompt(base: str, name: str) -> dict:
     return matched[0]
 
 
+# ===========================================================================
+# Provider plugin layer
+# ===========================================================================
+#
+# Each Provider subclass wraps ONE LLM backend (Ollama, OpenAI, Anthropic,
+# vLLM, …) behind a uniform `.generate()` / `.model_digest()` / `.cost_usd()`
+# API. Adding a new provider = subclass + register in PROVIDERS — all three
+# scripts (submit_with_local_model, matrix_sweep, iterative_refine) pick
+# it up automatically through `make_provider()`.
+#
+# Design rule: a Provider OWNS the trace dict shape it emits. The fields
+# `provider`, `model`, `endpoint`, `params`, `created_at`, `wall_clock_ms`
+# are required; everything else (provider_meta keys, reasoning extraction,
+# raw_response shape) is provider-specific.
+#
+# Why the legacy `call_ollama()` and `ollama_model_digest()` module-level
+# functions still exist: matrix_sweep.py and iterative_refine.py import
+# them directly. Until those are fully ported we expose Provider AND keep
+# the shims, which delegate to OllamaProvider so behaviour stays in sync.
+
+from abc import ABC, abstractmethod
+
+
+class Provider(ABC):
+    """Abstract LLM backend. Subclasses implement the three methods and
+    register themselves in the PROVIDERS dict below."""
+
+    name: str = ""    # override in subclass; matches --provider flag value
+
+    @abstractmethod
+    def generate(self, model: str, statement: str, slug: str,
+                 params: dict, language: str,
+                 registry_prompt: dict | None = None,
+                 extras: dict[str, str] | None = None) -> tuple[str, dict]:
+        """Run one inference. Return (extracted_code, trace_dict).
+
+        `trace_dict` MUST include: provider, model, endpoint, params,
+        created_at, wall_clock_ms, prompt, system_prompt, raw_response.
+        SHOULD include: reasoning (None if the model doesn't emit one)
+        and provider_meta (token counts, system_fingerprint, etc.)."""
+
+    @abstractmethod
+    def model_digest(self, model: str) -> str | None:
+        """Return a provider-namespaced digest string for this model
+        identity (e.g. `ollama:<sha256>`, `openai:<system_fingerprint>`),
+        or None if we can't determine one — the platform will derive a
+        deterministic digest from the trace in that case."""
+
+    def cost_usd(self, trace: dict) -> float:
+        """USD cost of one call. Default 0.0 — overridden by paid providers."""
+        return 0.0
+
+
+# ----- OpenAI (and OpenAI-compatible endpoints: Azure, OpenRouter, …) ------
+
+# Connection retry — mirrors _OLLAMA_MAX_RETRIES; the same kinds of transient
+# disconnects bite the OpenAI client too (especially when going through a
+# corporate proxy).
+_OPENAI_MAX_RETRIES = int(os.environ.get("ARENA_OPENAI_RETRIES", "5"))
+_OPENAI_INITIAL_RETRY_DELAY = float(os.environ.get("ARENA_OPENAI_RETRY_DELAY", "5.0"))
+_OPENAI_RETRY_CAP_S = 60.0
+
+
+def _openai_post(url: str, api_key: str, body: dict, timeout: int) -> tuple[int, object]:
+    """POST to OpenAI's /v1/chat/completions. Same retry contract as
+    _ollama_post — connection-level failures retry with back-off; HTTP
+    errors (including 4xx with a JSON body) are returned to the caller."""
+    data = json.dumps(body).encode()
+    last_err: Exception | None = None
+    delay = _OPENAI_INITIAL_RETRY_DELAY
+    for attempt in range(_OPENAI_MAX_RETRIES + 1):
+        req = urllib.request.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", f"Bearer {api_key}")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.status, json.loads(resp.read() or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode(errors="replace")
+            try:
+                return e.code, json.loads(raw)
+            except json.JSONDecodeError:
+                return e.code, raw
+        except (urllib.error.URLError, OSError) as e:
+            last_err = e
+            if attempt >= _OPENAI_MAX_RETRIES:
+                break
+            print(f"  openai connection blip ({type(e).__name__}: {e}); "
+                  f"retrying in {delay:.0f}s "
+                  f"(attempt {attempt + 1}/{_OPENAI_MAX_RETRIES})",
+                  file=sys.stderr)
+            time.sleep(delay)
+            delay = min(delay * 2, _OPENAI_RETRY_CAP_S)
+    raise SystemExit(
+        f"cannot reach {url} after {_OPENAI_MAX_RETRIES + 1} attempts "
+        f"(last error: {last_err!r}). "
+        f"Override via ARENA_OPENAI_RETRIES / ARENA_OPENAI_RETRY_DELAY env vars."
+    )
+
+
+class OpenAIProvider(Provider):
+    """OpenAI-compatible chat-completions client. Works with the real
+    OpenAI API (default base_url) and any compatible endpoint that
+    speaks the same /v1/chat/completions schema — Azure OpenAI,
+    OpenRouter, Together, vLLM, llama.cpp's --api-key server, …
+
+    Reasoning extraction: looks at message.reasoning_content first
+    (o-series style), then falls back to a `<think>...</think>` block
+    inside content for providers that proxy that convention.
+
+    Model digest: uses the API's `system_fingerprint` when present,
+    namespaced as `openai:<fingerprint>`. Pure-OSS hosts that don't
+    return one get None — platform-side derivation kicks in."""
+
+    name = "openai"
+
+    def __init__(self, base_url: str, api_key: str,
+                 cost_table: dict | None = None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.cost_table = cost_table or OPENAI_PRICING_USD_PER_1M
+
+    def generate(self, model: str, statement: str, slug: str,
+                 params: dict, language: str,
+                 registry_prompt: dict | None = None,
+                 extras: dict[str, str] | None = None) -> tuple[str, dict]:
+        display, fence = LANGUAGE_DISPLAY.get(language, (language, language))
+        if registry_prompt is not None:
+            sys_p = _expand_template(
+                registry_prompt["system_prompt"],
+                slug=slug, statement=statement, language=language,
+                extras=extras,
+            )
+            user_prompt = _expand_template(
+                registry_prompt["user_prompt_template"],
+                slug=slug, statement=statement, language=language,
+                extras=extras,
+            )
+        else:
+            sys_p = system_prompt(language)
+            user_prompt = (
+                f"Solve this LeetCode problem `{slug}` in {display}.\n\n{statement}"
+            )
+        # The OpenAI schema is messages-based, same as Ollama. Temperature
+        # and friends ride in the top-level body, not under `options`.
+        body: dict = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": sys_p},
+                {"role": "user",   "content": user_prompt},
+            ],
+        }
+        # Whitelist the params we know are first-class on /v1/chat/completions.
+        # Anything else stays in trace.params for provenance but isn't sent.
+        for k in ("temperature", "top_p", "max_tokens", "max_completion_tokens",
+                  "frequency_penalty", "presence_penalty", "seed", "stop",
+                  "reasoning_effort"):
+            if params.get(k) is not None:
+                body[k] = params[k]
+        # Reasoning-tuned SKUs (gpt-5 family, o-series) reject custom
+        # `temperature` / `top_p` with HTTP 400 ("Only the default value
+        # is supported"). Strip them silently so a default args.temperature
+        # of 0.2 doesn't 400-bomb every single tuple — the sampling
+        # axis becomes "model decides", which is the intended behaviour
+        # for reasoning models anyway. We DO keep `reasoning_effort`
+        # (those models' own parallel knob) when set.
+        reasoning_model = _is_reasoning_model(model)
+        if reasoning_model:
+            for stripped in ("temperature", "top_p"):
+                if stripped in body:
+                    body.pop(stripped)
+        # Reasoning models hide their actual chain-of-thought from the
+        # `/v1/chat/completions` response (you get a token COUNT in
+        # `usage.completion_tokens_details.reasoning_tokens` but no
+        # text). To capture the reasoning summary text we want to
+        # store on every attempt, we have to route reasoning models
+        # through OpenAI's `/v1/responses` endpoint, whose response
+        # carries reasoning items separately. Non-reasoning models
+        # stay on `/chat/completions` — no point in paying the
+        # different-API tax there.
+        finish_reason: str | None = None
+        if reasoning_model:
+            code, content, reasoning, gen_ms, resp, finish_reason = self._call_responses_api(
+                model, sys_p, user_prompt, params, language, fence,
+            )
+        else:
+            endpoint = self.base_url + "/chat/completions"
+            gen_t0 = time.perf_counter()
+            status, resp = _openai_post(endpoint, self.api_key, body, timeout=600)
+            gen_ms = int((time.perf_counter() - gen_t0) * 1000)
+            if status != 200 or not isinstance(resp, dict):
+                raise SystemExit(f"OpenAI HTTP {status}: {resp}")
+            choice = (resp.get("choices") or [{}])[0]
+            msg = choice.get("message") or {}
+            content = msg.get("content") or ""
+            # Reasoning channel: (a) o-series exposes it as message.reasoning_content,
+            # (b) some OSS proxies pass through <think>...</think> blocks.
+            reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+            if not reasoning:
+                mt = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
+                reasoning = mt.group(1).strip() if mt else None
+            cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+            code = _normalize_code_for_lc(
+                _extract_code(cleaned, fence_lang=fence), language,
+            )
+            finish_reason = choice.get("finish_reason")
+        trace = {
+            "prompt": user_prompt,
+            "system_prompt": sys_p,
+            "raw_response": content,
+            "reasoning": reasoning,
+            "model": model,
+            "provider": "openai",
+            "endpoint": self.base_url,
+            "params": params,
+            "created_at": _now(),
+            "wall_clock_ms": gen_ms,
+            "provider_meta": {
+                "system_fingerprint": resp.get("system_fingerprint"),
+                "usage": resp.get("usage"),
+                "finish_reason": finish_reason,
+                # OpenAI sometimes returns the resolved model pin separate
+                # from the requested one (e.g. gpt-4.1-mini-2025-04-14).
+                "model_resolved": resp.get("model"),
+                # Surface that this attempt went through the Responses API
+                # vs Chat Completions, so the SPA / audit can tell apart
+                # reasoning-channel traces from non-reasoning ones at a
+                # glance without having to inspect the response shape.
+                "api": "responses" if reasoning_model else "chat_completions",
+            },
+        }
+        return code, trace
+
+    def model_digest(self, model: str) -> str | None:
+        """OpenAI doesn't expose a model SHA on /v1/models the way Ollama
+        does. The closest stable identity is the system_fingerprint
+        returned by the chat endpoint — but we don't have one without
+        burning a real call. Cheapest reliable path: do a 1-token probe
+        and read system_fingerprint from the response. We fall back to
+        None on any error so the platform's derived digest takes over."""
+        endpoint = self.base_url + "/chat/completions"
+        try:
+            status, resp = _openai_post(endpoint, self.api_key, {
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1,
+                "temperature": 0,
+            }, timeout=20)
+            if status == 200 and isinstance(resp, dict):
+                fp = resp.get("system_fingerprint")
+                if fp:
+                    return f"openai:{fp}"
+        except SystemExit:
+            return None
+        return None
+
+    def _call_responses_api(
+        self, model: str, sys_p: str, user_prompt: str, params: dict,
+        language: str, fence: str,
+    ) -> tuple[str, str, str | None, int, dict, str | None]:
+        """Reasoning-model path through /v1/responses.
+
+        Returns the same five fields as the inlined Chat Completions
+        block plus `finish_reason`, so the caller can build one unified
+        `trace` regardless of which API produced the response:
+          * code        — extracted from the message output_text
+          * content     — raw message text (input to _extract_code)
+          * reasoning   — concatenated reasoning summary items (text)
+          * gen_ms      — wall-clock for the API call
+          * resp        — full response JSON (for provider_meta)
+          * finish_reason — normalised from `resp.status`
+
+        Why the Responses API: Chat Completions hides reasoning content
+        from gpt-5 / o-series responses (you only get a token COUNT in
+        `usage.completion_tokens_details.reasoning_tokens`). The
+        Responses API returns reasoning summary items separately under
+        `output[].type == "reasoning"`, which we surface here so the
+        per-attempt audit / SPA can show what the model was thinking.
+
+        We request `reasoning.summary = "auto"` so the model picks the
+        appropriate verbosity (concise vs detailed) on its own. The
+        `reasoning_effort` knob from the chat-completions whitelist
+        passes through unchanged when set — it controls how MUCH the
+        model reasons, the summary is what we render."""
+        body: dict = {
+            "model": model,
+            "input": [
+                {"role": "system", "content": sys_p},
+                {"role": "user",   "content": user_prompt},
+            ],
+            "reasoning": {"summary": "auto"},
+        }
+        # Pass reasoning_effort through when the operator wants to dial
+        # it (default behaviour is the model's own choice).
+        if params.get("reasoning_effort") is not None:
+            body["reasoning"]["effort"] = params["reasoning_effort"]
+        # max_completion_tokens is the cross-API replacement for
+        # max_tokens for reasoning models — pass through if set.
+        if params.get("max_completion_tokens") is not None:
+            body["max_output_tokens"] = params["max_completion_tokens"]
+        endpoint = self.base_url + "/responses"
+        gen_t0 = time.perf_counter()
+        status, resp = _openai_post(endpoint, self.api_key, body, timeout=600)
+        gen_ms = int((time.perf_counter() - gen_t0) * 1000)
+        if status != 200 or not isinstance(resp, dict):
+            raise SystemExit(f"OpenAI HTTP {status}: {resp}")
+        # Walk `output` to extract reasoning summary + message text.
+        # Output items are typed: {"type": "reasoning", "summary": [...]}
+        # and {"type": "message", "content": [{"type": "output_text", "text": ...}]}.
+        # Order isn't strictly guaranteed by docs but reasoning typically
+        # precedes the final message; we don't depend on order — just
+        # collect each type.
+        reasoning_parts: list[str] = []
+        message_parts: list[str] = []
+        for item in (resp.get("output") or []):
+            t = item.get("type")
+            if t == "reasoning":
+                for s in (item.get("summary") or []):
+                    txt = s.get("text") if isinstance(s, dict) else None
+                    if txt:
+                        reasoning_parts.append(txt)
+            elif t == "message":
+                for c in (item.get("content") or []):
+                    if isinstance(c, dict) and c.get("type") == "output_text":
+                        txt = c.get("text")
+                        if txt:
+                            message_parts.append(txt)
+        # The Responses API also exposes a convenience `output_text`
+        # field at the top level (concatenation of all message_parts).
+        # Prefer it when present so we match what OpenAI's own SDK
+        # would build, and fall back to our manual join otherwise.
+        content = resp.get("output_text") or "\n".join(message_parts)
+        reasoning = "\n\n".join(reasoning_parts) if reasoning_parts else None
+        # The actual code lives inside content — same extractor as the
+        # Chat Completions path.
+        cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+        code = _normalize_code_for_lc(
+            _extract_code(cleaned, fence_lang=fence), language,
+        )
+        # `status` is the lifecycle field on a Responses object —
+        # "completed" / "in_progress" / "incomplete". Map to a finish_reason
+        # roughly equivalent to what Chat Completions returns.
+        finish_reason = resp.get("status")
+        # Normalise the usage block so downstream consumers (the cost
+        # calculator, the token-count columns on the SPA, the live cost
+        # recompute on /models) don't have to know whether the trace
+        # came from /chat/completions or /responses. The Responses API
+        # uses `input_tokens` / `output_tokens`; Chat Completions uses
+        # `prompt_tokens` / `completion_tokens`. We add both alias
+        # forms to the usage dict so existing code paths keep working.
+        usage = resp.get("usage") or {}
+        if usage:
+            if "prompt_tokens" not in usage and "input_tokens" in usage:
+                usage["prompt_tokens"] = usage["input_tokens"]
+            if "completion_tokens" not in usage and "output_tokens" in usage:
+                usage["completion_tokens"] = usage["output_tokens"]
+            resp["usage"] = usage         # in case it was a fresh dict
+        return code, content, reasoning, gen_ms, resp, finish_reason
+
+    def cost_usd(self, trace: dict) -> float:
+        return _openai_cost_from_trace(trace)
+
+
+# ----- Ollama (existing behaviour, wrapped in the Provider shape) ---------
+
+class OllamaProvider(Provider):
+    """Local Ollama backend. Preserves the exact trace shape the platform
+    has been ingesting since v0.1 — adding the Provider wrapper around it
+    is a no-op on the wire. Cost is always 0.0 (local inference)."""
+
+    name = "ollama"
+
+    def __init__(self, ollama_url: str) -> None:
+        self.ollama_url = ollama_url
+
+    def generate(self, model: str, statement: str, slug: str,
+                 params: dict, language: str,
+                 registry_prompt: dict | None = None,
+                 extras: dict[str, str] | None = None) -> tuple[str, dict]:
+        return _ollama_generate_impl(
+            self.ollama_url, model, statement, slug, params, language,
+            registry_prompt=registry_prompt, extras=extras,
+        )
+
+    def model_digest(self, model: str) -> str | None:
+        return _ollama_model_digest_impl(self.ollama_url, model)
+
+    # cost_usd inherits the default (0.0).
+
+
+# ----- registry + factory ---------------------------------------------------
+
+PROVIDERS: dict[str, type[Provider]] = {
+    "ollama": OllamaProvider,
+    "openai": OpenAIProvider,
+}
+
+
+def make_provider(args) -> Provider:
+    """Build the Provider implied by argparse Namespace `args`. Expects
+    `args.provider` plus the provider-specific connection knobs
+    (`args.ollama_url` for ollama; `args.openai_base_url`+`args.openai_api_key`
+    for openai). Centralised so all three scripts share one configuration
+    path."""
+    name = (getattr(args, "provider", None) or "ollama").lower()
+    cls = PROVIDERS.get(name)
+    if cls is None:
+        raise SystemExit(
+            f"unknown --provider {name!r}; supported: {', '.join(sorted(PROVIDERS))}"
+        )
+    if name == "ollama":
+        return cls(ollama_url=getattr(args, "ollama_url"))
+    if name == "openai":
+        key = (getattr(args, "openai_api_key", None)
+               or os.environ.get("OPENAI_API_KEY"))
+        if not key:
+            raise SystemExit(
+                "--provider openai needs an API key: set --openai-api-key "
+                "or OPENAI_API_KEY in the environment."
+            )
+        return cls(
+            base_url=getattr(args, "openai_base_url",
+                             "https://api.openai.com/v1"),
+            api_key=key,
+        )
+    raise SystemExit(f"provider {name!r} has no factory wiring")
+
+
+# ===========================================================================
+# Legacy module-level shims (back-compat for direct imports)
+# ===========================================================================
+
 def call_ollama(ollama_url: str, model: str, statement: str, slug: str,
                 params: dict, language: str,
                 registry_prompt: dict | None = None,
                 extras: dict[str, str] | None = None) -> tuple[str, dict]:
+    """Back-compat wrapper: delegates to OllamaProvider.generate. New code
+    should instantiate the provider directly via `make_provider(args)`
+    so the same call site works for OpenAI too."""
+    return OllamaProvider(ollama_url).generate(
+        model, statement, slug, params, language,
+        registry_prompt=registry_prompt, extras=extras,
+    )
+
+
+def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str,
+                          params: dict, language: str,
+                          registry_prompt: dict | None = None,
+                          extras: dict[str, str] | None = None) -> tuple[str, dict]:
     """Call Ollama's native /api/chat (think=on). Return (code, trace).
     `language` selects the prompt wording and the preferred code-fence tag.
     If `registry_prompt` is given, its system_prompt + user_prompt_template
@@ -585,7 +1271,9 @@ def call_ollama(ollama_url: str, model: str, statement: str, slug: str,
         mt = re.search(r"<think>(.*?)</think>", content, re.DOTALL)
         reasoning = mt.group(1).strip() if mt else None
     cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
-    code = _extract_code(cleaned, fence_lang=fence)
+    code = _normalize_code_for_lc(
+        _extract_code(cleaned, fence_lang=fence), language,
+    )
     trace = {
         "prompt": user_prompt,
         "system_prompt": sys_p,
@@ -613,9 +1301,26 @@ def main() -> None:
     ap.add_argument("--base-url", default=os.environ.get("ARENA_BASE_URL", "http://localhost:8000"))
     ap.add_argument("--api-key", default=os.environ.get("ARENA_API_KEY"))
     ap.add_argument("--slug", default="two-sum")
+    ap.add_argument("--competition", default="leetcode-99-perf", metavar="SLUG",
+                    help="competition the submission targets (default: "
+                         "leetcode-99-perf). The slug given by --slug must "
+                         "belong to this competition; pass@k uses its problem "
+                         "count as the denominator.")
+    ap.add_argument("--provider", default="ollama", choices=sorted(PROVIDERS),
+                    help="LLM backend. ollama (default) uses --ollama-url; "
+                         "openai uses --openai-base-url + --openai-api-key "
+                         "(or the OPENAI_API_KEY env var).")
     ap.add_argument("--ollama-url", default=os.environ.get("OLLAMA_URL", "http://localhost:11434"))
+    ap.add_argument("--openai-base-url",
+                    default=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                    help="OpenAI-compatible /v1 endpoint. Override for Azure, "
+                         "OpenRouter, Together, vLLM, etc.")
+    ap.add_argument("--openai-api-key", default=os.environ.get("OPENAI_API_KEY"),
+                    help="OpenAI API key (or set OPENAI_API_KEY env var).")
     ap.add_argument("--model", default="qwen2.5-coder:7b")
-    ap.add_argument("--model-version", default="ollama")
+    ap.add_argument("--model-version", default=None,
+                    help="free-form provenance tag for the model version. "
+                         "Defaults to the provider name when omitted.")
     ap.add_argument("--temperature", type=float, default=0.2)
     ap.add_argument("--language", default="python3",
                     choices=sorted(LANGUAGE_DISPLAY),
@@ -750,13 +1455,24 @@ def main() -> None:
         step = (hi - base_t) / (k - 1)
         temps = [round(base_t + i * step, 3) for i in range(k)]
 
+    # Build the provider once per run — same instance handles every sample.
+    # Skipped for --no-model (canned solutions don't need a backend).
+    provider: Provider | None = None
+    if not args.no_model:
+        provider = make_provider(args)
+    # Default --model-version to the provider name so a sweep filenames /
+    # leaderboard cells stay distinguishable when the same --model is run
+    # under more than one backend.
+    if not args.model_version:
+        args.model_version = provider.name if provider else "ollama"
+
     model_digest = args.model_digest
-    if not args.no_model and not model_digest:
+    if provider is not None and not model_digest:
         # One lookup per run (not per sample) — the digest is identical for
         # every call to the same model.
-        model_digest = ollama_model_digest(args.ollama_url, args.model)
+        model_digest = provider.model_digest(args.model)
         if model_digest:
-            print(f"  model digest (from Ollama): {model_digest[:24]}…")
+            print(f"  model digest (from {provider.name}): {model_digest[:24]}…")
 
     attempts: list[dict] = []
     sample_leafs: list[str] = []
@@ -783,10 +1499,10 @@ def main() -> None:
             )
             print(f"  [{i}/{k}] canned ({args.language})")
         else:
-            print(f"  [{i}/{k}] asking {args.model} at temperature={t} …")
+            print(f"  [{i}/{k}] asking {args.model} (provider={provider.name}) at temperature={t} …")
             try:
-                code, trace = call_ollama(
-                    args.ollama_url, args.model, statement, args.slug,
+                code, trace = provider.generate(
+                    args.model, statement, args.slug,
                     sample_params, args.language,
                     registry_prompt=registry_prompt,
                     extras=extras,
@@ -794,11 +1510,11 @@ def main() -> None:
                 rlen = len(trace["reasoning"] or "")
                 print(f"  [{i}/{k}] got {len(code)} chars of code; reasoning trace: {rlen} chars")
             except SystemExit as e:
-                print(f"  [{i}/{k}] Ollama call failed ({e}); using canned solution",
+                print(f"  [{i}/{k}] {provider.name} call failed ({e}); using canned solution",
                       file=sys.stderr)
                 code, trace = _canned_trace(
                     args.slug, args.language, sample_params,
-                    reason=f"ollama-unreachable: {e}",
+                    reason=f"{provider.name}-unreachable: {e}",
                 )
         # Language-conformance check. Small models occasionally ignore the
         # language directive and emit Java/C++/etc. when asked for Python.
@@ -830,8 +1546,10 @@ def main() -> None:
             "inference_trace": summary,
             "trace": trace,
             # Cost + tokens of this single LLM call (one sample). Ollama is
-            # free → 0.0; response_tokens counts the CODE only, not reasoning.
-            "cost_usd": call_cost_usd(trace.get("provider")),
+            # free → 0.0; OpenAI computes (prompt+completion tokens × price)
+            # from provider_meta.usage. response_tokens counts the CODE
+            # only, not reasoning.
+            "cost_usd": call_cost_usd(trace),
             "response_tokens": estimate_code_tokens(code),
             # Generation wall-clock of this solution (ms), measured in call_ollama.
             "wall_clock_ms": trace.get("wall_clock_ms"),
@@ -946,6 +1664,10 @@ def main() -> None:
                 "model_params": params,
                 "n_samples_per_problem": k,
                 "prompt_id": prompt_id,
+                # Scope this submission to the chosen competition so
+                # total_problems / pass@k use that competition's size
+                # rather than the full Problem table count.
+                "competition_slug": args.competition,
                 "attempts": attempts,
             },
         )

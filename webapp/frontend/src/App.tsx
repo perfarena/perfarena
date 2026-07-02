@@ -9,6 +9,7 @@ import SubmissionDetail from "./pages/SubmissionDetail";
 import ModelDetail from "./pages/ModelDetail";
 import SubmitterDetail from "./pages/SubmitterDetail";
 import LanguageDetail from "./pages/LanguageDetail";
+import Languages from "./pages/Languages";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import Admin from "./pages/Admin";
@@ -16,6 +17,8 @@ import AdminExport from "./pages/AdminExport";
 import ApiKey from "./pages/ApiKey";
 import MyByLanguage from "./pages/MyByLanguage";
 import Compare from "./pages/Compare";
+import CostEstimator from "./pages/CostEstimator";
+import LeetcodeAccounts from "./pages/LeetcodeAccounts";
 // The cross-language scatter is the "Correctness vs Performance" tab inside
 // Compare (Compare imports it internally); the /analysis route below
 // redirects there for deep links pointing at the old URL. Compare itself
@@ -45,6 +48,8 @@ export default function App() {
         <Route index element={<Home />} />
         <Route path="rankings" element={<Rankings />} />
         <Route path="compare" element={<Compare />} />
+        <Route path="cost-estimator" element={<CostEstimator />} />
+        <Route path="admin/leetcode-accounts" element={<LeetcodeAccounts />} />
         <Route path="analysis" element={<Navigate to="/compare?tab=perf-vs-correctness" replace />} />
         {/* "Catalog" was renamed to "Models"; keep the old path as a redirect. */}
         <Route path="models" element={<Catalog />} />
@@ -59,6 +64,7 @@ export default function App() {
         <Route path="submissions/:id" element={<SubmissionDetail />} />
         <Route path="models/:name" element={<ModelDetail />} />
         <Route path="submitters/:slug" element={<SubmitterDetail />} />
+        <Route path="languages" element={<Languages />} />
         <Route path="languages/:name" element={<LanguageDetail />} />
         <Route path="snapshots" element={<Snapshots />} />
         <Route path="snapshots/:id" element={<SnapshotDetail />} />

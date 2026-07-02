@@ -50,11 +50,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from submit_with_local_model import (                          # noqa: E402
     CANNED_CODE, CANNED_LANGUAGE, CANNED_SLUG,
     LANGUAGE_DISPLAY,
+    PROVIDERS, Provider,
     _canned_trace, _expand_template, _now,
     build_hints_block, build_optimization_directive,            # shared
     call_cost_usd, estimate_code_tokens,                        # cost/token accounting
-    call_ollama, compute_trace_hash, fetch_prompt, http_json,
-    ollama_model_digest, sign_leaf,
+    compute_trace_hash, fetch_prompt, http_json, make_provider,
+    sign_leaf,
 )
 
 
@@ -184,7 +185,8 @@ def distill_judge_result(attempt_detail: dict) -> dict:
 
 # ---------- one full N-round run for ONE problem ----------------------------
 
-def run_chain(args, base: str, prompt: dict, problem: dict) -> dict:
+def run_chain(args, base: str, prompt: dict, problem: dict,
+              provider: Provider | None = None) -> dict:
     """Drive the full N-round chain for `problem`. Returns a small summary."""
     slug = problem["title_slug"]
     language = args.language
@@ -193,10 +195,13 @@ def run_chain(args, base: str, prompt: dict, problem: dict) -> dict:
     history: list[dict] = []
     submission_id: int | None = None
     previous_attempt_id: int | None = None
-    # Probe Ollama for the model identity digest once (skipped on canned/dry).
+    # Probe the provider for the model identity digest once (skipped on
+    # canned/dry). For Ollama this reads /api/tags; for OpenAI it issues
+    # a 1-token probe to read system_fingerprint. The provider was built
+    # in main() and passed in so the same client state is reused.
     model_digest = None
-    if not args.no_model and not args.dry_run:
-        model_digest = ollama_model_digest(args.ollama_url, args.model)
+    if not args.no_model and not args.dry_run and provider is not None:
+        model_digest = provider.model_digest(args.model)
 
     summary_rows: list[dict] = []
     for round_idx in range(args.n_rounds):
@@ -267,16 +272,17 @@ def run_chain(args, base: str, prompt: dict, problem: dict) -> dict:
             trace["prompt"] = user_p
             trace["system_prompt"] = sys_p
         else:
-            # Reuse submit_with_local_model.call_ollama, but with our
-            # pre-expanded prompts. The cleanest way: build a fake "prompt"
-            # dict that call_ollama sees as the registry prompt with the
-            # placeholders ALREADY expanded.
+            # Re-use the active provider with our pre-expanded prompts.
+            # Build a fake "prompt" dict the provider's generate() sees as
+            # a registry prompt with all the {{placeholders}} ALREADY
+            # substituted, so generate() doesn't re-expand them.
             fake_prompt = {
                 "system_prompt": sys_p,
                 "user_prompt_template": user_p,
             }
-            code, trace = call_ollama(
-                args.ollama_url, args.model, problem["content"], slug,
+            assert provider is not None  # main() guarantees this in the not-no-model branch
+            code, trace = provider.generate(
+                args.model, problem["content"], slug,
                 {"temperature": args.temperature}, language,
                 registry_prompt=fake_prompt,
             )
@@ -289,7 +295,7 @@ def run_chain(args, base: str, prompt: dict, problem: dict) -> dict:
         attempt_body: dict = {
             "title_slug": slug, "code": code, "inference_trace": summary,
             "trace": trace, "round_index": round_idx,
-            "cost_usd": call_cost_usd(trace.get("provider")),
+            "cost_usd": call_cost_usd(trace),
             "response_tokens": estimate_code_tokens(code),
             "wall_clock_ms": trace.get("wall_clock_ms"),
             "generation_energy_j": trace.get("energy_j"),
@@ -320,6 +326,9 @@ def run_chain(args, base: str, prompt: dict, problem: dict) -> dict:
                     "n_rounds": args.n_rounds,
                     "include_hints": bool(args.hints),
                     "optimization_target": args.target,
+                    # Scope to the chosen competition so pass@k denominators
+                    # match the competition's size rather than the full DB.
+                    "competition_slug": args.competition,
                     "attempts": [attempt_body],
                 },
             )
@@ -407,11 +416,24 @@ def main() -> None:
     )
     ap.add_argument("--base-url", default=os.environ.get("ARENA_BASE_URL", "http://localhost:8000"))
     ap.add_argument("--api-key", default=os.environ.get("ARENA_API_KEY"))
+    ap.add_argument("--competition", default="leetcode-99-perf", metavar="SLUG",
+                    help="competition the submission targets (default: "
+                         "leetcode-99-perf). --slug must belong to it.")
     ap.add_argument("--slug", default="two-sum",
                     help="problem slug to refine (one chain)")
+    ap.add_argument("--provider", default="ollama", choices=sorted(PROVIDERS),
+                    help="LLM backend. ollama (default) uses --ollama-url; "
+                         "openai uses --openai-base-url + --openai-api-key.")
     ap.add_argument("--ollama-url", default=os.environ.get("OLLAMA_URL", "http://localhost:11434"))
+    ap.add_argument("--openai-base-url",
+                    default=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                    help="OpenAI-compatible /v1 endpoint.")
+    ap.add_argument("--openai-api-key", default=os.environ.get("OPENAI_API_KEY"),
+                    help="OpenAI API key (or set OPENAI_API_KEY env var).")
     ap.add_argument("--model", default="qwen2.5-coder:7b")
-    ap.add_argument("--model-version", default="ollama")
+    ap.add_argument("--model-version", default=None,
+                    help="version tag stamped on every submission. "
+                         "Defaults to the provider name when omitted.")
     ap.add_argument("--temperature", type=float, default=0.2)
     ap.add_argument("--language", default="python3",
                     choices=sorted(LANGUAGE_DISPLAY))
@@ -476,7 +498,16 @@ def main() -> None:
     if not args.dry_run:
         print(f"• using registry prompt '{prompt['name']}' (id={prompt['id']})")
 
-    result = run_chain(args, base, prompt, problem)
+    # Build the LLM backend once for the whole chain. Skipped when
+    # --no-model / --dry-run since those paths don't hit the provider.
+    provider: Provider | None = None
+    if not args.no_model and not args.dry_run:
+        provider = make_provider(args)
+        print(f"• provider={provider.name}")
+    if not args.model_version:
+        args.model_version = provider.name if provider else "ollama"
+
+    result = run_chain(args, base, prompt, problem, provider=provider)
 
     if args.dry_run:
         print("\n=== dry-run complete — no submissions made ===")

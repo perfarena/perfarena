@@ -16637,6 +16637,23 @@
     "submission_id": 41,
     "verdict": "Auth failed"
   },
+  "gpt-4.1-mini|experiment-system|python3|number-of-rectangles-that-can-form-the-largest-square": {
+    "accepted": false,
+    "at": "2026-06-09T10:57:19.525425+00:00",
+    "attempt_id": 2159,
+    "avg_memory_mb": null,
+    "avg_memory_percentile": null,
+    "avg_runtime_ms": null,
+    "avg_runtime_percentile": null,
+    "leaf_hash": "8ad7357a18af2d9b1e917ece73e8f1abc6cab3e792974ec8b27bbbcb0c9c32e8",
+    "n_accepted_runs": 0,
+    "n_runs": 5,
+    "rounds_used": 1,
+    "solved_at_round": null,
+    "status": "complete",
+    "submission_id": 45,
+    "verdict": "Auth failed"
+  },
   "qwen2.5:7b|experiment-system|javascript|di-string-match": {
     "at": "2026-05-29T12:37:37.374539+00:00",
     "reason": "already_in_existing_submission",

@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getApiKey, MePayload, setApiKey, subscribeAuth } from "../lib/api";
 import ThemeToggle from "./ThemeToggle";
@@ -39,16 +39,14 @@ export default function Layout() {
           <nav>
             <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>Home</NavLink>
             <NavLink to="/rankings" className={({ isActive }) => (isActive ? "active" : "")}>Rankings</NavLink>
-            {/* Compare hosts both the head-to-head view and the cross-language
-                Analysis tab — Analysis used to be a top-level nav entry but
-                now lives at /compare?tab=analysis. */}
-            <NavLink to="/competitions" className={({ isActive }) => (isActive ? "active" : "")}>Competitions</NavLink>
-            <NavLink to="/models" className={({ isActive }) => (isActive ? "active" : "")}>Models</NavLink>
-            <NavLink to="/problems" className={({ isActive }) => (isActive ? "active" : "")}>Problems</NavLink>
-            <NavLink to="/prompts" className={({ isActive }) => (isActive ? "active" : "")}>Prompts</NavLink>
+            {/* "Catalog" is the umbrella for the six registries — Competitions,
+                Problems, Models, Prompts, Submissions, Snapshots — that used
+                to be separate top tabs. They share the family resemblance
+                "browse named things inside the arena", so collapsing them
+                keeps the top bar focused on the live workflows
+                (Rankings / Compare) rather than indexes. */}
+            <CatalogMenu />
             <NavLink to="/compare" className={({ isActive }) => (isActive ? "active" : "")}>Compare</NavLink>
-            <NavLink to="/submissions" className={({ isActive }) => (isActive ? "active" : "")}>Submissions</NavLink>
-            <NavLink to="/snapshots" className={({ isActive }) => (isActive ? "active" : "")}>Snapshots</NavLink>
             <NavLink to="/blog" className={({ isActive }) => (isActive ? "active" : "")}>Blog</NavLink>
             <NavLink to="/about" className={({ isActive }) => (isActive ? "active" : "")}>About</NavLink>
           </nav>
@@ -137,9 +135,14 @@ function UserMenu({ me, onLogout }: { me: MePayload; onLogout: () => void }) {
           <MenuItem to="/me" onPick={() => setOpen(false)}>My runs</MenuItem>
           <MenuItem to="/me/by-language" onPick={() => setOpen(false)}>By language</MenuItem>
           <MenuItem to="/me/api-key" onPick={() => setOpen(false)}>API key</MenuItem>
+          {/* Sweep-planning tool — relevant to anyone running their own
+              populations, not just admins. Lives in the user menu rather
+              than the top bar because it's a tool, not a primary view. */}
+          <MenuItem to="/cost-estimator" onPick={() => setOpen(false)}>Cost estimator</MenuItem>
           {me.role === "admin" && (
             <>
               <MenuItem to="/admin" onPick={() => setOpen(false)}>Admin</MenuItem>
+              <MenuItem to="/admin/leetcode-accounts" onPick={() => setOpen(false)}>LeetCode accounts</MenuItem>
               <MenuItem to="/admin/export" onPick={() => setOpen(false)}>Export &amp; Import</MenuItem>
             </>
           )}
@@ -162,5 +165,84 @@ function MenuItem({
     >
       {children}
     </NavLink>
+  );
+}
+
+
+/* "Catalog" header dropdown — umbrella for the three registries we used to
+ * surface as separate top-level tabs. Mirrors UserMenu's outside-click +
+ * Escape behaviour so both menus feel consistent. The trigger styles
+ * itself as `active` whenever the route is on any sub-page so the user
+ * can tell at a glance which tab the current page belongs to. */
+const CATALOG_PATHS = [
+  "/competitions", "/problems", "/models", "/languages", "/prompts",
+  "/submissions", "/snapshots",
+];
+
+function CatalogMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const loc = useLocation();
+  const active = CATALOG_PATHS.some(p => loc.pathname.startsWith(p));
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Auto-close on navigation — when the route changes after a click we
+  // want the menu to dismiss, not stay pinned open over the new page.
+  useEffect(() => { setOpen(false); }, [loc.pathname]);
+
+  // The wrapper is inline-block so the trigger flows in the nav row like a
+  // NavLink, AND position:relative so the absolutely-positioned dropdown
+  // anchors off the button rather than the viewport.
+  return (
+    <span ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className={active ? "active" : ""}
+        /* Only the bits that DON'T belong in the shared header.top nav rule:
+         * align the caret next to the label. Spacing, font, colour all come
+         * from the stylesheet so this button sits flush with the NavLinks. */
+        style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+      >
+        Catalog
+        <span aria-hidden style={{ fontSize: "0.7em" }}>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="card"
+          style={{
+            position: "absolute", left: 0, top: "calc(100% + 6px)",
+            minWidth: 180, padding: 6, zIndex: 50,
+            display: "flex", flexDirection: "column", gap: 2,
+          }}
+        >
+          <MenuItem to="/competitions" onPick={() => setOpen(false)}>Competitions</MenuItem>
+          <MenuItem to="/problems"     onPick={() => setOpen(false)}>Problems</MenuItem>
+          <MenuItem to="/models"       onPick={() => setOpen(false)}>Models</MenuItem>
+          <MenuItem to="/languages"    onPick={() => setOpen(false)}>Languages</MenuItem>
+          <MenuItem to="/prompts"      onPick={() => setOpen(false)}>Prompts</MenuItem>
+          <MenuItem to="/submissions"  onPick={() => setOpen(false)}>Submissions</MenuItem>
+          <MenuItem to="/snapshots"    onPick={() => setOpen(false)}>Snapshots</MenuItem>
+        </div>
+      )}
+    </span>
   );
 }

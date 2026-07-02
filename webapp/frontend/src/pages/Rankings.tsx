@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, CompetitionPublic, RankingEntry } from "../lib/api";
 import {
-  coefficientClass, formatCoefficient, formatMemory,
+  coefficientClass, formatCoefficient, formatDuration, formatMemory,
   formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import Th from "../components/Th";
@@ -279,6 +279,7 @@ export default function Rankings() {
                 <Th label="Submitter" tip="Organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific — one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
+                <Th label="Competition" tip="Competition this submission targeted. pass@1, pass@k, and Solved use THIS competition's problem set as the denominator (not 'every Problem row in the DB'). — = legacy row created before the per-submission scope existed." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@1" tip="Unbiased pass@1 estimator over k samples — average of c/n per problem. Equivalent to single-shot pass-rate when k=1, and statistically more reliable when k>1. Use this column to compare submissions across different k values." sortKey="pass_at_1" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@k" tip="Mean acceptance rate across the SUBMITTED attempts: total accepted samples / total submitted samples. Equivalently, the average of per-problem acceptance fractions when k is constant. Denominator is the count of attempts actually submitted, NOT total supported problems — so a partial submission isn't penalised for unattempted problems. Differs from pass@1 (which divides by total supported) and pass@full (best-of-k per problem)." sortKey="pass_at_k" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -295,6 +296,12 @@ export default function Rankings() {
                 <Th label="t vs exp" tip="Speedup against the EXPERT cohort on LeetCode (~top decile of the population distribution). leetcode_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top LeetCode performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE LeetCode submission: leetcode_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the LeetCode average." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="m vs exp" tip="Memory ratio vs. the EXPERT LeetCode cohort. >1.0× = the model is leaner than top LeetCode performers." sortKey="mem_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Total tokens" tip="Sum of code-only response tokens across every attempt in this submission. Scales with attempt count (and therefore with problems covered); use 'Median tokens / att' to compare typical spend per problem instead." sortKey="total_response_tokens" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Median tokens / att" tip="Per-attempt median of response_tokens. Comparable across submissions regardless of how many problems each covers — answers 'how many tokens does ONE solution from this model cost, typically?'" sortKey="median_response_tokens_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Total cost ($)" tip="Sum of LLM cost across every attempt in this submission. Live-recomputed from /models pricing × stored tokens when available; falls back to the snapshot cost stamped at submit time for legacy attempts. 0 for all-Ollama submissions." sortKey="total_cost_usd" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Median $ / att" tip="Per-attempt median cost in USD. Apples-to-apples 'typical cost per problem solved' regardless of submission size." sortKey="median_cost_usd_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Total gen time" tip="Sum of generation wall-clock across every attempt in this submission. Scales with attempt count; use 'Median gen time / att' to compare typical per-solution latency instead." sortKey="total_generation_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Median gen time / att" tip="Per-attempt median of wall_clock_ms — typical 'how long does ONE solution take this model to generate?' regardless of how many problems the submission covered." sortKey="median_generation_ms_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <th></th>
               </tr></thead>
               <tbody>
@@ -310,6 +317,18 @@ export default function Rankings() {
                     <td><Link to={`/submitters/${r.submitter_slug}`}>{r.submitter}</Link></td>
                     <td><LanguageLink name={r.language} /></td>
                     <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
+                    <td>
+                      {r.competition_slug
+                        ? <Link to={`/competitions/${r.competition_slug}`}
+                                style={{
+                                  padding: "2px 8px", borderRadius: 999,
+                                  background: "var(--panel-2)",
+                                  border: "1px solid var(--border)",
+                                  fontSize: "0.8rem", whiteSpace: "nowrap",
+                                  textDecoration: "none",
+                                }}>{r.competition_name ?? r.competition_slug}</Link>
+                        : <span className="muted">—</span>}
+                    </td>
                     <td className="metric">{r.n_samples_per_problem}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_1)}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_k)}</td>
@@ -326,6 +345,12 @@ export default function Rankings() {
                     <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>
                     <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>
                     <td className={`metric ${coefficientClass(r.mem_human_expert)}`}>{formatCoefficient(r.mem_human_expert)}</td>
+                    <td className="metric">{formatTokenCount(r.total_response_tokens)}</td>
+                    <td className="metric">{formatTokenCount(r.median_response_tokens_per_attempt)}</td>
+                    <td className="metric">{formatDollar(r.total_cost_usd)}</td>
+                    <td className="metric">{formatDollar(r.median_cost_usd_per_attempt)}</td>
+                    <td className="metric">{formatDuration(r.total_generation_ms)}</td>
+                    <td className="metric">{formatDuration(r.median_generation_ms_per_attempt)}</td>
                     <td><Link to={`/submissions/${r.submission_id}`}>details →</Link></td>
                   </tr>
                 ))}
@@ -407,4 +432,27 @@ function numOr(s: string, fallback: number): number {
 function inRange(v: number | null, min: number, max: number): boolean {
   if (v == null) return min === -Infinity && max === Infinity;
   return v >= min && v <= max;
+}
+
+/* Display formatters for the four new $/token columns. Null → em-dash
+ * so the legacy submissions that didn't capture cost/tokens don't render
+ * as "$0" (which would be misleading — 0 means free, dash means unknown).
+ *
+ * Tokens are formatted with a thousands separator and a "k" suffix above
+ * 10k to keep the column narrow on a busy table. Dollar amounts use a
+ * 4-decimal format below $0.01 (most LLM calls land here) and 2-decimal
+ * above so the column reads naturally regardless of order of magnitude. */
+function formatTokenCount(v: number | null | undefined): string {
+  if (v == null) return "–";
+  if (v >= 10_000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function formatDollar(v: number | null | undefined): string {
+  if (v == null) return "–";
+  if (v === 0) return "$0";
+  if (v < 0.01)  return `$${v.toFixed(4)}`;
+  if (v < 1)     return `$${v.toFixed(3)}`;
+  if (v < 1000)  return `$${v.toFixed(2)}`;
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }

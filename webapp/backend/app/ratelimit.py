@@ -6,6 +6,13 @@ Two windows:
 
 Configurable via ARENA_SUBMIT_COOLDOWN_S and ARENA_SUBMIT_DAILY_CAP.
 Admins are exempt.
+
+Master kill-switch: ARENA_RATE_LIMITS_ENABLED="0" disables ALL backend
+rate limits (this module's per-user caps AND the per-IP GET cap in
+app.ip_ratelimit). Default "1" (enforced). Use for local dev / debug
+when you don't want to flush submissions through cooldowns. Re-read on
+every request so toggling at runtime via `docker exec ... env` takes
+effect without a restart.
 """
 from __future__ import annotations
 
@@ -21,7 +28,15 @@ COOLDOWN_S = int(os.environ.get("ARENA_SUBMIT_COOLDOWN_S", "600"))
 DAILY_CAP = int(os.environ.get("ARENA_SUBMIT_DAILY_CAP", "5"))
 
 
+def rate_limits_enabled() -> bool:
+    """Master toggle for every backend rate limit. Reads the env var
+    each call so an operator can flip the flag without restarting."""
+    return os.environ.get("ARENA_RATE_LIMITS_ENABLED", "1") != "0"
+
+
 def enforce_submission_limit(user: User, session: Session) -> None:
+    if not rate_limits_enabled():
+        return
     if user.role == UserRole.admin:
         return
 

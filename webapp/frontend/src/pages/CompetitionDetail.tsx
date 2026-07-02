@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, CompetitionDetail } from "../lib/api";
-import { formatPassAt1 } from "../lib/format";
+import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
 
 /* /competitions/:slug — the membership list (which problems are in this
@@ -44,6 +44,10 @@ export default function CompetitionDetailPage() {
               tip={d.languages.join(", ") || "no submissions yet"} />
       </div>
 
+      {d.problems.length > 0 && (
+        <CompetitionShapeCharts problems={d.problems} />
+      )}
+
       <h2 style={{ marginBottom: 4 }}>Top models</h2>
       {d.top_models.length === 0 ? (
         <div className="empty">No judged submissions for this competition yet.</div>
@@ -52,8 +56,14 @@ export default function CompetitionDetailPage() {
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Version</th>
-              <th title="best pass@1 across this competition's problems">pass@1</th>
-              <th>submissions</th>
+              <th title="pass@1 across this competition's problems only — n_accepted / n_problems_in_competition. Independent of any other competition this model also competed in.">pass@1</th>
+              <th title="pass@k across this competition's problems — n_accepted / n_attempted. Differs from pass@1 when the model didn't attempt every problem in the set.">pass@k</th>
+              <th title="Problems solved out of total in this competition.">Solved</th>
+              <th title="Average LeetCode-reported runtime across the model's accepted attempts on this competition's problems only.">Avg runtime</th>
+              <th title="Average LeetCode-reported memory across accepted attempts.">Avg memory</th>
+              <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
+              <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
+              <th title="Total submissions this model has against this competition.">subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (
@@ -62,6 +72,16 @@ export default function CompetitionDetailPage() {
                   <td><Link to={`/models/${encodeURIComponent(m.model_name)}`}><b>{m.model_name}</b></Link></td>
                   <td className="muted">{m.model_version}</td>
                   <td className="metric">{formatPassAt1(m.best_pass_at_1)}</td>
+                  <td className="metric">{formatPassAt1(m.pass_at_k)}</td>
+                  <td className="metric">
+                    {m.n_solved != null && m.n_problems != null
+                      ? `${m.n_solved}/${m.n_problems}`
+                      : "–"}
+                  </td>
+                  <td className="metric">{formatRuntime(m.avg_runtime_ms ?? null)}</td>
+                  <td className="metric">{formatMemory(m.avg_memory_mb ?? null)}</td>
+                  <td className="metric">{formatPercentile(m.avg_runtime_percentile ?? null)}</td>
+                  <td className="metric">{formatPercentile(m.avg_memory_percentile ?? null)}</td>
                   <td className="metric">{m.n_submissions}</td>
                 </tr>
               ))}
@@ -112,6 +132,163 @@ function Stat({ label, value, tip }: { label: string; value: string; tip?: strin
     <div className="card" style={{ minWidth: 140 }} title={tip}>
       <div className="muted" style={{ fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
       <div style={{ fontSize: "1.5rem", fontWeight: 700 }} className="metric">{value}</div>
+    </div>
+  );
+}
+
+
+/* Per-competition shape charts: shows what the problem set LOOKS like
+ * before any model talks to it.
+ *   * difficulty bar: 3 columns (Easy / Medium / Hard) — quick read of
+ *     whether the set is bottom-heavy, top-heavy, or balanced.
+ *   * tag distribution: horizontal bar list capped at the top N tags by
+ *     occurrence (long-tail rolled into "other") — sorted descending so
+ *     the dominant categories surface at the top of the chart.
+ *
+ * Pure inline SVG to match every other chart on the site; no library. */
+function CompetitionShapeCharts({
+  problems,
+}: { problems: Array<{ level: "Easy" | "Medium" | "Hard"; tags: string[] }> }) {
+  // ----- per-level counts (3 buckets, fixed order Easy → Medium → Hard) -----
+  const LEVELS: ("Easy" | "Medium" | "Hard")[] = ["Easy", "Medium", "Hard"];
+  const levelCounts: Record<string, number> = { Easy: 0, Medium: 0, Hard: 0 };
+  for (const p of problems) levelCounts[p.level]++;
+  const maxLevel = Math.max(1, ...LEVELS.map(l => levelCounts[l]));
+
+  // ----- per-tag counts (rolled across all problems) -----
+  const tagCounts = new Map<string, number>();
+  for (const p of problems) {
+    for (const t of p.tags) {
+      const tag = t.trim();
+      if (!tag) continue;
+      tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+    }
+  }
+  const TAG_CAP = 16;
+  const sortedTags = Array.from(tagCounts.entries())
+    .sort((a, b) => b[1] - a[1]);
+  const headTags = sortedTags.slice(0, TAG_CAP);
+  const tailTags = sortedTags.slice(TAG_CAP);
+  const otherCount = tailTags.reduce((s, [, c]) => s + c, 0);
+  const chartTags = otherCount > 0
+    ? [...headTags, ["other (" + tailTags.length + ")", otherCount] as [string, number]]
+    : headTags;
+  const maxTag = Math.max(1, ...chartTags.map(([, c]) => c));
+
+  // Colour palette pulls from the theme's --easy/--medium/--hard so the
+  // bars carry the same visual semantics as everywhere else (Easy = green,
+  // Hard = red, Medium = amber).
+  const levelColour: Record<string, string> = {
+    Easy: "var(--easy)", Medium: "var(--medium)", Hard: "var(--hard)",
+  };
+
+  return (
+    <div className="card" style={{ padding: 16 }}>
+      <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
+        <h2 style={{ margin: 0 }}>Problem set composition</h2>
+        <span className="muted" style={{ fontSize: "0.85rem" }}>
+          shape of {problems.length} problem{problems.length === 1 ? "" : "s"} in this competition
+          · bar height/length = count
+        </span>
+      </div>
+
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 2fr)",
+        gap: 18,
+        marginTop: 12,
+      }}>
+        {/* ---- Difficulty ---- */}
+        <div className="col" style={{ gap: 4 }}>
+          <div style={{ fontWeight: 600 }}>Difficulty</div>
+          {(() => {
+            const W = 240, H = 180;
+            const PAD_L = 28, PAD_R = 8, PAD_T = 18, PAD_B = 28;
+            const plotW = W - PAD_L - PAD_R;
+            const plotH = H - PAD_T - PAD_B;
+            const slot = plotW / LEVELS.length;
+            const barW = Math.max(20, slot * 0.6);
+            return (
+              <svg width={W} height={H} style={{ display: "block", overflow: "visible" }}>
+                <line x1={PAD_L} y1={PAD_T + plotH} x2={W - PAD_R} y2={PAD_T + plotH}
+                      stroke="var(--border)" />
+                {[0.25, 0.5, 0.75, 1].map(frac => (
+                  <line key={frac}
+                        x1={PAD_L} y1={PAD_T + plotH * (1 - frac)}
+                        x2={W - PAD_R} y2={PAD_T + plotH * (1 - frac)}
+                        stroke="var(--panel-2)" strokeDasharray="2 4" />
+                ))}
+                {LEVELS.map((lvl, i) => {
+                  const v = levelCounts[lvl];
+                  const h = plotH * (v / maxLevel);
+                  const x = PAD_L + i * slot + (slot - barW) / 2;
+                  const y = PAD_T + plotH - h;
+                  return (
+                    <g key={lvl}>
+                      <rect x={x} y={y} width={barW} height={Math.max(2, h)}
+                            fill={levelColour[lvl]} rx={3}>
+                        <title>{`${lvl} · ${v} problem${v === 1 ? "" : "s"}`}</title>
+                      </rect>
+                      <text x={x + barW / 2} y={Math.max(10, y - 4)}
+                            textAnchor="middle" fontSize="0.75rem"
+                            fill="var(--fg-dim)"
+                            style={{ fontVariantNumeric: "tabular-nums" }}>
+                        {v}
+                      </text>
+                      <text x={x + barW / 2} y={PAD_T + plotH + 14}
+                            textAnchor="middle" fontSize="0.78rem" fill="var(--fg)">
+                        {lvl}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            );
+          })()}
+        </div>
+
+        {/* ---- Tags ---- */}
+        <div className="col" style={{ gap: 4 }}>
+          <div style={{ fontWeight: 600 }}>
+            Tags
+            <span className="muted" style={{ fontSize: "0.78rem", marginLeft: 6 }}>
+              ({tagCounts.size} unique
+              {otherCount > 0 && `; top ${TAG_CAP} shown, ${tailTags.length} rolled into "other"`})
+            </span>
+          </div>
+          {chartTags.length === 0 ? (
+            <div className="muted" style={{ fontStyle: "italic" }}>No tags on any problem.</div>
+          ) : (
+            <div className="col" style={{ gap: 3 }}>
+              {chartTags.map(([tag, count]) => {
+                const pct = (count as number) / maxTag * 100;
+                return (
+                  <div key={tag} className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <div style={{
+                      width: 140, fontSize: "0.82rem",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }} title={tag}>
+                      {tag}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, position: "relative",
+                                  height: 16, background: "var(--panel-2)",
+                                  border: "1px solid var(--border)", borderRadius: 3 }}>
+                      <div style={{
+                        height: "100%", width: `${pct}%`,
+                        background: "var(--accent, #5a8eff)",
+                        borderRadius: 2,
+                      }} title={`${tag} · ${count}`} />
+                    </div>
+                    <div className="metric" style={{ width: 36, textAlign: "right", fontSize: "0.82rem" }}>
+                      {count}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -29,42 +29,122 @@ from collections import Counter
 from datetime import datetime, timedelta
 from math import comb
 from pathlib import Path
+from typing import Callable
 
 from sqlmodel import Session, select
 
 from . import leetcode_dist
 from .db import engine
 from .models import (
-    Attempt, Baseline, BaselineRefreshState, Problem, Run, Submission,
-    SubmissionStatus,
+    Attempt, Baseline, BaselineRefreshState,
+    Competition, CompetitionProblem,
+    Problem, Run, Submission, SubmissionStatus,
 )
 
-LEETBOT = Path(__file__).parent.parent.parent.parent / "leetbot.py"
+def _resolve_leetbot() -> Path:
+    """Locate leetbot.py across the layouts we actually deploy to:
+      1. ARENA_LEETBOT — explicit override for ops.
+      2. <repo_root>/leetbot.py — source-tree dev runs.
+      3. /app/leetbot.py — container layout (Dockerfile copies it there).
+      4. /leetbot.py — legacy fallback path (older container images).
 
-# Seconds to wait between dispatching attempts for DIFFERENT problems.
-# Empirically, LeetCode's anti-abuse heuristic fires on rapid breadth-first
-# switching between many problems (a scraper/bot fingerprint) while staying
-# permissive about repeat submissions to the same problem. 12s was the prior
-# default and reliably tripped the heuristic on multi-problem submissions —
-# 60s paces problem-hops at a slow-human cadence (read statement → submit)
-# and lets us run full 99-problem benchmark sweeps in ~100 min without
-# blanket 429s. Override via ARENA_DISPATCH_INTER_DELAY when needed (set to
-# ~120 for fresh accounts that LeetCode is still scrutinizing harder).
-INTER_DELAY = float(os.environ.get("ARENA_DISPATCH_INTER_DELAY", "60"))
-MAX_RETRIES = int(os.environ.get("ARENA_DISPATCH_MAX_RETRIES", "4"))
+    Returns the first existing candidate; if nothing exists yet we fall
+    back to the source-tree default so error messages name the path a
+    developer recognises rather than `/leetbot.py`.
+    """
+    override = os.environ.get("ARENA_LEETBOT")
+    if override:
+        return Path(override)
+    src_layout = Path(__file__).parent.parent.parent.parent / "leetbot.py"
+    candidates = (src_layout, Path("/app/leetbot.py"), Path("/leetbot.py"))
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    return src_layout
+
+
+LEETBOT = _resolve_leetbot()
+
+# Per-ACCOUNT inter-submission gap. Drives `pick_for_submission(min_gap_s=
+# INTER_DELAY)` — the picker refuses to return an account whose
+# `last_used_at + INTER_DELAY` is still in the future, falling through to
+# the next-LRU account instead. With a multi-account pool this works as
+# rotation: the wait_seconds the picker returns is just whatever the
+# LRU account still needs to cool down to ITS own 120 s mark, NOT the
+# wall-clock gap between submissions globally.
+#
+# History:
+#   * 12s tripped the heuristic instantly on multi-problem submissions.
+#   * 60s held up for a while but recently started exhausting the whole
+#     pool mid-sweep — LC tightened its frontend.
+#   * 120s (original) paced single-account dispatch slower than a focused
+#     human; full 99-problem sweep ran in ~3.3h instead of ~100 min.
+#   * 96s (-20%) was a brief reduction tried with a multi-account pool;
+#     reverted because rotation already amortises the wait — a tighter
+#     PER-ACCOUNT cap doesn't actually speed up the wall-clock sweep
+#     much when 5 accounts share the burst, and dropping it raises the
+#     per-account hit rate the LC anti-bot heuristic samples on.
+#   * 120s (current) — restored. The wall-clock pacing now comes from
+#     rotation, not from this cap; the cap is purely "don't let any one
+#     account submit more than once per 120 s".
+# Override via ARENA_DISPATCH_INTER_DELAY when needed.
+INTER_DELAY = float(os.environ.get("ARENA_DISPATCH_INTER_DELAY", "120"))
+MAX_RETRIES = int(os.environ.get("ARENA_DISPATCH_MAX_RETRIES", "3"))
+# Flat rate-limit / transient-HTTP retry backoff. The semantic changed
+# from "ceiling on exponential" to "fixed wait between retries". We
+# kept the env-var name for back-compat.
+#
+# Why flat (not exponential): exponential growth (5, 10, 20, 40 …) was
+# either fast (BACKOFF_CAP_S=0 → all retries in milliseconds, looked
+# like one big burst to LC's per-IP throttle and got everyone 429'd) or
+# slow (BACKOFF_CAP_S=90 → retries spanned 5+ min of wall time and
+# every dispatch felt sluggish). A FLAT backoff means each retry waits
+# exactly `BACKOFF_CAP_S` seconds (±20% jitter) — spaced enough that
+# consecutive requests fall in different per-IP throttle windows,
+# without compounding into multi-minute waits.
+#
+# Default 8 s: empirically the per-IP throttle window LC enforces is
+# ~5-10 s; 8 s with jitter lands the next retry just outside the window.
+# Set to 0 to retry instantly (matches old burst behaviour); set to
+# something like 30 if LC's throttle is biting deeper.
+BACKOFF_CAP_S = float(os.environ.get("ARENA_DISPATCH_BACKOFF_CAP_S", "8"))
 # Raised from 600 → 1200 to accommodate the TLE-retry worst case: a
 # genuinely-TLE solution can drive REPEATS × (1 + TLE_RETRIES) submissions,
 # each carrying judge time + retry/repeat delays. Normal cases finish in
 # well under a minute; this is just the ceiling before we declare the
 # leetbot subprocess hung.
 SUBPROCESS_TIMEOUT = int(os.environ.get("ARENA_DISPATCH_SUBPROC_TIMEOUT", "1200"))
-REPEATS = max(1, int(os.environ.get("ARENA_DISPATCH_REPEATS", "5")))
+REPEATS = max(1, int(os.environ.get("ARENA_DISPATCH_REPEATS", "3")))
 # On a Time Limit Exceeded verdict, leetbot re-submits up to this many extra
 # times before accepting the TLE — TLE is judge-load-flaky and a borderline
 # solution often passes on retry. Applied per repeat (so the worst case is
 # REPEATS × (1 + TLE_RETRIES) LeetCode submissions for a genuinely-TLE
 # solution). Bumped SUBPROCESS_TIMEOUT may be needed if both are large.
 TLE_RETRIES = int(os.environ.get("ARENA_DISPATCH_TLE_RETRIES", "3"))
+# Seconds between leetbot's --repeat=N submissions of the SAME solution.
+# leetbot's own default is 12 s; we set it explicitly so the value is
+# visible at the dispatch layer (rather than hidden inside the subprocess's
+# argparse default) and tunable per deployment. History: 12 → 16 (+30%)
+# after observing the 5-repeat burst occasionally tripping LC's per-
+# account per-minute throttling on slower problems; then 25 → 20 after
+# the per-account picker shifted the pacing budget across the pool
+# rather than concentrating it on one account; 20 → 16 (-20%) on the
+# same logic, since the 5-account pool's per-account share of the
+# 5-repeat burst is just one submission per account (no contention).
+# Now 16 → 21 — modest bump to give LC's per-IP throttle a touch more
+# headroom between the three same-code submits, since concurrent sweeps
+# (java + python3 + c + rust + scala from one IP) have been hot enough
+# lately that even rotated accounts hit IP-side 429s on every dispatch.
+# Note: the dispatcher adds ±20% jitter on top of this, so the realised
+# gap is ~16.8-25.2 s. Tighten only on accounts LC has aged into trust.
+REPEAT_DELAY = float(os.environ.get("ARENA_DISPATCH_REPEAT_DELAY", "21"))
+# Per-submission LC poll ceiling — how long we wait for ONE of the 5
+# repeats to come back with a verdict. Anything slower than this is
+# treated as a system-level dispatch error (no Run row, dispatch_warning
+# stamped, sweep retries next run). 60s was leetbot's pre-platform
+# default, raised to 180s after observing legitimate verdicts arrive in
+# the 60-150s range on slow judge windows.
+POLL_TIMEOUT = float(os.environ.get("ARENA_DISPATCH_POLL_TIMEOUT", "180"))
 
 
 def _parse_leetbot_stdout(stdout: str) -> dict | None:
@@ -89,8 +169,113 @@ def _parse_leetbot_stdout(stdout: str) -> dict | None:
 
 
 def _is_rate_limited(proc: subprocess.CompletedProcess) -> bool:
-    blob = (proc.stdout + proc.stderr).lower()
-    return "rate limit" in blob or "429" in blob
+    """Backwards-compatible boolean wrapper around `_rate_limit_evidence`.
+    Kept for call sites that only need yes/no; new code should prefer
+    the evidence helper so the matched HTTP code + line can be logged."""
+    return _rate_limit_evidence(proc) is not None
+
+
+def _rate_limit_evidence(proc: subprocess.CompletedProcess) -> str | None:
+    """Return a short excerpt of the line in leetbot's output that
+    triggered our rate-limit classification, or None if not rate-limited.
+
+    CRITICAL: only matches "429" in actual HTTP-status CONTEXT — not as
+    a bare digit substring anywhere. The previous "429 in lowered blob"
+    test caught false positives on LeetCode verdicts that happened to
+    include a test-case integer containing the digits 4-2-9 (e.g. a
+    failing testcase array with `429422629`). The dispatcher then mis-
+    classified a perfectly-good Wrong Answer / Runtime Error verdict as
+    a rate-limit failure, retried 3 times, got the same testcase back
+    each time, and stamped the attempt "Rate limited" — *with no
+    actual rate limit anywhere*. The user's solutions were dispatching
+    fine; the dispatcher was destroying their verdicts.
+
+    Patterns we DO accept:
+      * "http 429"               — httpx.HTTPStatusError shape
+      * "429 too many requests"  — full HTTP 429 status line
+      * "status 429" / "status: 429" / "status_code: 429"
+      * "rate limit" / "rate limited" / "ratelimited"  — explicit text
+      * "_RateLimited" / "[leetbot] rate limited" — our own markers
+      * "too many requests"      — http 429 body without the digits
+
+    Patterns we DON'T accept:
+      * bare "429" anywhere in the blob (was the bug)
+      * any digit substring at all
+    """
+    out = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    # Patterns we accept as rate-limit evidence. ALL require some kind
+    # of HTTP / human-readable context — NEVER bare digits, NEVER a
+    # Python class name like `_RateLimited`. False positives we've
+    # actually hit and explicitly reject:
+    #   * "429" appearing in a LeetCode failing-testcase array
+    #     (`[985372746, 429422629, ...]` triggered the "429" substring)
+    #   * "ratelimited" (no space) matching the Python class name
+    #     `_RateLimited` printed inside a traceback source line
+    #     (`raise _RateLimited(account_name)`)
+    # Real rate limit signals ALWAYS include human-readable phrasing
+    # ("rate limit"/"rate limited"/"too many requests") OR an explicit
+    # HTTP-status code in context — they never look like a bare class
+    # name or a bare digit.
+    PATTERNS = (
+        "http 429",
+        "status 429",
+        "status: 429",
+        "status_code: 429",
+        "status_code 429",
+        "429 too many",
+        "rate limit",                   # also catches "rate limited"
+        "rate-limit",                   # hyphenated variant
+        "too many requests",
+    )
+    # Lines we IGNORE even when they would otherwise match — these are
+    # Python source-code snippets surfaced by an unfiltered traceback.
+    # The actual triggering message will be on a different stderr line.
+    PYTHON_SOURCE_NEEDLES = (
+        "raise _ratelimited",          # `raise _RateLimited(...)` lowercased
+        "except _ratelimited",
+        "class _ratelimited",
+        "_ratelimited.__",
+    )
+    for line in out.splitlines():
+        low = line.lower()
+        if any(needle in low for needle in PYTHON_SOURCE_NEEDLES):
+            # Pure Python source code in a traceback — not LC's response.
+            continue
+        if any(p in low for p in PATTERNS):
+            trimmed = line.strip()
+            # Truncate so the log line stays grep-friendly; the full
+            # output is still available via the run row's raw_response /
+            # the dispatch_warning text further downstream.
+            if len(trimmed) > 240:
+                trimmed = trimmed[:237] + "..."
+            return trimmed
+    return None
+
+
+# LeetCode hiccups produce real HTTP failures even on well-formed submits.
+# 400 specifically is observed when their judge frontend is overloaded; 5xx
+# covers the actual outages and the Cloudflare-style 521/522/524 family.
+# We deliberately DO NOT include 401/403/404 here — those are durable
+# auth/path problems that retrying just multiplies. `_classify_subproc_failure`
+# keeps handling those.
+_TRANSIENT_HTTP_PATTERNS = (
+    "http 400", "http 408", "http 425", "http 429",
+    "http 500", "http 502", "http 503", "http 504",
+    "http 520", "http 521", "http 522", "http 523", "http 524",
+)
+
+
+def _transient_http_match(proc: subprocess.CompletedProcess) -> str | None:
+    """Return the matched 'http NNN' substring if leetbot reported a
+    transient HTTP failure we want to retry, else None. Lowercase the haystack
+    once and scan — leetbot emits these in stderr via the RuntimeError shape
+    `submit failed: HTTP {code} content-type=...`, so the substring is stable
+    across hosts."""
+    blob = ((proc.stdout or "") + "\n" + (proc.stderr or "")).lower()
+    for pat in _TRANSIENT_HTTP_PATTERNS:
+        if pat in blob:
+            return pat
+    return None
 
 
 _AUTH_FIX_HINT = (
@@ -112,8 +297,13 @@ def _classify_subproc_failure(
     if "csrf" in blob and ("invalid" in blob or "expired" in blob or "missing" in blob):
         return "Auth failed", "CSRF token rejected — refresh cookies in .env"
     if proc.returncode != 0:
-        tail = (proc.stderr or "").strip().splitlines()[-1:] or [""]
-        return "Dispatch error", f"leetbot exited {proc.returncode}: {tail[0][:200]}"
+        # Look back further than just the last line — leetbot's tracebacks
+        # frequently end with a blank line, and an empty "tail" leaves the
+        # operator staring at the unhelpful "Dispatch error: " with no
+        # explanation. Take the last non-empty 3 lines and join them.
+        stderr_lines = [ln for ln in (proc.stderr or "").splitlines() if ln.strip()]
+        snippet = (" | ".join(stderr_lines[-3:]) or "no stderr output")[:400]
+        return "Dispatch error", f"leetbot exited {proc.returncode}: {snippet}"
     return None
 
 
@@ -134,23 +324,82 @@ def _failure_runs(repeats: int, status_msg: str, note: str,
 
 
 def _check_leetcode_auth() -> tuple[bool, str]:
-    """One-shot `leetbot.py --whoami` pre-flight. Returns (is_signed_in, msg)."""
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(LEETBOT), "--whoami"],
-            capture_output=True, text=True, timeout=20, cwd=str(LEETBOT.parent),
-        )
-    except Exception as e:  # noqa: BLE001
-        return False, f"whoami subprocess failed: {e}"
-    if proc.returncode != 0:
-        return False, f"whoami exited {proc.returncode}: {(proc.stderr or '')[-200:]}"
-    try:
-        data = json.loads(proc.stdout)
-    except json.JSONDecodeError:
-        return False, f"whoami returned non-JSON: {(proc.stdout or '')[-200:]}"
-    if data.get("isSignedIn"):
-        return True, f"signed in as {data.get('username') or '?'}"
-    return False, _AUTH_FIX_HINT
+    """Pre-flight: is at least ONE account in the pool able to talk to LC?
+
+    Earlier this shelled out to `leetbot.py --whoami` — fragile because
+    leetbot has to re-import `app.leetcode_accounts` from the subprocess
+    (cwd / sys.path / env-var differences caused it to fall through to
+    the .env-credentials path and exit 2). That false negative would
+    stamp every pending attempt with "Auth failed" and SKIP the dispatch,
+    even when the pool was perfectly healthy — which is exactly what
+    happened to sub 56/58 and caused the "queued forever" behaviour the
+    operator hit.
+
+    The new check is in-process: iterate the pool, try each account's
+    whoami GraphQL probe (the same `leetcode_accounts.whoami` the
+    /admin/leetcode-accounts/probe endpoint uses — verified live to
+    work). Return ok=True as soon as ONE account answers; the dispatcher
+    only needs to know "is there ANY usable account right now", not
+    which one. Only return False when EVERY account fails.
+    """
+    from . import leetcode_accounts as _lca
+    usable = [a for a in _lca.load_accounts()
+              if a.cookie_header and not a.is_exhausted()]
+    if not usable:
+        return False, ("no accounts in the pool are both cookie-bearing AND "
+                       "outside the 24h exhaustion window")
+    last_msg = "no accounts tried"
+    # Network/DNS hiccups (Docker resolver flap, host network changing,
+    # cloudflare's edge briefly 502'ing) can make every whoami probe fail
+    # with the same shape — "Temporary failure in name resolution",
+    # "Connection refused", "Read timed out". None of those are auth
+    # failures. If we let the pre-flight stamp `dispatch_warning =
+    # "Auth failed: …"` on every pending attempt, the sweep gives up
+    # on cookies that are actually fine. So: distinguish transport
+    # errors (which we treat as transient → bail OUT of the pre-flight
+    # and let the dispatch itself try, which has its own retry budget
+    # and will surface the same error with proper rate-limit semantics)
+    # from real "your cookie was rejected" failures.
+    TRANSIENT_NETWORK_SIGNALS = (
+        "temporary failure in name resolution",  # DNS hiccup
+        "name or service not known",             # DNS unresolvable
+        "connection refused",
+        "connection reset",
+        "connection timed out",
+        "read timed out", "read timeout",
+        "no route to host",
+        "errno -2", "errno -3",                  # gaierror codes
+        "remoteprotocolerror", "readtimeout",
+        "httpx.connecterror", "httpx.readerror",
+        "ssl: ", "[ssl:",
+    )
+    n_transient = 0
+    for acc in usable:
+        try:
+            ok, info = _lca.whoami(acc)
+        except Exception as e:                                     # noqa: BLE001
+            err_blob = repr(e).lower()
+            if any(s in err_blob for s in TRANSIENT_NETWORK_SIGNALS):
+                n_transient += 1
+                last_msg = f"{acc.name}: transient network error {e!r}"
+            else:
+                last_msg = f"{acc.name}: probe raised {e!r}"
+            continue
+        if ok:
+            return True, f"{info} (via account {acc.name!r})"
+        last_msg = f"{acc.name}: {info}"
+    # Every probe failed AND every failure looked transport-flavoured →
+    # don't stamp "Auth failed" on the attempts. Return ok=True with a
+    # diagnostic note; the dispatcher caller (which uses this only as a
+    # cheap "should I bother") will proceed to actual leetbot dispatch,
+    # which has its own retry-with-backoff loop better suited to a
+    # DNS / network hiccup than a global pre-flight bail.
+    if n_transient == len(usable) and n_transient > 0:
+        return True, (f"pre-flight skipped — {n_transient} accounts hit "
+                      f"transient network errors (last: {last_msg}); the "
+                      f"dispatcher's retry loop will handle it")
+    return False, (f"every account failed the pre-flight probe; "
+                   f"last error: {last_msg}")
 
 
 def _normalize_runs(parsed: dict | None) -> list[dict]:
@@ -162,47 +411,306 @@ def _normalize_runs(parsed: dict | None) -> list[dict]:
     return [parsed]
 
 
-def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats: int) -> list[dict]:
-    """Submit `code` `repeats` times via leetbot, return the list of run dicts."""
+def _resolve_dispatch_target(problem: Problem, code: str,
+                             session: Session) -> tuple[str, str]:
+    """For a Problem that may be an anti-contamination VARIANT, resolve the
+    pair (lc_title_slug, code) we should actually submit to LeetCode.
+
+    On canonical problems this is a no-op — returns the problem's own
+    title_slug and the code unmodified. On variants we:
+      * redirect to the ORIGINAL problem's title_slug (LC only knows that
+        one — submitting under the variant's slug 404s);
+      * rewrite the code by replacing every occurrence of the variant's
+        `function_name` with `original_function_name` so LC's judge can
+        find the entry point.
+
+    Substitution is done with simple `str.replace` not regex word-boundary
+    matching — function names in our rewrites are intentionally distinctive
+    enough (camelCase, multi-word) that the false-positive risk is low and
+    the predictability of the transform matters for auditability.
+    """
+    if problem.original_problem_id is None:
+        return problem.title_slug, code
+    original = session.get(Problem, problem.original_problem_id)
+    if original is None:
+        # Defensive: the variant references a missing original. Submit
+        # under the variant's own slug — LC will 404, dispatch records the
+        # error, an operator notices. Better than silently submitting bad
+        # code under a wrong slug.
+        return problem.title_slug, code
+    if (problem.function_name
+            and problem.original_function_name
+            and problem.function_name != problem.original_function_name):
+        code = code.replace(problem.function_name, problem.original_function_name)
+    return original.title_slug, code
+
+
+def _real_dispatch_single(title_slug: str, language: str, path: str,
+                          sub_env: dict[str, str]) -> list[dict]:
+    """ONE leetbot subprocess for ONE LC submission (--repeat 1).
+
+    Owns the rate-limit retry loop — on 429 / transient HTTP / Cloudflare
+    52x it backs off and re-invokes leetbot up to `MAX_RETRIES` times.
+    Returns a list-of-one run dict on success (parsed leetbot JSON), or
+    a list-of-one synthetic failure dict on a classified subprocess
+    error / retry budget exhaustion.
+
+    Account rotation on rate-limit: when a 429 comes back, before
+    backing off we rotate `LEETCODE_FORCE_ACCOUNT` to a different
+    (non-exhausted, not-yet-tried-this-call) account in the pool. The
+    IP throttle isn't per-account but the per-COOKIE throttle is, so
+    a fresh cookie can sometimes slip through where the previous one
+    couldn't. When the pool runs out of fresh cookies we fall back to
+    retrying with the current account (so the budget still completes
+    cleanly rather than dying early).
+    """
+    from . import leetcode_accounts as _lca
+    backoff = 5.0
+    proc: subprocess.CompletedProcess | None = None
+    # Track every account we've used in this single-LC-submit call so
+    # we don't pick the same one again across retries.
+    tried_accounts: set[str] = set()
+    initial_account = sub_env.get("LEETCODE_FORCE_ACCOUNT")
+    if initial_account:
+        tried_accounts.add(initial_account)
+    for attempt_n in range(MAX_RETRIES + 1):
+        try:
+            proc = subprocess.run(
+                [
+                    sys.executable, str(LEETBOT),
+                    title_slug, language, path,
+                    "--repeat", "1",
+                    "--poll-timeout", str(POLL_TIMEOUT),
+                    "--tle-retries", str(TLE_RETRIES),
+                ],
+                capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
+                cwd=str(LEETBOT.parent),
+                env=sub_env,
+            )
+        except subprocess.TimeoutExpired:
+            return _failure_runs(1, "Dispatch timeout",
+                                 f"leetbot exceeded {SUBPROCESS_TIMEOUT}s")
+        # Account-usage accounting: previously this marked the account
+        # as used IMMEDIATELY after the subprocess returned, regardless
+        # of outcome. That was wrong for 429s — LC didn't actually
+        # accept the submission, no quota was spent, the cookie is
+        # genuinely usable for another attempt without violating LC's
+        # per-account anti-abuse heuristic. Marking it anyway forced
+        # the OUTER picker to wait the full 120 s cooldown on the
+        # next dispatch, even though the only LC interaction was a
+        # rejected request.
+        #
+        # New rule: defer the mark_used decision until we've classified
+        # the response below. We only mark when LC actually engaged
+        # (real verdict or auth-fail / parse error — both indicate LC
+        # accepted the request and got something back).
+        # Retryable failures fall into two buckets, handled identically
+        # (same backoff curve, same retry budget): rate limits and
+        # transient HTTP errors (400/408/5xx/Cloudflare 52x). Both
+        # signal "LeetCode's frontend hiccupped; try again in a bit".
+        # CHECK FIRST regardless of attempt_n — otherwise the final
+        # iteration falls through to `_classify_subproc_failure` which
+        # mis-labels a still-rate-limited leetbot as "Dispatch error"
+        # (the operator sees that in dispatch_warning and assumes
+        # something broke when actually LC is just throttling).
+        rl_evidence = _rate_limit_evidence(proc)
+        rate_limited = rl_evidence is not None
+        transient = None if rate_limited else _transient_http_match(proc)
+        if rate_limited or transient:
+            if attempt_n < MAX_RETRIES:
+                # Try rotating to a different account BEFORE backing off
+                # — a fresh cookie can slip past a per-cookie throttle
+                # that the previous one couldn't, and there's no point
+                # waiting 8 s only to retry with the exact same cookie
+                # LC just 429'd.
+                rotated_to: str | None = None
+                try:
+                    candidates = [
+                        a for a in _lca.load_accounts()
+                        if a.cookie_header and not a.is_exhausted()
+                        and a.name not in tried_accounts
+                    ]
+                    if candidates:
+                        # Prefer the LEAST-recently-used among untried
+                        # candidates — same LRU semantics the picker
+                        # uses for fresh dispatches, just without the
+                        # cooldown gate (we're past politeness; we're
+                        # actively being throttled).
+                        candidates.sort(
+                            key=lambda a: a.last_used_at or "",
+                        )
+                        rotated_to = candidates[0].name
+                        sub_env["LEETCODE_FORCE_ACCOUNT"] = rotated_to
+                        tried_accounts.add(rotated_to)
+                except Exception as e:                                 # noqa: BLE001
+                    print(f"[dispatch] account rotation lookup failed: "
+                          f"{e!r}; staying on current account",
+                          file=sys.stderr)
+                # NOTE: backoff is FLAT now (not exponential) — see the
+                # BACKOFF_CAP_S doc comment for the rationale.
+                raw = backoff * (2 ** attempt_n)
+                sleep = min(BACKOFF_CAP_S, raw) * (1.0 + random.uniform(-0.2, 0.2))
+                # Tag the log line with the rotation decision so the
+                # operator can see whether we tried a fresh cookie or
+                # stayed on the throttled one (pool exhausted of fresh
+                # cookies). Include the evidence string too — same as
+                # before — for "why did we decide this was a 429".
+                rot_tag = (f"rotating to account {rotated_to!r}"
+                           if rotated_to
+                           else "no fresh accounts left in pool, retrying current")
+                if rate_limited:
+                    print(f"[dispatch] rate limited (evidence: {rl_evidence!r}); "
+                          f"{rot_tag}; backing off {sleep:.1f}s "
+                          f"(attempt {attempt_n + 1}/{MAX_RETRIES})",
+                          file=sys.stderr)
+                else:
+                    print(f"[dispatch] transient HTTP error {transient}; "
+                          f"{rot_tag}; backing off {sleep:.1f}s "
+                          f"(attempt {attempt_n + 1}/{MAX_RETRIES})",
+                          file=sys.stderr)
+                time.sleep(sleep)
+                continue
+            # Budget exhausted but the failure was still rate-limit /
+            # transient HTTP — say so honestly so the operator can tell
+            # apart a real dispatcher bug from "LC just throttled us".
+            # Include the matched evidence so the SPA's dispatch_warning
+            # column shows the actual HTTP shape leetbot saw.
+            if rate_limited:
+                return _failure_runs(
+                    1, "Rate limited",
+                    f"hit LeetCode rate limit after {MAX_RETRIES} retries "
+                    f"(last seen: {rl_evidence})",
+                    proc,
+                )
+            return _failure_runs(
+                1, "LeetCode transient error",
+                f"hit {transient} on every one of {MAX_RETRIES + 1} attempts",
+                proc,
+            )
+        # Past the rate-limit / transient retry branch above means LC
+        # actually engaged with this account — either it returned a
+        # real verdict OR it rejected the cookie for a reason that's
+        # NOT throttling (auth dead, parse error, …). Mark the
+        # account as used so the per-account cooldown is honest.
+        current_acct = sub_env.get("LEETCODE_FORCE_ACCOUNT")
+        if current_acct:
+            try:
+                _lca.mark_used(current_acct)
+            except Exception as e:                                     # noqa: BLE001
+                print(f"[dispatch] failed to mark_used {current_acct!r}: {e!r}",
+                      file=sys.stderr)
+        runs = _normalize_runs(_parse_leetbot_stdout(proc.stdout))
+        if not runs:
+            classified = _classify_subproc_failure(proc)
+            if classified is not None:
+                status_msg, note = classified
+                return _failure_runs(1, status_msg, note, proc)
+            return _failure_runs(1, "Dispatch parse error",
+                                 "leetbot produced no JSON we could parse",
+                                 proc)
+        return runs[:1]                     # exactly ONE run per call
+    # Unreachable — every path inside the loop returns. Kept as a
+    # defensive net only.
+    assert proc is not None
+    return _failure_runs(1, "Dispatch error",
+                         "retry loop exited without returning",
+                         proc)
+
+
+def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats: int,
+                            session: Session | None = None,
+                            force_account: str | None = None,
+                            on_run_completed: "Callable[[dict, int], None] | None" = None,
+                            ) -> list[dict]:
+    """Submit `code` `repeats` times via leetbot, return the list of run dicts.
+
+    Changed: instead of one `leetbot --repeat N` subprocess returning all
+    N runs at once after ~3-5 min, we now run N separate subprocesses
+    (`--repeat 1` each), sleeping `REPEAT_DELAY` between them and
+    invoking `on_run_completed(run, index_1_based)` after each. The
+    callback lets the outer dispatcher persist a Run row + commit
+    incrementally, so the SPA's "runs landed" counter advances live
+    (0/3 → 1/3 → 2/3 → 3/3) while the dispatch is still in flight.
+
+    `session` is the SQLModel session for resolving variant problems to
+    their original. Optional for back-compat with older callers — without
+    it the variant resolution is skipped (canonical problems work fine).
+
+    `force_account` pins a specific pool account name for this whole
+    sequence of N subprocesses (all `repeats` LC submissions use it).
+    Forwarded to leetbot via the LEETCODE_FORCE_ACCOUNT env var. None =
+    leetbot falls back to its own pick_account() ordering.
+    """
+    if session is not None:
+        title_slug, code = _resolve_dispatch_target(problem, code, session)
+    else:
+        title_slug = problem.title_slug
+    # Per-subprocess env override for account pinning. We copy os.environ
+    # so the parent process's env isn't mutated mid-flight (the API and
+    # the dispatcher run on different threads — a shared mutation would
+    # be racy).
+    sub_env = os.environ.copy()
+    if force_account:
+        sub_env["LEETCODE_FORCE_ACCOUNT"] = force_account
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write(code)
         path = f.name
+    # leetbot's own --repeat=N path has a deterministic-failure short-
+    # circuit: when one run returns Wrong Answer / Compile Error, re-running
+    # the SAME code against the SAME judge would just produce the SAME
+    # verdict — pure waste of LC quota + wall time. The refactor to
+    # one-call-per-repeat lost that optimisation, so we re-implement it
+    # here at the loop level — but ONLY for truly-deterministic verdicts.
+    #
+    # Why TLE / RE / MLE / OLE are NOT in this set:
+    #   * Time Limit Exceeded — flaky on judge load; LC's per-run runtime
+    #     varies. Already handled by leetbot's TLE_RETRIES inside one run.
+    #   * Runtime Error — can be GC-pause, NPE-on-heap-state, race in the
+    #     judge harness; same code may pass on re-run.
+    #   * Memory Limit Exceeded / Output Limit Exceeded — borderline solutions
+    #     drift across runs (heap fragmentation, output-buffer rounding).
+    #
+    # Counting these as "definitive" was biasing the total LC-submission
+    # tally downward: an RE attempt accrued n_runs=1 instead of REPEATS,
+    # so the submission-level "we ran 3 × N codes" expectation became
+    # "we ran ~N + a-few-extras" when the model failed often. Restored to
+    # 3-run behaviour for every flaky verdict; WA/CE stay short-circuited
+    # because re-running them genuinely is pure waste.
+    _DEFINITIVE_FAILURES = frozenset({
+        "Wrong Answer",
+        "Compile Error",
+    })
     try:
-        backoff = 5.0
-        for attempt_n in range(MAX_RETRIES + 1):
-            try:
-                proc = subprocess.run(
-                    [
-                        sys.executable, str(LEETBOT),
-                        problem.title_slug, language, path,
-                        "--repeat", str(repeats),
-                        "--tle-retries", str(TLE_RETRIES),
-                    ],
-                    capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
-                    cwd=str(LEETBOT.parent),
-                )
-            except subprocess.TimeoutExpired:
-                return _failure_runs(repeats, "Dispatch timeout",
-                                     f"leetbot exceeded {SUBPROCESS_TIMEOUT}s")
-            if _is_rate_limited(proc) and attempt_n < MAX_RETRIES:
-                sleep = backoff * (2 ** attempt_n) * (1.0 + random.uniform(-0.2, 0.2))
-                print(f"[dispatch] rate limited; backing off {sleep:.1f}s", file=sys.stderr)
-                time.sleep(sleep)
-                continue
-            runs = _normalize_runs(_parse_leetbot_stdout(proc.stdout))
-            if not runs:
-                # Classify the failure (auth, csrf, non-zero exit, …); fall back
-                # to a generic parse error if nothing matches.
-                classified = _classify_subproc_failure(proc)
-                if classified is not None:
-                    status_msg, note = classified
-                    return _failure_runs(repeats, status_msg, note, proc)
-                return _failure_runs(repeats, "Dispatch parse error",
-                                     "leetbot produced no JSON we could parse",
-                                     proc)
-            return runs
-        return _failure_runs(repeats, "Rate limited",
-                             f"hit LeetCode rate limit after {MAX_RETRIES} retries")
+        all_runs: list[dict] = []
+        for i in range(repeats):
+            if i > 0:
+                # Same `REPEAT_DELAY` between leetbot's --repeat=N submissions
+                # of the SAME solution that the old leetbot-side --delay flag
+                # used; ±20% jitter matches leetbot's own behaviour so LC's
+                # anti-bot heuristic doesn't see exact multiples.
+                gap = REPEAT_DELAY * (1.0 + random.uniform(-0.2, 0.2))
+                time.sleep(gap)
+            run_list = _real_dispatch_single(title_slug, language, path, sub_env)
+            run = run_list[0] if run_list else {}
+            all_runs.append(run)
+            if on_run_completed is not None:
+                try:
+                    on_run_completed(run, i + 1)
+                except Exception as e:                                 # noqa: BLE001
+                    # NEVER let a callback error abort the dispatch — the
+                    # callback is for progress visibility, not correctness.
+                    print(f"[dispatch] on_run_completed callback raised "
+                          f"{e!r} for run {i + 1}/{repeats}; continuing",
+                          file=sys.stderr)
+            # Short-circuit on deterministic failure (matches leetbot's
+            # original --repeat=N behaviour).
+            status_msg = run.get("status_msg")
+            if status_msg in _DEFINITIVE_FAILURES and i + 1 < repeats:
+                print(f"[dispatch] {status_msg} on run {i + 1}/{repeats} is "
+                      f"deterministic — skipping remaining "
+                      f"{repeats - i - 1} repeat(s)", file=sys.stderr)
+                break
+        return all_runs
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -280,20 +788,31 @@ def pass_at_k_unbiased(n: int, c: int, k: int) -> float:
     return 1.0 - comb(n - c, k) / comb(n, k)
 
 
-def _aggregate_attempt(a: Attempt, runs: list[dict]) -> None:
-    """Fill the per-attempt avg/best columns from its N run dicts."""
+def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -> None:
+    """Fill the per-attempt avg/best columns from its N run dicts.
+
+    `partial=True` is called from the per-run on_run_completed callback
+    while the dispatch loop is mid-flight — we update the live
+    metrics (n_runs / n_accepted_runs / avg_runtime_ms / avg_memory_mb /
+    percentiles) so the SPA shows incremental progress (1/3 → 2/3 → 3/3),
+    but we DO NOT set `final_status`. That marker is the sweep client's
+    "this attempt is done" signal, so setting it mid-flight would make
+    `_poll_for_attempt` return on the FIRST run and skip the remaining
+    repeats. The post-loop caller passes `partial=False` to stamp the
+    real verdict after the dispatch loop exits."""
     statuses = [r.get("status_msg", "Unknown") for r in runs]
     accepted = [r for r in runs if r.get("status_msg") == "Accepted"]
     a.n_runs = len(runs)
     a.n_accepted_runs = len(accepted)
-    # Majority rule: a correct solution is Accepted on (almost) every run; a
-    # flaky/borderline one is not. Metrics are computed over accepted runs only.
-    is_accepted = len(accepted) >= math.ceil(len(runs) / 2) if runs else False
-    if is_accepted:
-        a.final_status = "Accepted"
-    else:
-        non = [s for s in statuses if s != "Accepted"] or statuses
-        a.final_status = Counter(non).most_common(1)[0][0] if non else "Unknown"
+    if not partial:
+        # Majority rule: a correct solution is Accepted on (almost) every run; a
+        # flaky/borderline one is not. Metrics are computed over accepted runs only.
+        is_accepted = len(accepted) >= math.ceil(len(runs) / 2) if runs else False
+        if is_accepted:
+            a.final_status = "Accepted"
+        else:
+            non = [s for s in statuses if s != "Accepted"] or statuses
+            a.final_status = Counter(non).most_common(1)[0][0] if non else "Unknown"
 
     rt = [r["runtime_ms"] for r in accepted if r.get("runtime_ms") is not None]
     mem = [r["memory_mb"] for r in accepted if r.get("memory_mb") is not None]
@@ -332,7 +851,12 @@ def dispatch_submission(submission_id: int) -> None:
 
         # Pre-flight: in real mode, check LeetCode auth ONCE before burning
         # through every pending attempt with the same 403. If auth is dead we
-        # synthesise N "Auth failed" runs per attempt and skip dispatch entirely.
+        # stamp a dispatch_warning on each pending attempt and SKIP writing
+        # Run rows entirely — those would just pollute pass@k denominators
+        # with non-verdicts. Because attempts are filtered into `pending` by
+        # "no Run rows yet", the next dispatch call (after credentials are
+        # refreshed) will pick them right back up — the dispatch_warning
+        # column also acts as a retry signal for the polling client.
         auth_error: str | None = None
         if real and pending:
             ok, msg = _check_leetcode_auth()
@@ -340,9 +864,58 @@ def dispatch_submission(submission_id: int) -> None:
                 auth_error = msg
                 print(f"[dispatch] LeetCode auth check failed: {msg}",
                       file=sys.stderr)
+                # Stamp the warning across every pending attempt and bail.
+                # Submission status stays in `dispatching` so the SPA UI
+                # shows it as still in-flight rather than mis-labelling it
+                # as judged.
+                warn = (
+                    f"Auth failed: {msg}. Likely cause: every LeetCode "
+                    f"credential in the pool is expired, revoked, or all "
+                    f"accounts are within their 24h exhaustion window. Fix "
+                    f"via the SPA's admin → 'LeetCode accounts' page (paste "
+                    f"a fresh Cookie: header), then re-run the sweep — the "
+                    f"attempts will be retried automatically because no Run "
+                    f"rows were recorded."
+                )
+                for a in pending:
+                    a.dispatch_warning = warn
+                    session.add(a)
+                session.commit()
+                return
+
+        # Cumulative-throttle backoff: when consecutive attempts keep
+        # failing with system-level dispatch_warning (rate-limited, auth,
+        # transient HTTP, …) the per-retry 8 s flat backoff inside
+        # `_real_dispatch_single` alone isn't enough to break LC's per-IP
+        # throttle. Every CONSECUTIVE_FAIL_THRESHOLD failing attempts we
+        # insert an extra `CONSECUTIVE_FAIL_SLEEP_S` seconds before the
+        # next attempt to let the throttle window genuinely clear. The
+        # counter resets on the first successful attempt (real verdict
+        # landed) so a single bad cell doesn't punish the rest of the
+        # submission's pending set.
+        CONSECUTIVE_FAIL_THRESHOLD = 3
+        CONSECUTIVE_FAIL_SLEEP_S = 50.0
+        consecutive_failures = 0
 
         for idx, a in enumerate(pending):
+            # Pause before THIS attempt if we've just crossed the
+            # consecutive-fail threshold (3, 6, 9, …). Doing it before
+            # the dispatch (rather than after a fail) means a short
+            # burst of failures recovers without the operator waiting
+            # for the next "good" attempt to trigger the backoff.
+            if (consecutive_failures > 0
+                    and consecutive_failures % CONSECUTIVE_FAIL_THRESHOLD == 0):
+                print(f"[dispatch] sub {submission_id}: "
+                      f"{consecutive_failures} consecutive dispatch failures; "
+                      f"sleeping {CONSECUTIVE_FAIL_SLEEP_S:.0f}s for LC's "
+                      f"per-IP throttle to clear before next attempt",
+                      file=sys.stderr)
+                time.sleep(CONSECUTIVE_FAIL_SLEEP_S)
             problem = session.get(Problem, a.problem_id)
+            # Tracks whether this attempt represents a system-level dispatch
+            # failure that should produce ZERO Run rows (vs an actual LC
+            # verdict like Wrong Answer / TLE which we DO want to persist).
+            dispatch_warn: str | None = None
             try:
                 if a.prefailed_reason:
                     # Client already flagged this response as malformed (wrong
@@ -356,58 +929,300 @@ def dispatch_submission(submission_id: int) -> None:
                         "raw model output preserved in attempt.trace",
                     )
                 elif real:
-                    if auth_error:
-                        runs = _failure_runs(REPEATS, "Auth failed", auth_error)
+                    # Per-account pacing: instead of a fixed cross-attempt
+                    # sleep, pick the account whose `last_used_at +
+                    # INTER_DELAY` is soonest. With N pool accounts, the
+                    # effective inter-submission cap shrinks by ~N× — a
+                    # 4-account pool at INTER_DELAY=120 s can submit
+                    # roughly every 30 s instead of every 120 s, because
+                    # every other submission goes through a sibling
+                    # account that's already cooled down.
+                    from . import leetcode_accounts as _lca
+                    pick = _lca.pick_for_submission(min_gap_s=INTER_DELAY)
+                    chosen_name: str | None = None
+                    if pick is None:
+                        # Pool drained mid-sweep (every account exhausted
+                        # AND the pre-flight didn't catch it because the
+                        # exhaustion arrived between this attempt and the
+                        # previous). Same dispatch_warning treatment as
+                        # the pre-flight failure path.
+                        runs = _failure_runs(
+                            REPEATS, "Auth failed",
+                            "All LeetCode pool accounts exhausted or "
+                            "missing cookies. Refresh credentials at "
+                            "/admin/leetcode-accounts.",
+                        )
                     else:
-                        if idx > 0:
-                            time.sleep(INTER_DELAY * (1.0 + random.uniform(-0.2, 0.2)))
-                        runs = _real_dispatch_repeated(problem, sub.language, a.code, REPEATS)
+                        chosen, wait_s = pick
+                        chosen_name = chosen.name
+                        if wait_s > 0:
+                            # Add the same ±20% jitter the old fixed-delay
+                            # path used so a pool of fresh accounts doesn't
+                            # submit at exact multiples — LC's anti-bot
+                            # heuristic likes a touch of noise.
+                            wait_jit = wait_s * (1.0 + random.uniform(-0.2, 0.2))
+                            print(f"[dispatch] account {chosen.name!r}: "
+                                  f"waiting {wait_jit:.1f}s (idx={idx})",
+                                  file=sys.stderr)
+                            time.sleep(wait_jit)
+
+                        # Live-progress callback: persist each LC submission's
+                        # Run row as it lands so the SPA's "runs landed"
+                        # counter advances live (0/3 → 1/3 → 2/3 → 3/3)
+                        # instead of waiting for all REPEATS to finish.
+                        # We do a partial _aggregate_attempt after each run
+                        # so n_runs / n_accepted_runs / avg_runtime_ms /
+                        # avg_memory_mb update incrementally too — that way
+                        # /api/submissions/<id>/attempts shows real progress
+                        # numbers while the dispatch is mid-flight.
+                        # Errors inside this callback are swallowed by
+                        # `_real_dispatch_repeated` so a transient DB hiccup
+                        # doesn't abort the dispatch.
+                        _SYSTEM_FAIL = {
+                            "Rate limited", "Auth failed",
+                            "Dispatch timeout", "Dispatch error",
+                            "Dispatch parse error",
+                            "LeetCode transient error",
+                        }
+                        runs_so_far: list[dict] = []
+                        def _persist_run(result: dict, idx_1based: int) -> None:
+                            runs_so_far.append(result)
+                            judged_lang = result.get("lang")
+                            if judged_lang and judged_lang != sub.language:
+                                result["original_status_msg"] = result.get("status_msg")
+                                result["status_msg"] = "Language mismatch"
+                            status_msg = result.get("status_msg", "Unknown")
+                            is_real_verdict = status_msg not in _SYSTEM_FAIL
+                            # Only persist a Run row for ACTUAL LC verdicts —
+                            # preserves the original "all-system-failures
+                            # gets dispatch_warning, no Run rows" semantics
+                            # so the per-attempt counter doesn't tick on a
+                            # rate-limited-and-given-up call.
+                            if is_real_verdict:
+                                session.add(Run(
+                                    attempt_id=a.id,
+                                    run_index=idx_1based,
+                                    submission_id_external=result.get("submission_id"),
+                                    status_msg=status_msg,
+                                    runtime_ms=result.get("runtime_ms"),
+                                    memory_mb=result.get("memory_mb"),
+                                    runtime_percentile=result.get("runtime_percentile"),
+                                    memory_percentile=result.get("memory_percentile"),
+                                    total_correct=result.get("total_correct"),
+                                    total_testcases=result.get("total_testcases"),
+                                    raw_response=result,
+                                    leetcode_full_response=result.get("leetcode_full_response"),
+                                ))
+                                real_so_far = [r for r in runs_so_far
+                                               if r.get("status_msg") not in _SYSTEM_FAIL]
+                                # partial=True: update n_runs and the
+                                # avg/best metrics live, but DON'T set
+                                # final_status — the sweep treats that
+                                # as "dispatch is done", so we leave it
+                                # null until the post-loop pass.
+                                _aggregate_attempt(a, real_so_far, partial=True)
+                                session.add(a)
+                            # SQLite write-lock contention: with 5 parallel
+                            # dispatchers all `session.commit()`-ing per LC
+                            # submit, the 30 s busy_timeout occasionally
+                            # blows AND the session ends up in
+                            # PendingRollbackError. Without explicit
+                            # recovery, the rest of the per-attempt loop
+                            # silently aborts and the operator sees "2/3
+                            # runs" mysteries. Retry-on-lock with
+                            # rollback-then-replay handles both cases.
+                            from sqlalchemy.exc import OperationalError, PendingRollbackError
+                            for retry in range(3):
+                                try:
+                                    session.commit()
+                                    break
+                                except OperationalError as oe:
+                                    if "locked" not in str(oe).lower() or retry == 2:
+                                        raise
+                                    print(f"[dispatch] attempt {a.id} run "
+                                          f"{idx_1based}/{REPEATS}: SQLite "
+                                          f"locked on commit; rolling back + "
+                                          f"retrying ({retry + 1}/3)",
+                                          file=sys.stderr)
+                                    session.rollback()
+                                    time.sleep(0.5 + 0.5 * retry)
+                                    # Re-attach the writes that the rollback
+                                    # discarded. The Run row we created is
+                                    # gone from the session after rollback —
+                                    # we'd need to add it again, but `a` is
+                                    # also expired so we'd be working blind.
+                                    # Simpler: just defer the persist to the
+                                    # FINAL aggregate pass after the loop.
+                                    runs_so_far[-1] = result      # keep in buffer
+                                    break
+                                except PendingRollbackError:
+                                    session.rollback()
+                                    time.sleep(0.5)
+                            # Include the underlying reason on failure
+                            # lines — for a real verdict we already have
+                            # the status_msg, but for "Rate limited" /
+                            # "Dispatch error" / etc. the reason explains
+                            # *why* (e.g. "hit LeetCode rate limit after
+                            # 3 retries (last seen: HTTP 429 ...)") so
+                            # the operator doesn't have to cross-reference
+                            # with the upstream backoff lines or pull the
+                            # full dispatch_warning text from the SPA.
+                            if is_real_verdict:
+                                tail = "verdict"
+                            else:
+                                note = result.get("note") or "no detail"
+                                # Trim so log stays one-liner-ish; full
+                                # text remains on the synthetic Run's
+                                # raw_response / on the attempt's
+                                # dispatch_warning when set.
+                                if len(note) > 200:
+                                    note = note[:197] + "..."
+                                tail = f"fail (not persisted) — {note}"
+                            print(f"[dispatch] attempt {a.id}: "
+                                  f"run {idx_1based}/{REPEATS} → {status_msg} ({tail})",
+                                  file=sys.stderr)
+
+                        runs = _real_dispatch_repeated(
+                            problem, sub.language, a.code, REPEATS,
+                            session=session, force_account=chosen.name,
+                            on_run_completed=_persist_run,
+                        )
+                        # Mark last_used_at on the SPECIFIC account we
+                        # picked — even if the submission ultimately
+                        # got a system-failure status, the LC quota
+                        # (or attempt at it) was spent.
+                        try:
+                            _lca.mark_used(chosen.name)
+                        except Exception as e:                       # noqa: BLE001
+                            print(f"[dispatch] failed to mark_used "
+                                  f"{chosen.name!r}: {e}",
+                                  file=sys.stderr)
+                    # If _real_dispatch_repeated only produced SYSTEM-level
+                    # failure statuses — never a real LC verdict — treat
+                    # the whole attempt as a dispatch failure and record
+                    # NOTHING. Stamping dispatch_warning leaves the attempt
+                    # in the `pending` set (no Run rows) so the next
+                    # dispatch call retries it cleanly from scratch.
+                    # Real LC verdicts (Accepted, Wrong Answer, TLE, …)
+                    # always coexist with valid runtime_ms / memory_mb
+                    # and are NOT in this set.
+                    SYSTEM_FAILURE_STATUSES = {
+                        "Auth failed",
+                        "LeetCode transient error",
+                        "Dispatch timeout",
+                        "Dispatch error",
+                        "Dispatch parse error",
+                        "Rate limited",
+                    }
+                    statuses = {r.get("status_msg") for r in runs}
+                    if statuses and statuses.issubset(SYSTEM_FAILURE_STATUSES):
+                        first = next(iter(statuses))
+                        # The diagnostic could live in either field
+                        # depending on where the failure was synthesised:
+                        #   * `error_log` — set by leetbot when LC's own
+                        #     judge surfaced an error message.
+                        #   * `note`      — set by `_failure_runs` (used for
+                        #     rate-limit retries exhausted, auth failures,
+                        #     dispatch parse errors, …).
+                        # Earlier this only checked `error_log`, so every
+                        # _failure_runs path stamped the unhelpful
+                        # "no diagnostic text" warning even when `note`
+                        # had a perfectly good explanation ("hit LeetCode
+                        # rate limit after 4 retries", "leetbot exited
+                        # 2: <traceback>", …). Read both, prefer
+                        # whichever is non-empty.
+                        note = (runs[0].get("error_log") if runs else None) \
+                               or (runs[0].get("note") if runs else None)
+                        # Avoid the "Dispatch error: Dispatch error" tautology
+                        # when neither diagnostic field had content OR the
+                        # diagnostic matches the status_msg. The operator
+                        # should always see something distinctive in the
+                        # second half — either real diagnostic text or an
+                        # explicit "no detail" marker.
+                        if not note or note == first:
+                            note = "no diagnostic text from leetbot subprocess"
+                        dispatch_warn = f"{first}: {note}"
                 else:
                     runs = _fake_dispatch_repeated(REPEATS, sub.language, a.code)
             except Exception as e:  # noqa: BLE001
-                runs = _failure_runs(REPEATS, "Dispatch error", str(e))
+                dispatch_warn = f"Dispatch error: {e}"
+                runs = []
 
-            # Language-conformance guard: applied PRE-aggregation so a
-            # smuggled-Java-as-python3 run counts as failed for pass@k and
-            # contributes nothing to runtime / memory baselines. We mutate the
-            # `runs` dict in place so both the Run-table write below AND
-            # `_aggregate_attempt` see the overridden status_msg. See the
-            # commit for the rectangle-overlap incident that motivated this.
-            for result in runs:
-                judged_lang = result.get("lang")
-                if judged_lang and judged_lang != sub.language:
-                    # Preserve the original verdict on the result so error logs
-                    # / debug tooling can see what LC really said before our
-                    # override.
-                    result["original_status_msg"] = result.get("status_msg")
-                    result["status_msg"] = "Language mismatch"
+            # System-level dispatch failure → don't write Run rows; stamp
+            # the warning and continue. The attempt stays in `pending` for
+            # the next dispatch call. final_status stays None so the
+            # leaderboard / aggregates ignore it.
+            if dispatch_warn is not None:
+                a.dispatch_warning = dispatch_warn
+                session.add(a)
+                # Track the consecutive-failure counter for the cross-
+                # attempt throttle backoff (see top of this loop). A
+                # system-level dispatch_warn means we never landed any
+                # real LC verdict, so this attempt counts toward the
+                # "LC's per-IP throttle is still hot" signal.
+                consecutive_failures += 1
+                continue
 
-            for i, result in enumerate(runs, start=1):
-                status_msg = result.get("status_msg", "Unknown")
-                # leetbot stuffs LeetCode's verbatim /check/ payload under
-                # `leetcode_full_response`. Pull it out for its own column so
-                # the UI can render it on non-Accepted runs even when LC
-                # ships a field shape the parser doesn't enumerate. None in
-                # fake-mode / pre-flight-failure / language-mismatch
-                # synthetic results — those paths never talk to LC.
-                lc_full = result.get("leetcode_full_response")
-                session.add(Run(
-                    attempt_id=a.id,
-                    run_index=i,
-                    submission_id_external=result.get("submission_id"),
-                    status_msg=status_msg,
-                    runtime_ms=result.get("runtime_ms"),
-                    memory_mb=result.get("memory_mb"),
-                    runtime_percentile=result.get("runtime_percentile"),
-                    memory_percentile=result.get("memory_percentile"),
-                    total_correct=result.get("total_correct"),
-                    total_testcases=result.get("total_testcases"),
-                    raw_response=result,
-                    leetcode_full_response=lc_full,
-                ))
-            _aggregate_attempt(a, runs)
-            session.add(a)
-        session.commit()
+            # Successful dispatch (or a deliberate prefailed_reason synth) —
+            # clear any stale warning from a previous run so the UI doesn't
+            # keep showing "Auth failed" alongside a freshly-judged verdict.
+            if a.dispatch_warning is not None:
+                a.dispatch_warning = None
+            # A real LC verdict landed (Accepted / Wrong Answer / TLE / …
+            # OR the prefailed_reason synth, which also represents an
+            # intentionally-decided outcome and not "we couldn't reach
+            # LC"). Either way the throttle isn't currently blocking us
+            # so we reset the counter — a single bad cell shouldn't
+            # punish the rest of the submission's pending set.
+            consecutive_failures = 0
+
+            # NOTE: Run rows for the real-dispatch path were already
+            # written by `_persist_run` (the on_run_completed callback)
+            # one at a time as each LC submission landed. The fake-
+            # dispatch and prefailed-reason paths still need a one-shot
+            # write here because they don't go through the callback.
+            real_path_used_callback = real and isinstance(runs, list) and runs
+            if not real_path_used_callback:
+                # Language-conformance guard (same as before — keep it
+                # in sync with the callback's version).
+                for result in runs:
+                    judged_lang = result.get("lang")
+                    if judged_lang and judged_lang != sub.language:
+                        result["original_status_msg"] = result.get("status_msg")
+                        result["status_msg"] = "Language mismatch"
+                for i, result in enumerate(runs, start=1):
+                    session.add(Run(
+                        attempt_id=a.id,
+                        run_index=i,
+                        submission_id_external=result.get("submission_id"),
+                        status_msg=result.get("status_msg", "Unknown"),
+                        runtime_ms=result.get("runtime_ms"),
+                        memory_mb=result.get("memory_mb"),
+                        runtime_percentile=result.get("runtime_percentile"),
+                        memory_percentile=result.get("memory_percentile"),
+                        total_correct=result.get("total_correct"),
+                        total_testcases=result.get("total_testcases"),
+                        raw_response=result,
+                        leetcode_full_response=result.get("leetcode_full_response"),
+                    ))
+                _aggregate_attempt(a, runs)
+                session.add(a)
+            else:
+                # Real path: callback already wrote each Run row and
+                # ran a partial aggregate. Run one final aggregate pass
+                # over the COMPLETE set so any partial-only metrics
+                # (e.g. avg_runtime_percentile from N-1 vs N) settle
+                # to their final values.
+                _aggregate_attempt(a, runs)
+                session.add(a)
+            # Commit after EACH attempt so the SQLite write lock is held
+            # only as long as the actual flush — not the whole pending-
+            # loop duration (which spans multiple subprocess.run calls,
+            # each up to POLL_TIMEOUT × REPEATS seconds). With WAL +
+            # busy_timeout=30s the API would otherwise see "database is
+            # locked" whenever a sweep tries to POST a new attempt while
+            # the dispatch worker is mid-loop.
+            session.commit()
 
         # Recompute every attempt's aggregate (covers re-runs / appended attempts).
         for a in attempts:
@@ -487,8 +1302,25 @@ def dispatch_submission(submission_id: int) -> None:
                     m_h_avg.append(baseline.memory_mb_avg / best.avg_memory_mb)
                     m_h_exp.append(baseline.memory_mb_expert / best.avg_memory_mb)
 
-        total_supported = session.exec(select(Problem)).all()
-        sub.total_problems = len(total_supported)
+        # Recompute the denominator using the submission's COMPETITION scope
+        # (its own problem set), not "every Problem row in the DB". Without
+        # this, pass@k turns into solved/(canonical+variants) and reports
+        # 45/198 for a canonical-99 sweep. Legacy submissions with
+        # competition_id NULL fall back to the canonical universe.
+        if sub.competition_id is not None:
+            comp_pids = {
+                cp.problem_id for cp in session.exec(
+                    select(CompetitionProblem).where(
+                        CompetitionProblem.competition_id == sub.competition_id
+                    )
+                ).all()
+            }
+            sub.total_problems = len(comp_pids)
+        else:
+            canonical = session.exec(
+                select(Problem).where(Problem.original_problem_id.is_(None))
+            ).all()
+            sub.total_problems = len(canonical)
         sub.total_solved = solved
         denom = sub.total_problems or 1
         sub.pass_at_1    = p1_sum / denom

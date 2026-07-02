@@ -193,6 +193,7 @@ function Mini({ label, value, tip }: { label: string; value: string; tip?: strin
   );
 }
 
+
 function DetailField({ label, value, code = false, markdown = false }: {
   label: string; value: string | null; code?: boolean; markdown?: boolean;
 }) {
@@ -222,6 +223,8 @@ function ModelForm({
     model_type: existing.model_type,
     family: existing.family,
     provenance: existing.provenance,
+    input_price_per_1m_usd: existing.input_price_per_1m_usd,
+    output_price_per_1m_usd: existing.output_price_per_1m_usd,
     // Auto-promote unverified → active on first save, so editing a stub
     // counts as "this admin has curated it". Admin can still pick retired.
     status: existing.status === "unverified" ? "active" : existing.status,
@@ -229,6 +232,7 @@ function ModelForm({
     name: "", version: "", provider: "ollama",
     endpoint: "", params: null, notes: "", status: "active",
     description: "", model_type: "", family: "", provenance: "",
+    input_price_per_1m_usd: null, output_price_per_1m_usd: null,
   });
   const [paramsRaw, setParamsRaw] = useState(
     existing?.params ? JSON.stringify(existing.params, null, 2) : "");
@@ -251,6 +255,8 @@ function ModelForm({
         model_type: f.model_type || null,
         family: f.family || null,
         provenance: f.provenance || null,
+        input_price_per_1m_usd: f.input_price_per_1m_usd ?? null,
+        output_price_per_1m_usd: f.output_price_per_1m_usd ?? null,
       };
       if (existing) await api.editRegisteredModel(existing.id, body);
       else await api.addRegisteredModel(body);
@@ -334,6 +340,31 @@ function ModelForm({
         <span className="muted">Notes (markdown, operator-facing)</span>
         <textarea rows={2} value={f.notes ?? ""} onChange={e => setF({ ...f, notes: e.target.value })} />
       </label>
+      {/* Per-model pricing. When BOTH are set, the SPA recomputes
+          attempt.cost_usd dynamically from these × stored tokens (live
+          recompute on every submission detail / leaderboard view).
+          Blank either field to clear it — that submission's $ falls
+          back to the snapshot cost stamped at submit time. */}
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <label className="col" style={{ flex: "1 1 180px" }}>
+          <span className="muted">Input price ($ per 1M tokens)</span>
+          <input type="number" step="0.01" min="0"
+                 value={f.input_price_per_1m_usd ?? ""}
+                 onChange={e => setF({ ...f,
+                   input_price_per_1m_usd: e.target.value === "" ? null : Number(e.target.value),
+                 })}
+                 placeholder="e.g. 0.25" />
+        </label>
+        <label className="col" style={{ flex: "1 1 180px" }}>
+          <span className="muted">Output price ($ per 1M tokens)</span>
+          <input type="number" step="0.01" min="0"
+                 value={f.output_price_per_1m_usd ?? ""}
+                 onChange={e => setF({ ...f,
+                   output_price_per_1m_usd: e.target.value === "" ? null : Number(e.target.value),
+                 })}
+                 placeholder="e.g. 2.00" />
+        </label>
+      </div>
       <div className="row" style={{ gap: 6 }}>
         <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
