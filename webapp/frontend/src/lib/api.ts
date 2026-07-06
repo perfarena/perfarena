@@ -115,6 +115,7 @@ export const api = {
   rankings: (params: {
     language?: string; level?: string; sort?: string;
     k?: number; prompt_id?: number; competition?: string;
+    harness?: string;
   } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => !!v) as [string, string][],
@@ -155,6 +156,27 @@ export const api = {
     request<CompetitionPublic>(`/api/admin/competitions/${id}/problems`, {
       method: "PUT", body: JSON.stringify({ problem_slugs }),
     }),
+
+  // Harnesses ---------------------------------------------------------------
+  // The benchmark harness / perf oracle registry. Every submission is scored
+  // by exactly one harness (submission override → competition default), and
+  // the UI uses these endpoints to render the /harnesses index + detail
+  // pages plus the harness filter on the leaderboard.
+  harnesses: (includeRetired = false) =>
+    request<HarnessPublic[]>(
+      `/api/harnesses${includeRetired ? "?include_retired=true" : ""}`),
+  harness: (slug: string) =>
+    request<HarnessDetail>(`/api/harnesses/${encodeURIComponent(slug)}`),
+  addHarness: (body: HarnessIn) =>
+    request<HarnessPublic>(`/api/admin/harnesses`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  editHarness: (id: number, body: HarnessIn) =>
+    request<HarnessPublic>(`/api/admin/harnesses/${id}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }),
+  deleteHarness: (id: number) =>
+    request<null>(`/api/admin/harnesses/${id}`, { method: "DELETE" }),
 
   // Blog --------------------------------------------------------------------
   blogPosts: () => request<BlogPostCard[]>(`/api/blog`),
@@ -366,6 +388,14 @@ export interface ProblemTopSolution {
   avg_memory_mb?: number | null;
   avg_runtime_percentile?: number | null;
   avg_memory_percentile?: number | null;
+  /* Runtime energy (Joules) of the solution — best of N runs is the
+   * headline (least energy consumed), plus the noise-band avg. Populated
+   * only by execution-instrumented harnesses; null on LeetCode-scored
+   * attempts. */
+  runtime_energy_j?: number | null;
+  avg_runtime_energy_j?: number | null;
+  runtime_energy_percentile?: number | null;
+  avg_runtime_energy_percentile?: number | null;
   n_runs?: number | null;
   n_accepted_runs?: number | null;
 }
@@ -407,6 +437,13 @@ export interface RankingEntry {
   best_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /** Solution-runtime energy (Joules) — the third perf axis, populated only
+   *  by execution-instrumented harnesses (LeetCode never reports it). SPA
+   *  hides the column when no row in scope has a value. */
+  avg_runtime_energy_j: number | null;
+  best_runtime_energy_j: number | null;
+  avg_runtime_energy_percentile: number | null;
+  best_runtime_energy_percentile: number | null;
   time_human_avg: number | null;
   time_human_expert: number | null;
   mem_human_avg: number | null;
@@ -425,6 +462,11 @@ export interface RankingEntry {
   /** Competition this submission targeted. null on legacy rows. */
   competition_slug: string | null;
   competition_name: string | null;
+  /** Harness (perf oracle) whose numbers this row is scored on. Resolved per
+   *  submission (own override → competition default → null). Every legacy
+   *  row resolves to `leetcode` via the startup backfill. */
+  harness_slug: string | null;
+  harness_name: string | null;
   /** Token / $ accounting. Total = sum across all attempts in this submission;
    *  median = per-attempt median so submissions covering different attempt
    *  counts compare on the same axis. Null when no attempt reported the
@@ -457,6 +499,12 @@ export interface SubmissionPublic {
   best_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /** Solution-runtime energy (Joules) aggregated across accepted attempts —
+   *  populated only when the scoring harness measures execution energy. */
+  avg_runtime_energy_j: number | null;
+  best_runtime_energy_j: number | null;
+  avg_runtime_energy_percentile: number | null;
+  best_runtime_energy_percentile: number | null;
   time_human_avg: number | null;
   time_human_expert: number | null;
   mem_human_avg: number | null;
@@ -504,6 +552,10 @@ export interface SubmissionPublic {
   /** Competition this submission targeted. null on legacy rows. */
   competition_slug: string | null;
   competition_name: string | null;
+  /** Harness (perf oracle) that scored this submission's runs. Resolved per
+   *  submission (own override → competition default → null). */
+  harness_slug: string | null;
+  harness_name: string | null;
   /** Timestamp of the most recent attempt on this submission. null when
    *  the submission has no attempts yet. The /submissions table sorts
    *  by this so a still-running sweep stays at the top of the list. */
@@ -631,6 +683,62 @@ export interface CompetitionIn {
   description?: string | null;
   kind?: string;
   status?: string;
+}
+
+/** Light-weight pointer to a harness — slug + name only. Rendered inline on
+ *  ranking rows and submission cards so the SPA doesn't have to fetch the
+ *  full harness object just to draw a pill. */
+export interface HarnessRef {
+  slug: string;
+  name: string;
+}
+
+export interface HarnessPublic {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  kind: string;                    // leetcode | arena-local | custom | …
+  status: string;                  // active | retired
+  created_at: string;
+  /** Operator-defined runtime knobs (endpoint URL, docker image, resource
+   *  limits, …). Free-form JSON so each harness kind can carry its own
+   *  fields without a schema migration. */
+  config: Record<string, unknown> | null;
+  /** Activity rollup so the /harnesses index cards don't need a second
+   *  round-trip. n_submissions counts EFFECTIVE-harness rows (own override
+   *  OR competition default). */
+  n_competitions: number;
+  n_submissions: number;
+  n_runs: number;
+}
+export interface HarnessDetail extends HarnessPublic {
+  /** Competitions bound to this harness (their default oracle). Rendered
+   *  as pills on the detail page's "used by" section. */
+  competitions: CompetitionRef[];
+  languages: string[];
+  /** Per-model leaderboard scoped to submissions on THIS harness. Uses
+   *  each submission's own pass@1 directly since the harness applies
+   *  uniformly across every problem the submission touched. */
+  top_models: {
+    model_name: string;
+    model_version: string;
+    best_pass_at_1: number;
+    pass_at_k: number | null;
+    n_submissions: number;
+    avg_runtime_ms: number | null;
+    avg_memory_mb: number | null;
+    avg_runtime_percentile: number | null;
+    avg_memory_percentile: number | null;
+  }[];
+}
+export interface HarnessIn {
+  slug: string;
+  name: string;
+  description?: string | null;
+  kind?: string;
+  status?: string;
+  config?: Record<string, unknown> | null;
 }
 
 export interface BlogPostCard {

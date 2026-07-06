@@ -6,9 +6,10 @@ and converge here. The dedup contract per table:
 
   * **Natural-key tables** — User (email), Problem (title_slug),
     PromptTemplate (name), RegisteredModel (name+version),
-    Competition (slug), BlogPost (slug), Baseline (problem+language).
-    Rows whose natural key already exists are SKIPPED. The local row stays
-    untouched (admin curation isn't blown away by an import).
+    Competition (slug), Harness (slug), BlogPost (slug),
+    Baseline (problem+language). Rows whose natural key already exists
+    are SKIPPED. The local row stays untouched (admin curation isn't
+    blown away by an import).
 
   * **Surrogate-key tables** — Submission, Attempt, Run, CompetitionProblem.
     The primary key IS the foreign key target for child rows, so we can't
@@ -33,7 +34,7 @@ from sqlmodel import Session, select
 
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
-    Problem, PromptTemplate, RegisteredModel, Run, Submission, User,
+    Harness, Problem, PromptTemplate, RegisteredModel, Run, Submission, User,
 )
 from . import leetcode_accounts as _lc_accounts
 
@@ -48,6 +49,9 @@ EXPORTABLE: list[tuple[str, type]] = [
     ("problems",             Problem),
     ("prompt_templates",     PromptTemplate),
     ("registered_models",    RegisteredModel),
+    # Harnesses come BEFORE competitions/submissions/runs because those all
+    # carry a harness_id FK that has to remap through the id_maps below.
+    ("harnesses",            Harness),
     ("competitions",         Competition),
     ("competition_problems", CompetitionProblem),
     ("baselines",            Baseline),
@@ -266,6 +270,7 @@ _NATURAL_KEYS: dict[str, Callable[[dict], tuple]] = {
     "prompt_templates":   lambda r: (r.get("name"),),
     "registered_models":  lambda r: (r.get("name"), r.get("version")),
     "competitions":       lambda r: (r.get("slug"),),
+    "harnesses":          lambda r: (r.get("slug"),),
     "blog_posts":         lambda r: (r.get("slug"),),
     "baselines":          lambda r: (r.get("problem_id"), r.get("language")),
     # composite-PK join — natural key IS the PK.
@@ -306,15 +311,17 @@ def import_bundle(session: Session, bundle: dict) -> dict:
     # old_id → new_id per surrogate-key table, populated as we insert.
     id_maps: dict[str, dict[int, int]] = {
         "users": {}, "problems": {}, "prompt_templates": {},
-        "registered_models": {}, "competitions": {},
+        "registered_models": {}, "competitions": {}, "harnesses": {},
         "blog_posts": {}, "submissions": {}, "attempts": {},
         "runs": {}, "baselines": {},
     }
 
     # 1) Natural-key tables — insert in declared order so child FKs resolve.
+    # `harnesses` before `competitions` because Competition.harness_id
+    # references a harness id we may have just remapped.
     natural_first = ["users", "problems", "prompt_templates",
-                     "registered_models", "competitions", "blog_posts",
-                     "baselines"]
+                     "registered_models", "harnesses", "competitions",
+                     "blog_posts", "baselines"]
     for tname in natural_first:
         rows = incoming.get(tname) or []
         if not rows:
@@ -342,6 +349,14 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 # Drop the incoming id — let SQLite assign a fresh one so
                 # local ids stay collision-free across replicas.
                 old_id = payload.pop("id", None)
+                # FK remaps for natural-key tables. Competition.harness_id
+                # points at a Harness we just inserted (or matched); look it
+                # up in the id_maps and translate to the local id so the
+                # binding lands correctly. NULL passes through untouched.
+                if tname == "competitions":
+                    hid = payload.get("harness_id")
+                    if hid is not None:
+                        payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
                 obj = model(**payload)
                 session.add(obj)
                 session.flush()                              # populate obj.id
@@ -353,7 +368,9 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 report[tname]["errored"] += 1
         session.commit()
 
-    # 2) Submissions — children of users + prompts. Remap FKs.
+    # 2) Submissions — children of users + prompts + competitions + harnesses.
+    # Remap all four FKs; drop the submission when its user_id can't be
+    # resolved (unresolvable user = orphan row).
     for row in incoming.get("submissions") or []:
         try:
             payload = _coerce_for_table(Submission, row)
@@ -375,6 +392,12 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 # If the prompt didn't come over we keep the original id —
                 # FastAPI will surface a stale-FK only on read paths that
                 # actually dereference it.
+            cid = payload.get("competition_id")
+            if cid is not None:
+                payload["competition_id"] = id_maps["competitions"].get(int(cid), cid)
+            hid = payload.get("harness_id")
+            if hid is not None:
+                payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
             obj = Submission(**payload)
             session.add(obj)
             session.flush()
@@ -415,7 +438,9 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             report["attempts"]["errored"] += 1
     session.commit()
 
-    # 4) Runs — children of attempts.
+    # 4) Runs — children of attempts. Also carries a harness_id FK that
+    # records which oracle actually judged the run; remap through the
+    # harnesses id_maps so the local run points at the local harness row.
     for row in incoming.get("runs") or []:
         try:
             payload = _coerce_for_table(Run, row)
@@ -426,6 +451,9 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 report["runs"]["errored"] += 1
                 continue
             payload["attempt_id"] = new_aid
+            hid = payload.get("harness_id")
+            if hid is not None:
+                payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
             obj = Run(**payload)
             session.add(obj)
             report["runs"]["inserted"] += 1

@@ -26,6 +26,8 @@ import LeetcodeAccounts from "./pages/LeetcodeAccounts";
 import Catalog from "./pages/Catalog";
 import Competitions from "./pages/Competitions";
 import CompetitionDetail from "./pages/CompetitionDetail";
+import Harnesses from "./pages/Harnesses";
+import HarnessDetail from "./pages/HarnessDetail";
 import Prompts from "./pages/Prompts";
 import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
@@ -58,6 +60,8 @@ export default function App() {
         <Route path="prompts/:id" element={<Prompts />} />
         <Route path="competitions" element={<Competitions />} />
         <Route path="competitions/:slug" element={<CompetitionDetail />} />
+        <Route path="harnesses" element={<Harnesses />} />
+        <Route path="harnesses/:slug" element={<HarnessDetail />} />
         <Route path="problems" element={<Problems />} />
         <Route path="problems/:slug" element={<ProblemDetail />} />
         <Route path="submissions" element={<Submissions />} />

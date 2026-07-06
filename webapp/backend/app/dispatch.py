@@ -818,6 +818,14 @@ def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -
     mem = [r["memory_mb"] for r in accepted if r.get("memory_mb") is not None]
     rtp = [r["runtime_percentile"] for r in accepted if r.get("runtime_percentile") is not None]
     memp = [r["memory_percentile"] for r in accepted if r.get("memory_percentile") is not None]
+    # Runtime energy (Joules) — third perf axis. Same shape as runtime_ms.
+    # Only harnesses that instrument execution report it; LeetCode never
+    # populates the key, so `en` stays empty and the aggregate columns stay
+    # None on LC-scored attempts. `best_runtime_energy_j` uses `min` — less
+    # energy is better, matching the runtime_ms convention.
+    en = [r["runtime_energy_j"] for r in accepted if r.get("runtime_energy_j") is not None]
+    enp = [r["runtime_energy_percentile"] for r in accepted
+           if r.get("runtime_energy_percentile") is not None]
 
     a.avg_runtime_ms = _mean(rt)
     a.best_runtime_ms = min(rt) if rt else None
@@ -827,6 +835,10 @@ def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -
     a.best_runtime_percentile = max(rtp) if rtp else None
     a.avg_memory_percentile = _mean(memp)
     a.best_memory_percentile = max(memp) if memp else None
+    a.avg_runtime_energy_j = _mean(en)
+    a.best_runtime_energy_j = min(en) if en else None
+    a.avg_runtime_energy_percentile = _mean(enp)
+    a.best_runtime_energy_percentile = max(enp) if enp else None
 
 
 def dispatch_submission(submission_id: int) -> None:
@@ -1245,6 +1257,9 @@ def dispatch_submission(submission_id: int) -> None:
         solved = 0
         avg_rt, best_rt, avg_mem, best_mem = [], [], [], []
         avg_rtp, avg_memp = [], []
+        # Runtime-energy accumulators — populated only when the harness that
+        # judged this attempt measured execution energy (LeetCode never does).
+        avg_en, best_en, avg_enp, best_enp = [], [], [], []
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
         # Per-submission pass metrics:
         #   pass@1    — Chen unbiased estimator with k=1, i.e. c/n per problem,
@@ -1287,6 +1302,10 @@ def dispatch_submission(submission_id: int) -> None:
             if best.best_memory_mb is not None:    best_mem.append(best.best_memory_mb)
             if best.avg_runtime_percentile is not None:  avg_rtp.append(best.avg_runtime_percentile)
             if best.avg_memory_percentile is not None:   avg_memp.append(best.avg_memory_percentile)
+            if best.avg_runtime_energy_j is not None:            avg_en.append(best.avg_runtime_energy_j)
+            if best.best_runtime_energy_j is not None:           best_en.append(best.best_runtime_energy_j)
+            if best.avg_runtime_energy_percentile is not None:   avg_enp.append(best.avg_runtime_energy_percentile)
+            if best.best_runtime_energy_percentile is not None:  best_enp.append(best.best_runtime_energy_percentile)
 
             baseline = session.exec(
                 select(Baseline).where(
@@ -1336,6 +1355,12 @@ def dispatch_submission(submission_id: int) -> None:
         sub.best_memory_mb = _mean(best_mem)
         sub.avg_runtime_percentile = _mean(avg_rtp)
         sub.avg_memory_percentile = _mean(avg_memp)
+        # Runtime energy rollup — stays None on LC-scored submissions since
+        # every accumulator is empty (LeetCode's payload has no energy key).
+        sub.avg_runtime_energy_j = _mean(avg_en)
+        sub.best_runtime_energy_j = _mean(best_en)
+        sub.avg_runtime_energy_percentile = _mean(avg_enp)
+        sub.best_runtime_energy_percentile = _mean(best_enp)
         sub.time_human_avg = _mean(t_h_avg)
         sub.time_human_expert = _mean(t_h_exp)
         sub.mem_human_avg = _mean(m_h_avg)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, getApiKey, SubmissionPublic } from "../lib/api";
 import SubmissionsTable from "../components/SubmissionsTable";
@@ -15,16 +15,52 @@ export default function Submissions() {
   const [rows, setRows] = useState<SubmissionPublic[]>([]);
   const [err, setErr] = useState("");
   const [page, setPage] = useState(0);
+  // Client-side filters. The list endpoint returns every submission with
+  // its harness / competition already stamped, so filtering is a cheap
+  // in-memory partition rather than a re-fetch. Hydrated from ?harness=…
+  // / ?competition=… so a deep link from HarnessDetail / CompetitionDetail
+  // lands scoped correctly.
+  const initial = () => {
+    if (typeof window === "undefined") return { h: "", c: "" };
+    const p = new URLSearchParams(window.location.search);
+    return { h: p.get("harness") ?? "", c: p.get("competition") ?? "" };
+  };
+  const [harnessSlug, setHarnessSlug] = useState<string>(initial().h);
+  const [competitionSlug, setCompetitionSlug] = useState<string>(initial().c);
 
   useEffect(() => {
     api.submissions().then(setRows).catch((e: unknown) => setErr(String(e)));
   }, []);
 
+  // Universes for the dropdowns are derived from the returned rows so we
+  // never advertise a slug the current dataset doesn't contain.
+  const { harnesses, competitions } = useMemo(() => {
+    const h = new Map<string, string>();
+    const c = new Map<string, string>();
+    for (const r of rows) {
+      if (r.harness_slug) h.set(r.harness_slug, r.harness_name ?? r.harness_slug);
+      if (r.competition_slug) c.set(r.competition_slug, r.competition_name ?? r.competition_slug);
+    }
+    const byName = (a: [string, string], b: [string, string]) => a[1].localeCompare(b[1]);
+    return {
+      harnesses: [...h.entries()].sort(byName),
+      competitions: [...c.entries()].sort(byName),
+    };
+  }, [rows]);
+
+  const filtered = useMemo(() => rows.filter(r => {
+    if (harnessSlug && r.harness_slug !== harnessSlug) return false;
+    if (competitionSlug && r.competition_slug !== competitionSlug) return false;
+    return true;
+  }), [rows, harnessSlug, competitionSlug]);
+
+  useEffect(() => { setPage(0); }, [harnessSlug, competitionSlug]);
+
   const loggedIn = !!getApiKey();
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const start = safePage * PAGE_SIZE;
-  const paged = rows.slice(start, start + PAGE_SIZE);
+  const paged = filtered.slice(start, start + PAGE_SIZE);
 
   return (
     <div className="col" style={{ gap: 24 }}>
@@ -39,12 +75,34 @@ export default function Submissions() {
       {err && <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>}
 
       <section className="col" style={{ gap: 10 }}>
+        <div className="filter-bar">
+          <select value={harnessSlug} onChange={e => setHarnessSlug(e.target.value)}
+                  title="Scope to submissions scored by one perf oracle (harness). Deep-linkable via ?harness=slug.">
+            <option value="">All harnesses</option>
+            {harnesses.map(([slug, name]) => (
+              <option key={slug} value={slug}>{name}</option>
+            ))}
+          </select>
+          <select value={competitionSlug} onChange={e => setCompetitionSlug(e.target.value)}
+                  title="Scope to submissions targeting one competition. Deep-linkable via ?competition=slug.">
+            <option value="">All competitions</option>
+            {competitions.map(([slug, name]) => (
+              <option key={slug} value={slug}>{name}</option>
+            ))}
+          </select>
+          {(harnessSlug || competitionSlug) && (
+            <button className="secondary"
+                    onClick={() => { setHarnessSlug(""); setCompetitionSlug(""); }}>
+              Clear filters
+            </button>
+          )}
+        </div>
         <SubmissionsTable rows={paged} />
-        {rows.length > 0 && (
+        {filtered.length > 0 && (
           <Pagination
             page={safePage}
             totalPages={totalPages}
-            total={rows.length}
+            total={filtered.length}
             start={start}
             shown={paged.length}
             onPage={setPage}

@@ -175,8 +175,8 @@ function MenuItem({
  * itself as `active` whenever the route is on any sub-page so the user
  * can tell at a glance which tab the current page belongs to. */
 const CATALOG_PATHS = [
-  "/competitions", "/problems", "/models", "/languages", "/prompts",
-  "/submissions", "/snapshots",
+  "/competitions", "/harnesses", "/problems", "/models", "/languages",
+  "/prompts", "/submissions", "/snapshots",
 ];
 
 function CatalogMenu() {
@@ -235,6 +235,7 @@ function CatalogMenu() {
           }}
         >
           <MenuItem to="/competitions" onPick={() => setOpen(false)}>Competitions</MenuItem>
+          <MenuItem to="/harnesses"    onPick={() => setOpen(false)}>Harnesses</MenuItem>
           <MenuItem to="/problems"     onPick={() => setOpen(false)}>Problems</MenuItem>
           <MenuItem to="/models"       onPick={() => setOpen(false)}>Models</MenuItem>
           <MenuItem to="/languages"    onPick={() => setOpen(false)}>Languages</MenuItem>

@@ -76,6 +76,13 @@ class ProblemTopSolution(BaseModel):
     avg_memory_mb: float | None = None
     avg_runtime_percentile: float | None = None
     avg_memory_percentile: float | None = None
+    # Runtime energy of the solution (Joules) — best of N runs is the
+    # headline (least energy consumed), plus the noise-band average. Null
+    # unless the scoring harness measured execution energy.
+    runtime_energy_j: float | None = None
+    avg_runtime_energy_j: float | None = None
+    runtime_energy_percentile: float | None = None
+    avg_runtime_energy_percentile: float | None = None
     n_runs: int | None = None
     n_accepted_runs: int | None = None
 
@@ -274,6 +281,14 @@ class SubmissionPublic(BaseModel):
     best_memory_mb: float | None
     avg_runtime_percentile: float | None
     avg_memory_percentile: float | None
+    # Solution-runtime energy (Joules) — third perf axis alongside runtime
+    # / memory. Populated by execution-instrumented harnesses; null on
+    # every LeetCode-scored submission. When no submission in scope has
+    # a value the SPA hides the entire column.
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
+    avg_runtime_energy_percentile: float | None = None
+    best_runtime_energy_percentile: float | None = None
     time_human_avg: float | None
     time_human_expert: float | None
     mem_human_avg: float | None
@@ -322,6 +337,13 @@ class SubmissionPublic(BaseModel):
     # backfill script wasn't run.
     competition_slug: str | None = None
     competition_name: str | None = None
+    # Harness that produced this submission's runs. Falls back to the
+    # competition's default harness when the submission itself has no
+    # override. None on submissions that predate the harness abstraction
+    # AND belong to a competition without one — practically empty after
+    # the startup backfill seeds every legacy row to `leetcode`.
+    harness_slug: str | None = None
+    harness_name: str | None = None
     # Last attempt's `logged_at` for this submission — when something
     # actually moved on the row. The /submissions table sorts by this
     # rather than `created_at` so a long-running sweep stays at the
@@ -343,6 +365,13 @@ class RankingEntry(BaseModel):
     best_memory_mb: float | None
     avg_runtime_percentile: float | None
     avg_memory_percentile: float | None
+    # Solution-runtime energy (Joules) aggregated across accepted attempts
+    # — mirrors avg/best_runtime_ms. Null when no attempt in this submission
+    # was scored by an execution-instrumented harness.
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
+    avg_runtime_energy_percentile: float | None = None
+    best_runtime_energy_percentile: float | None = None
     time_human_avg: float | None
     time_human_expert: float | None
     mem_human_avg: float | None
@@ -361,6 +390,11 @@ class RankingEntry(BaseModel):
     # Competition this submission targets — None on legacy rows.
     competition_slug: str | None = None
     competition_name: str | None = None
+    # Harness (perf oracle) whose numbers this row is scored on. Resolved
+    # per submission: explicit override → competition default → NULL. The
+    # UI renders a pill linking to /harnesses/{slug}.
+    harness_slug: str | None = None
+    harness_name: str | None = None
     # Token + cost accounting — surfaced as sortable columns on the SPA
     # rankings table. `total_*` is the sum across every attempt in this
     # submission; `median_*_per_attempt` is the per-attempt median so two
@@ -379,6 +413,13 @@ class RankingEntry(BaseModel):
     # that cover different numbers of problems.
     total_generation_ms: int | None = None
     median_generation_ms_per_attempt: float | None = None
+    # Generation energy — sum across attempts (Joules) + per-attempt median.
+    # Populated only for submit clients with a power probe (NVML / RAPL /
+    # provider telemetry); LeetCode-only submissions leave both null and the
+    # UI hides the column. Same shape as the cost/tokens/time totals above
+    # so the SPA can treat energy as one more sortable spend axis.
+    total_generation_energy_j: float | None = None
+    median_generation_energy_j_per_attempt: float | None = None
 
 
 class RunPublic(BaseModel):
@@ -388,6 +429,12 @@ class RunPublic(BaseModel):
     memory_mb: float | None
     runtime_percentile: float | None
     memory_percentile: float | None
+    # Runtime energy consumed while executing the solution (Joules) — the
+    # third perf axis alongside runtime_ms / memory_mb. Reported only by
+    # harnesses that instrument execution; LeetCode never does, so this
+    # stays null on every LC-scored run.
+    runtime_energy_j: float | None = None
+    runtime_energy_percentile: float | None = None
     total_correct: int | None
     total_testcases: int | None
     error_log: "RunErrorLog | None" = None
@@ -789,6 +836,52 @@ class CompetitionProblemsIn(BaseModel):
     problem_slugs: list[str]
 
 
+class HarnessRef(BaseModel):
+    """Light-weight pointer to a harness — slug + name only. Used on ranking
+    rows and submission cards so the UI can render a pill + link without
+    dragging the full harness object along."""
+    slug: str
+    name: str
+
+
+class HarnessPublic(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: str | None
+    kind: str
+    status: str
+    created_at: datetime
+    # Optional operational config the operator pinned on the harness — e.g.
+    # endpoint URL, docker image tag, resource limits. Free-form JSON so
+    # each harness kind can carry its own knobs without a schema migration.
+    config: dict | None = None
+    # Activity stats — cheap to compute alongside the list query so the
+    # /harnesses index card can show "N competitions / N submissions / N runs"
+    # without a second round-trip.
+    n_competitions: int = 0
+    n_submissions: int = 0
+    n_runs: int = 0
+
+
+class HarnessDetail(HarnessPublic):
+    """Slug-keyed detail view: identity + the competitions bound to this
+    harness + the per-harness leaderboard's top entries. The /harnesses/:slug
+    page renders this directly."""
+    competitions: list[CompetitionRef] = []
+    languages: list[str] = []
+    top_models: list[dict] = []                 # same shape as CompetitionDetail.top_models
+
+
+class HarnessIn(BaseModel):
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str | None = None
+    kind: str = "custom"                        # leetcode | arena-local | custom | …
+    status: str = "active"                      # active | retired
+    config: dict | None = None
+
+
 class BlogPostPublic(BaseModel):
     id: int
     slug: str
@@ -980,6 +1073,12 @@ class CostEstimatorSubmission(BaseModel):
     prompt_name: str | None
     competition_slug: str | None
     competition_name: str | None
+    # Harness that scored the runs backing this submission. Follows the
+    # same resolution rule as everywhere else: submission override →
+    # competition default → null. Lets the cost-estimator distinguish
+    # "sweeps on our in-house harness" from "sweeps against LeetCode".
+    harness_slug: str | None = None
+    harness_name: str | None = None
     n_attempts: int                        # how many attempts in the submission
     n_problems_attempted: int              # unique problems hit
     n_problems_in_scope: int               # the comparison floor (competition size, or 99)
@@ -987,6 +1086,13 @@ class CostEstimatorSubmission(BaseModel):
     total_input_tokens: int | None         # sum of provider_meta input tokens
     total_output_tokens: int | None        # sum of provider_meta output tokens
     n_attempts_with_token_data: int        # how many of the n_attempts had usage stats
+    # Generation energy (Joules) summed across the sweep's attempts. Only
+    # populated when at least one attempt in the submission has a power
+    # probe reading; null otherwise (all-LeetCode data paths never report
+    # energy). Included so the calculator can build a "energy per sweep"
+    # range alongside the token / dollar envelopes.
+    total_generation_energy_j: float | None = None
+    n_attempts_with_energy_data: int = 0
 
 
 class CostEstimatorRange(BaseModel):
@@ -1010,6 +1116,9 @@ class CostEstimatorStats(BaseModel):
     available_languages: list[str]
     available_models: list[str]
     available_competitions: list[dict]     # {slug, name}
+    # Harness slugs actually referenced by full sweeps in scope — same shape
+    # as available_competitions so the calculator can hang a dropdown off it.
+    available_harnesses: list[dict] = []   # {slug, name}
     # All full-sweep submissions matching the filters — drives the bottom
     # table of the calculator page so the user can see which runs the
     # envelope came from.
@@ -1018,6 +1127,10 @@ class CostEstimatorStats(BaseModel):
     # numbers the user multiplies by their $-per-1M rates.
     input_tokens: CostEstimatorRange
     output_tokens: CostEstimatorRange
+    # Generation energy (Joules) across full sweeps in scope. Zero-sized
+    # when no submission in the filter had a power-probe reading — the
+    # frontend can hide the panel entirely in that case.
+    generation_energy_j: CostEstimatorRange = CostEstimatorRange()
 
 
 # ---------- LeetCode credential pool (admin) --------------------------------

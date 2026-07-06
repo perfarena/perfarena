@@ -118,6 +118,15 @@ class Submission(SQLModel, table=True):
     best_memory_mb: float | None = None
     avg_runtime_percentile: float | None = None
     avg_memory_percentile: float | None = None
+    # Solution-runtime energy (Joules) — aggregated across the submission's
+    # attempts. See Attempt.avg_runtime_energy_j for what "runtime energy"
+    # means vs Attempt.generation_energy_j (LLM side). Null on legacy /
+    # LeetCode-only submissions since LC never measures execution energy;
+    # the seeded in-house harness populates these on future sweeps.
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
+    avg_runtime_energy_percentile: float | None = None
+    best_runtime_energy_percentile: float | None = None
 
     # Coefficients vs. the LeetCode-population baselines, averaged across the
     # submission. Convention: higher = better. Value = baseline / model.
@@ -156,6 +165,12 @@ class Submission(SQLModel, table=True):
     # keeps the row (and its attempts/runs/traces) so research exports, the
     # transparency log, and audit trails stay intact.
     deleted_at: datetime | None = Field(default=None, index=True)
+
+    # Judging harness / perf oracle for this submission. NULL means "inherit
+    # from the competition's default"; setting it overrides at the submission
+    # level (e.g. re-scoring an old LC submission under a local harness). The
+    # startup seed backfills legacy rows to the built-in "leetcode" harness.
+    harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
 
 
 class Attempt(SQLModel, table=True):
@@ -239,6 +254,19 @@ class Attempt(SQLModel, table=True):
     best_runtime_percentile: float | None = None
     avg_memory_percentile: float | None = None
     best_memory_percentile: float | None = None
+    # Runtime energy of the solution (Joules) — energy consumed WHILE
+    # EXECUTING the code, distinct from the LLM-side `generation_energy_j`
+    # above. Populated only by harnesses that instrument execution (RAPL
+    # / NVML / an in-house probe). Best = min across the attempt's runs;
+    # avg = mean over accepted runs. LeetCode's online judge never reports
+    # this, so every legacy row stays null and the UI hides the column
+    # when nothing in scope has a value. Same shape as runtime_ms /
+    # memory_mb so ranking / sorting code can treat energy as one more
+    # perf axis without special-casing.
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
+    avg_runtime_energy_percentile: float | None = None
+    best_runtime_energy_percentile: float | None = None
 
 
 class Baseline(SQLModel, table=True):
@@ -288,6 +316,14 @@ class Run(SQLModel, table=True):
     memory_mb: float | None = None
     runtime_percentile: float | None = None
     memory_percentile: float | None = None
+    # Runtime energy (Joules) consumed while executing the solution on
+    # this specific run. Optional — populated only by harnesses that can
+    # measure execution energy (e.g. an in-house runner reading RAPL /
+    # NVML). LeetCode never reports this so every legacy Run stays null.
+    # Rolled up into Attempt.avg_runtime_energy_j / best_runtime_energy_j
+    # the same way runtime_ms rolls into avg_runtime_ms.
+    runtime_energy_j: float | None = None
+    runtime_energy_percentile: float | None = None
     total_correct: int | None = None
     total_testcases: int | None = None
     raw_response: dict | None = Field(default=None, sa_column=Column(JSON))
@@ -300,6 +336,12 @@ class Run(SQLModel, table=True):
     leetcode_full_response: dict | None = Field(
         default=None, sa_column=Column(JSON),
     )
+    # Harness that ACTUALLY produced this run's verdict + performance numbers.
+    # NULL means "the submission's harness" (which itself falls back to the
+    # competition's harness); non-null captures the case where a submission
+    # gets re-run under a different oracle. The startup seed backfills legacy
+    # rows to the built-in "leetcode" harness (id=1).
+    harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -353,6 +395,41 @@ class Competition(SQLModel, table=True):
     name: str
     description: str | None = None                 # markdown blurb
     kind: str = Field(default="custom", index=True)  # leetcode | humaneval | mbpp | custom | …
+    status: str = Field(default="active", index=True)  # active | retired
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+    # Default judging harness / perf oracle used to score submissions in this
+    # competition. NULL on legacy rows; the startup seed backfills these to
+    # the built-in "leetcode" harness (id=1) so pre-abstraction data keeps
+    # its implied provenance.
+    harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
+
+
+class Harness(SQLModel, table=True):
+    """A benchmark harness / performance oracle that evaluates solutions.
+
+    Historically the platform was hard-wired to LeetCode's online judge: every
+    Run's runtime/memory/percentile came from LC's /check/ payload. This table
+    makes that assumption explicit and lets us plug in additional oracles
+    (e.g. an in-house harness that runs code locally with power / cycle-count
+    probes) without conflating their outputs.
+
+    Binding is layered: Competition.harness_id sets the default oracle for
+    every submission in that contest; Submission.harness_id can override it
+    (e.g. re-judge an existing set under a new harness); Run.harness_id
+    records the oracle that actually produced the numbers on that run.
+    """
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)     # stable id used in URLs / configs
+    name: str                                       # display name
+    # leetcode      — LeetCode's online judge (runtime_ms / memory_mb / percentile)
+    # arena-local   — first-party harness that runs code locally
+    # custom        — anything else (HumanEval unittest runner, MBPP, …)
+    kind: str = Field(default="custom", index=True)
+    description: str | None = None                 # markdown blurb
+    # Free-form JSON — endpoint URLs, timeouts, docker image tag, credential
+    # references, whatever the specific harness needs to be reproducible.
+    config: dict | None = Field(default=None, sa_column=Column(JSON))
     status: str = Field(default="active", index=True)  # active | retired
     created_at: datetime = Field(default_factory=datetime.utcnow)
     created_by_user_id: int | None = Field(default=None, foreign_key="user.id")

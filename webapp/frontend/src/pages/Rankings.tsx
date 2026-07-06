@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, CompetitionPublic, RankingEntry } from "../lib/api";
+import { api, CompetitionPublic, HarnessPublic, RankingEntry } from "../lib/api";
 import {
-  coefficientClass, formatCoefficient, formatDuration, formatMemory,
+  coefficientClass, formatCoefficient, formatDuration, formatEnergy, formatMemory,
   formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import Th from "../components/Th";
@@ -34,11 +34,21 @@ export default function Rankings() {
   const [k, setK] = useState<string>("");                    // "" = any
   const [competitionSlug, setCompetitionSlug] = useState<string>(DEFAULT_COMPETITION);
   const [competitions, setCompetitions] = useState<CompetitionPublic[]>([]);
+  // Harness filter. Empty = "any harness" (default) so users landing on the
+  // page see the full board; picking one scopes to submissions scored by
+  // that oracle. Hydrated from ?harness=… on first mount so the HarnessDetail
+  // page's "See full leaderboard on this harness →" deep link works.
+  const [harnessSlug, setHarnessSlug] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("harness") ?? "";
+  });
+  const [harnesses, setHarnesses] = useState<HarnessPublic[]>([]);
   const [err, setErr] = useState<string>("");
 
-  // Load competitions once for the selector.
+  // Load competitions + harnesses once for the selectors.
   useEffect(() => {
     api.competitions().then(setCompetitions).catch(() => setCompetitions([]));
+    api.harnesses().then(setHarnesses).catch(() => setHarnesses([]));
   }, []);
 
   // Client-side view sort, toggled by clicking column headers.
@@ -57,11 +67,12 @@ export default function Rankings() {
     api.rankings({
       language, level, k: kNum,
       competition: competitionSlug || undefined,
+      harness: harnessSlug || undefined,
     })
       .then(setRows).catch((e: unknown) => setErr(String(e)));
-  }, [language, level, k, competitionSlug]);
+  }, [language, level, k, competitionSlug, harnessSlug]);
 
-  useEffect(() => { setPage(1); }, [language, level, k, competitionSlug, q, ranges, pageSize, sortKey, sortDir]);
+  useEffect(() => { setPage(1); }, [language, level, k, competitionSlug, harnessSlug, q, ranges, pageSize, sortKey, sortDir]);
 
   const selectedCompetition = competitions.find(c => c.slug === competitionSlug) ?? null;
 
@@ -129,6 +140,16 @@ export default function Rankings() {
   const start = (safePage - 1) * pageSize;
   const paged = sorted.slice(start, start + pageSize);
   const anyAdvanced = Object.values(ranges).some(v => v !== "");
+
+  // Energy columns are meaningful only when at least one row in scope came
+  // from a harness that measured execution energy. LeetCode-only data leaves
+  // every field null; hiding the columns in that case keeps the table narrow
+  // and stops the header from advertising a metric nothing populates. As
+  // soon as an execution-instrumented harness lands a submission, the
+  // columns appear automatically.
+  const showEnergy = rows.some(r =>
+    r.avg_runtime_energy_j != null || r.best_runtime_energy_j != null,
+  );
 
   return (
     <div>
@@ -208,6 +229,14 @@ export default function Rankings() {
             <option key={c.slug} value={c.slug}>{c.name}</option>
           ))}
         </select>
+        <select value={harnessSlug}
+                onChange={e => setHarnessSlug(e.target.value)}
+                title="Scope the leaderboard to submissions scored by one perf oracle (LeetCode's online judge, an in-house harness, etc.)">
+          <option value="">All harnesses</option>
+          {harnesses.map(h => (
+            <option key={h.slug} value={h.slug}>{h.name}</option>
+          ))}
+        </select>
         <select value={language} onChange={e => setLanguage(e.target.value)}>
           <option value="">All languages</option>
           {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
@@ -280,6 +309,7 @@ export default function Rankings() {
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific — one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
                 <Th label="Competition" tip="Competition this submission targeted. pass@1, pass@k, and Solved use THIS competition's problem set as the denominator (not 'every Problem row in the DB'). — = legacy row created before the per-submission scope existed." />
+                <Th label="Harness" tip="Perf oracle that produced the runtime / memory / percentile numbers on this row. Resolved per submission (submission override → competition default). All legacy rows resolve to `leetcode` via the startup backfill; new harnesses (in-house runner, HumanEval unittest, …) appear once you plug them in on /harnesses." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@1" tip="Unbiased pass@1 estimator over k samples — average of c/n per problem. Equivalent to single-shot pass-rate when k=1, and statistically more reliable when k>1. Use this column to compare submissions across different k values." sortKey="pass_at_1" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@k" tip="Mean acceptance rate across the SUBMITTED attempts: total accepted samples / total submitted samples. Equivalently, the average of per-problem acceptance fractions when k is constant. Denominator is the count of attempts actually submitted, NOT total supported problems — so a partial submission isn't penalised for unattempted problems. Differs from pass@1 (which divides by total supported) and pass@full (best-of-k per problem)." sortKey="pass_at_k" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -292,6 +322,9 @@ export default function Rankings() {
                 <Th label="Best memory" tip="Mean of per-problem minimum memory (5 runs each) across all accepted problems." sortKey="best_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Runtime %ile" tip="Mean of the per-problem LeetCode runtime percentile, averaged across accepted attempts. Higher = LC ranked the run as faster than more of the LC population AT THE TIME. The per-run percentile is noisy (~4 pp spread within a single attempt's 5 runs — see docs/leetcode-percentile-semantics.md); the ~500-sample mean shown here smooths most of that out." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Memory %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Same noise caveat as Runtime %ile, but memory %ile tends to be much less noisy than runtime %ile in practice." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                {showEnergy && <Th label="Avg energy" tip="Mean of per-problem mean runtime energy (Joules), across accepted problems. Reported only when the scoring harness measures execution energy (LeetCode never does). Lower is better." sortKey="avg_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {showEnergy && <Th label="Best energy" tip="Mean of per-problem BEST (minimum) runtime energy across accepted problems. Same source as Avg energy but takes the lowest energy reading per problem." sortKey="best_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {showEnergy && <Th label="Energy %ile" tip="Mean of the per-problem runtime-energy percentile reported by the harness, averaged across accepted attempts. Higher = the model used less energy than more of the harness's baseline population." sortKey="avg_runtime_energy_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
                 <Th label="t vs avg" tip="Speedup against the AVERAGE LeetCode submission. Computed per accepted attempt as leetcode_avg_runtime_ms / model_runtime_ms, then averaged. 1.0× = parity; 2.0× = twice as fast as the LeetCode average. (The LeetCode population mixes human and AI-assisted submissions — LeetCode doesn't separate them.)" sortKey="time_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="t vs exp" tip="Speedup against the EXPERT cohort on LeetCode (~top decile of the population distribution). leetcode_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top LeetCode performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE LeetCode submission: leetcode_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the LeetCode average." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -329,6 +362,18 @@ export default function Rankings() {
                                 }}>{r.competition_name ?? r.competition_slug}</Link>
                         : <span className="muted">—</span>}
                     </td>
+                    <td>
+                      {r.harness_slug
+                        ? <Link to={`/harnesses/${r.harness_slug}`}
+                                style={{
+                                  padding: "2px 8px", borderRadius: 999,
+                                  background: "var(--panel-2)",
+                                  border: "1px solid var(--border)",
+                                  fontSize: "0.8rem", whiteSpace: "nowrap",
+                                  textDecoration: "none",
+                                }}>{r.harness_name ?? r.harness_slug}</Link>
+                        : <span className="muted">—</span>}
+                    </td>
                     <td className="metric">{r.n_samples_per_problem}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_1)}</td>
                     <td className="metric">{formatPassAt1(r.pass_at_k)}</td>
@@ -341,6 +386,9 @@ export default function Rankings() {
                     <td className="metric" style={rawCellStyle}>{formatMemory(r.best_memory_mb)}</td>
                     <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>
                     <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>
+                    {showEnergy && <td className="metric">{formatEnergy(r.avg_runtime_energy_j)}</td>}
+                    {showEnergy && <td className="metric">{formatEnergy(r.best_runtime_energy_j)}</td>}
+                    {showEnergy && <td className="metric">{formatPercentile(r.avg_runtime_energy_percentile)}</td>}
                     <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>
                     <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>
                     <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>

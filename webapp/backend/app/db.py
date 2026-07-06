@@ -166,6 +166,31 @@ _ADDITIVE_COLUMNS = [
     # cost above. New submissions populate it; older attempts where it's
     # null fall back to the snapshot cost (no recomputation possible).
     ("attempt", "prompt_tokens", "INTEGER"),
+    # Benchmark harness / performance oracle abstraction. Historically the
+    # platform was hard-wired to LeetCode's online judge; introducing the
+    # Harness table lets us plug in additional oracles (in-house harness,
+    # HumanEval unittest runner, etc.) without conflating their outputs.
+    # Binding is layered — Competition → Submission override → Run captures
+    # the oracle that actually ran. Legacy rows are backfilled to the seeded
+    # "leetcode" harness so their implied provenance is preserved.
+    ("competition", "harness_id", "INTEGER"),
+    ("submission", "harness_id", "INTEGER"),
+    ("run", "harness_id", "INTEGER"),
+    # Runtime energy (Joules) consumed while EXECUTING the solution — the
+    # third perf axis alongside runtime_ms and memory_mb. Only harnesses
+    # that instrument execution (RAPL / NVML / an in-house probe) populate
+    # these; LeetCode never does, so every legacy row stays NULL and the
+    # SPA hides the column when nothing in scope has data.
+    ("run", "runtime_energy_j", "FLOAT"),
+    ("run", "runtime_energy_percentile", "FLOAT"),
+    ("attempt", "avg_runtime_energy_j", "FLOAT"),
+    ("attempt", "best_runtime_energy_j", "FLOAT"),
+    ("attempt", "avg_runtime_energy_percentile", "FLOAT"),
+    ("attempt", "best_runtime_energy_percentile", "FLOAT"),
+    ("submission", "avg_runtime_energy_j", "FLOAT"),
+    ("submission", "best_runtime_energy_j", "FLOAT"),
+    ("submission", "avg_runtime_energy_percentile", "FLOAT"),
+    ("submission", "best_runtime_energy_percentile", "FLOAT"),
 ]
 
 
@@ -201,10 +226,59 @@ def _apply_additive_migrations() -> None:
                 pass
 
 
+def _seed_default_harness() -> None:
+    """Seed the built-in "leetcode" harness (id=1) and backfill every
+    Competition / Submission / Run that lacks a harness_id to it. Idempotent:
+    the insert is guarded by a slug lookup, and the UPDATEs are no-ops once
+    the columns are populated. Preserves all existing data — rows are only
+    filled where they were previously NULL."""
+    with engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT id FROM harness WHERE slug = 'leetcode' LIMIT 1"
+        )).fetchone()
+        if row is None:
+            # Raw SQL bypasses SQLModel's Python-side default_factory, so we
+            # stamp created_at explicitly to satisfy the NOT NULL constraint.
+            from datetime import datetime as _dt
+            conn.execute(text(
+                "INSERT INTO harness (slug, name, kind, description, status, created_at) "
+                "VALUES (:slug, :name, :kind, :desc, 'active', :created_at)"
+            ), {
+                "slug": "leetcode",
+                "name": "LeetCode Online Judge",
+                "kind": "leetcode",
+                "desc": (
+                    "LeetCode's public online judge. Runtime, memory, and "
+                    "percentile columns on Run reflect what LeetCode reported "
+                    "for the submission. This is the legacy default — every "
+                    "competition, submission, and run that predates the "
+                    "harness abstraction is backfilled to it."
+                ),
+                "created_at": _dt.utcnow(),
+            })
+            row = conn.execute(text(
+                "SELECT id FROM harness WHERE slug = 'leetcode' LIMIT 1"
+            )).fetchone()
+        leetcode_harness_id = int(row[0])
+        for stmt in (
+            "UPDATE competition SET harness_id = :hid WHERE harness_id IS NULL",
+            "UPDATE submission SET harness_id = :hid WHERE harness_id IS NULL",
+            "UPDATE run SET harness_id = :hid WHERE harness_id IS NULL",
+        ):
+            try:
+                conn.execute(text(stmt), {"hid": leetcode_harness_id})
+            except Exception:
+                # Column may not exist on the very first startup pass if the
+                # additive migration failed silently — swallow and let the
+                # next boot retry. All errors here are non-fatal.
+                pass
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported before create_all
     SQLModel.metadata.create_all(engine)
     _apply_additive_migrations()
+    _seed_default_harness()
 
 
 def get_session():

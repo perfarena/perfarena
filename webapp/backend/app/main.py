@@ -45,7 +45,7 @@ from .dispatch import (
 from .ratelimit import enforce_submission_limit
 from .models import (
     Attempt, Baseline, BaselineRefreshState, BlogPost,
-    Competition, CompetitionProblem, Problem,
+    Competition, CompetitionProblem, Harness, Problem,
     PromptTemplate, RegisteredModel,
     Run, Snapshot,
     Submission, SubmissionStatus, TraceLogEntry,
@@ -66,6 +66,7 @@ from .schemas import (
     ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
+    HarnessDetail, HarnessIn, HarnessPublic, HarnessRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
     LeetCodeAccountIn, LeetCodeAccountStatus, LeetCodeAccountsResponse,
     ModelDetail, ModelDetailLanguageStat, ModelListEntry,
@@ -1120,6 +1121,13 @@ def rankings(
                     "a no-op; for narrower competitions (HumanEval, MBPP, …) "
                     "it scopes the leaderboard to that competition's set.",
     ),
+    harness: str | None = Query(
+        None,
+        description="restrict the leaderboard to submissions scored by this "
+                    "harness (slug). Resolution: submission.harness_id → "
+                    "competition.harness_id → drop. Legacy rows all resolve "
+                    "to `leetcode` via the startup backfill.",
+    ),
     sort: str = Query(
         "pass_at_1",
         regex="^(pass_at_1|pass_at_k|pass_at_full|avg_runtime_percentile|avg_memory_percentile|time_human_avg|time_human_expert|mem_human_avg|mem_human_expert)$",
@@ -1164,6 +1172,23 @@ def rankings(
             s for s in subs
             if s.competition_id == comp.id
             or (is_canonical_default and s.competition_id is None)
+        ]
+
+    # Harness scope: resolve the effective harness per submission (own
+    # override → competition default) and keep only those matching. All-
+    # competitions preload so the resolver doesn't N+1.
+    if harness:
+        target = session.exec(
+            select(Harness).where(Harness.slug == harness)
+        ).first()
+        if target is None:
+            raise HTTPException(404, f"harness '{harness}' not found")
+        _comps_all = {
+            c.id: c for c in session.exec(select(Competition)).all()
+        }
+        subs = [
+            s for s in subs
+            if _resolve_submission_harness_id(s, _comps_all) == target.id
         ]
 
     # Eligibility gate: only complete (all problems attempted) submissions with
@@ -1226,6 +1251,14 @@ def rankings(
             ))
         ).all()
     } if subs else {}
+    # Harness lookup for the effective-harness resolution below — one
+    # round-trip covers all harnesses (tiny table, usually 1–3 rows).
+    harness_by_id: dict[int, Harness] = {
+        h.id: h for h in session.exec(select(Harness)).all()
+    } if subs else {}
+    _all_comps_for_harness = {
+        c.id: c for c in session.exec(select(Competition)).all()
+    } if subs else {}
     # Pull per-attempt cost+token series in ONE pass keyed by submission
     # id so we can compute the per-row total and median without an N+1.
     # Includes prompt_tokens so we can live-recompute cost when the model
@@ -1240,6 +1273,8 @@ def rankings(
     for i, s in enumerate(subs, start=1):
         u = session.get(User, s.user_id)
         comp = comp_by_id.get(s.competition_id) if s.competition_id else None
+        hid = _resolve_submission_harness_id(s, _all_comps_for_harness)
+        harness_row = harness_by_id.get(hid) if hid else None
         atts = sub_attempts.get(s.id, [])
         # Per-attempt cost: live recompute when possible, else snapshot.
         per_cost: list[float] = []
@@ -1250,9 +1285,11 @@ def rankings(
                 per_cost.append(x)
         per_tokens = [a.response_tokens for a in atts if a.response_tokens is not None]
         per_wall = [a.wall_clock_ms for a in atts if a.wall_clock_ms is not None]
+        per_energy = [a.generation_energy_j for a in atts if a.generation_energy_j is not None]
         total_cost = sum(per_cost) if per_cost else None
         total_tokens = sum(per_tokens) if per_tokens else s.total_response_tokens
         total_wall = sum(per_wall) if per_wall else s.total_generation_ms
+        total_energy = sum(per_energy) if per_energy else s.total_generation_energy_j
         out.append(RankingEntry(
             rank=i, model_name=s.model_name, model_version=s.model_version,
             language=s.language,
@@ -1263,6 +1300,10 @@ def rankings(
             best_memory_mb=s.best_memory_mb,
             avg_runtime_percentile=s.avg_runtime_percentile,
             avg_memory_percentile=s.avg_memory_percentile,
+            avg_runtime_energy_j=s.avg_runtime_energy_j,
+            best_runtime_energy_j=s.best_runtime_energy_j,
+            avg_runtime_energy_percentile=s.avg_runtime_energy_percentile,
+            best_runtime_energy_percentile=s.best_runtime_energy_percentile,
             time_human_avg=s.time_human_avg,
             time_human_expert=s.time_human_expert,
             mem_human_avg=s.mem_human_avg,
@@ -1279,12 +1320,16 @@ def rankings(
             prompt_name=prompt_name_by_id.get(s.prompt_id) if s.prompt_id else None,
             competition_slug=comp.slug if comp else None,
             competition_name=comp.name if comp else None,
+            harness_slug=harness_row.slug if harness_row else None,
+            harness_name=harness_row.name if harness_row else None,
             total_response_tokens=total_tokens,
             median_response_tokens_per_attempt=_median_or_none(per_tokens),
             total_cost_usd=total_cost,
             median_cost_usd_per_attempt=_median_or_none(per_cost),
             total_generation_ms=int(total_wall) if total_wall is not None else None,
             median_generation_ms_per_attempt=_median_or_none(per_wall),
+            total_generation_energy_j=total_energy,
+            median_generation_energy_j_per_attempt=_median_or_none(per_energy),
         ))
     return out
 
@@ -1669,6 +1714,7 @@ def cost_estimator_stats(
     language: str | None = None,
     model_name: str | None = None,
     competition: str | None = None,
+    harness: str | None = None,
     session: Session = Depends(get_session),
 ):
     """Token footprints of every full-sweep submission matching the filters,
@@ -1706,6 +1752,15 @@ def cost_estimator_stats(
         [{"slug": c.slug, "name": c.name} for c in comp_rows],
         key=lambda r: r["name"].lower(),
     )
+    # Same for harnesses — every active harness is pickable so an operator
+    # can estimate cost for a NEW harness before any sweep uses it.
+    harness_rows = session.exec(
+        select(Harness).where(Harness.status != "retired")
+    ).all()
+    available_harnesses = sorted(
+        [{"slug": h.slug, "name": h.name} for h in harness_rows],
+        key=lambda r: r["name"].lower(),
+    )
 
     # --- Apply the filters. ---
     q = select(Submission).where(Submission.deleted_at.is_(None))
@@ -1731,6 +1786,27 @@ def cost_estimator_stats(
             ).all()
         }
     subs = session.exec(q).all()
+
+    # Harness scope: resolve the effective harness per submission (own
+    # override → competition default) and drop rows whose harness doesn't
+    # match. Loaded here so we can also stamp harness_slug/name onto every
+    # row we return.
+    _all_comps_for_harness = {
+        c.id: c for c in session.exec(select(Competition)).all()
+    }
+    if harness:
+        target_h = session.exec(
+            select(Harness).where(Harness.slug == harness)
+        ).first()
+        if target_h is None:
+            raise HTTPException(404, f"harness '{harness}' not found")
+        subs = [
+            s for s in subs
+            if _resolve_submission_harness_id(s, _all_comps_for_harness) == target_h.id
+        ]
+    # Full lookup so we can annotate every returned row with its harness,
+    # regardless of whether a filter is set.
+    harness_by_id = {h.id: h for h in session.exec(select(Harness)).all()}
 
     # Problem-count denominator — defines what "full sweep" means in scope.
     # Without a competition filter we use the total platform problem count
@@ -1779,6 +1855,7 @@ def cost_estimator_stats(
     rows: list[CostEstimatorSubmission] = []
     full_input_totals: list[int] = []
     full_output_totals: list[int] = []
+    full_energy_totals: list[int] = []
     for s in subs:
         attempts = session.exec(
             select(Attempt).where(Attempt.submission_id == s.id)
@@ -1796,6 +1873,8 @@ def cost_estimator_stats(
         total_in: int | None = None
         total_out: int | None = None
         n_with_tokens = 0
+        total_energy: float | None = None
+        n_with_energy = 0
         for a in attempts:
             in_tok, out_tok = _extract_attempt_tokens(a.trace)
             if in_tok is not None or out_tok is not None:
@@ -1804,11 +1883,16 @@ def cost_estimator_stats(
                 total_in = (total_in or 0) + in_tok
             if out_tok is not None:
                 total_out = (total_out or 0) + out_tok
+            if a.generation_energy_j is not None:
+                total_energy = (total_energy or 0.0) + a.generation_energy_j
+                n_with_energy += 1
 
         n_attempted = len({a.problem_id for a in attempts})
         is_full = n_in_scope > 0 and n_attempted >= n_in_scope
 
         comp_hit = sub_competitions.get(s.id)
+        _hid = _resolve_submission_harness_id(s, _all_comps_for_harness)
+        h_row = harness_by_id.get(_hid) if _hid else None
         rows.append(CostEstimatorSubmission(
             submission_id=s.id,
             model_name=s.model_name,
@@ -1818,6 +1902,8 @@ def cost_estimator_stats(
             prompt_name=prompt_name_by_id.get(s.prompt_id) if s.prompt_id else None,
             competition_slug=comp_hit[0] if comp_hit else None,
             competition_name=comp_hit[1] if comp_hit else None,
+            harness_slug=h_row.slug if h_row else None,
+            harness_name=h_row.name if h_row else None,
             n_attempts=len(attempts),
             n_problems_attempted=n_attempted,
             n_problems_in_scope=n_in_scope,
@@ -1825,6 +1911,8 @@ def cost_estimator_stats(
             total_input_tokens=total_in,
             total_output_tokens=total_out,
             n_attempts_with_token_data=n_with_tokens,
+            total_generation_energy_j=total_energy,
+            n_attempts_with_energy_data=n_with_energy,
         ))
         # Only full sweeps with at least one token-bearing attempt go into
         # the envelope — half-instrumented partial sweeps would lie.
@@ -1833,6 +1921,8 @@ def cost_estimator_stats(
                 full_input_totals.append(total_in)
             if total_out is not None:
                 full_output_totals.append(total_out)
+        if is_full and total_energy is not None:
+            full_energy_totals.append(int(round(total_energy)))
 
     def _range(xs: list[int]) -> CostEstimatorRange:
         if not xs:
@@ -1851,14 +1941,17 @@ def cost_estimator_stats(
             "language": language,
             "model_name": model_name,
             "competition": competition,
+            "harness": harness,
         },
         available_prompts=available_prompts,
         available_languages=available_languages,
         available_models=available_models,
         available_competitions=available_competitions,
+        available_harnesses=available_harnesses,
         submissions=rows,
         input_tokens=_range(full_input_totals),
         output_tokens=_range(full_output_totals),
+        generation_energy_j=_range(full_energy_totals),
     )
 
 
@@ -2132,6 +2225,212 @@ def set_competition_problems(
         n_problems=len(payload.problem_slugs),
         n_submissions=n_subs, n_models=n_models,
     )
+
+
+# ---------- Harnesses ------------------------------------------------------
+#
+# A Harness is the perf oracle that scored a submission's runs — historically
+# LeetCode's online judge, now pluggable so we can add an in-house harness
+# without conflating outputs. Binding is layered:
+#   * Competition.harness_id — default oracle for the contest
+#   * Submission.harness_id  — per-submission override
+#   * Run.harness_id         — records what actually judged this run
+# Legacy rows were backfilled to the seeded `leetcode` harness at startup
+# (see db._seed_default_harness), so "submissions on the leetcode harness"
+# always includes pre-abstraction data.
+
+
+def _resolve_submission_harness_id(sub: Submission,
+                                   comp_by_id: dict[int, Competition]) -> int | None:
+    """Effective harness for a submission: explicit override → competition
+    default → NULL. Uses a preloaded competition map to avoid N+1 lookups
+    when we walk many submissions at once."""
+    if sub.harness_id is not None:
+        return sub.harness_id
+    if sub.competition_id is not None:
+        c = comp_by_id.get(sub.competition_id)
+        if c is not None:
+            return c.harness_id
+    return None
+
+
+def _harness_stats(
+    session: Session, harness_id: int,
+) -> tuple[int, int, int, list[str], list[Submission]]:
+    """Cheap rollup over one harness. Returns (n_competitions, n_submissions,
+    n_runs, languages_sorted, judged_subs). Submissions count via effective
+    harness (competition default + submission override); n_runs counts Run
+    rows tagged with this harness_id directly."""
+    n_comps = len(session.exec(
+        select(Competition).where(Competition.harness_id == harness_id)
+    ).all())
+    # Count in Python to match the rest of this file (no `func` import); the
+    # /api/harnesses index card only calls this once per harness, and the run
+    # table caps out in the low tens of thousands, so scanning is fine.
+    n_runs = len(session.exec(
+        select(Run.id).where(Run.harness_id == harness_id)
+    ).all())
+    # Compute effective-harness for every non-deleted submission — direct
+    # override OR competition default.
+    comps = {c.id: c for c in session.exec(select(Competition)).all()}
+    subs = session.exec(
+        select(Submission).where(Submission.deleted_at.is_(None))
+    ).all()
+    in_scope = [s for s in subs
+                if _resolve_submission_harness_id(s, comps) == harness_id]
+    judged = [s for s in in_scope if s.status == SubmissionStatus.judged]
+    return (n_comps, len(in_scope), n_runs,
+            sorted({s.language for s in in_scope}),
+            judged)
+
+
+@app.get("/api/harnesses", response_model=list[HarnessPublic])
+def list_harnesses(
+    include_retired: bool = False,
+    session: Session = Depends(get_session),
+):
+    """List every harness / perf oracle the platform tracks, with activity
+    stats per row. Retired rows hidden unless `include_retired=true`."""
+    q = select(Harness).order_by(Harness.created_at.desc())
+    if not include_retired:
+        q = q.where(Harness.status == "active")
+    hs = session.exec(q).all()
+    out: list[HarnessPublic] = []
+    for h in hs:
+        n_comps, n_subs, n_runs, _l, _j = _harness_stats(session, h.id)
+        out.append(HarnessPublic(
+            id=h.id, slug=h.slug, name=h.name,
+            description=h.description, kind=h.kind, status=h.status,
+            created_at=h.created_at, config=h.config,
+            n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+        ))
+    return out
+
+
+@app.get("/api/harnesses/{slug}", response_model=HarnessDetail)
+def get_harness(slug: str, session: Session = Depends(get_session)):
+    h = session.exec(select(Harness).where(Harness.slug == slug)).first()
+    if h is None:
+        raise HTTPException(404, "harness not found")
+    n_comps, n_subs, n_runs, langs, judged = _harness_stats(session, h.id)
+
+    comps = session.exec(
+        select(Competition).where(Competition.harness_id == h.id)
+        .order_by(Competition.name)
+    ).all()
+
+    # Per-model leaderboard scoped to submissions on this harness. Uses the
+    # submission's own pass_at_1 (the harness applies uniformly across every
+    # problem the submission touched, so no per-competition rescoring like
+    # get_competition needs to do).
+    by_model: dict[tuple[str, str], list[Submission]] = {}
+    for s in judged:
+        by_model.setdefault((s.model_name, s.model_version), []).append(s)
+    top: list[dict] = []
+    for (name, ver), subs in by_model.items():
+        pass1 = [s.pass_at_1 for s in subs if s.pass_at_1 is not None]
+        passk = [s.pass_at_k for s in subs if s.pass_at_k is not None]
+        rt = [s.avg_runtime_ms for s in subs if s.avg_runtime_ms is not None]
+        mem = [s.avg_memory_mb for s in subs if s.avg_memory_mb is not None]
+        rtp = [s.avg_runtime_percentile for s in subs
+               if s.avg_runtime_percentile is not None]
+        memp = [s.avg_memory_percentile for s in subs
+                if s.avg_memory_percentile is not None]
+        top.append({
+            "model_name": name,
+            "model_version": ver,
+            "best_pass_at_1": max(pass1) if pass1 else 0.0,
+            "pass_at_k": max(passk) if passk else None,
+            "n_submissions": len(subs),
+            "avg_runtime_ms": _mean_or_none(rt),
+            "avg_memory_mb": _mean_or_none(mem),
+            "avg_runtime_percentile": _mean_or_none(rtp),
+            "avg_memory_percentile": _mean_or_none(memp),
+        })
+    top.sort(key=lambda r: (
+        -(r["best_pass_at_1"] or 0),
+        -(r.get("avg_runtime_percentile") or 0),
+        -(r.get("avg_memory_percentile") or 0),
+    ))
+
+    return HarnessDetail(
+        id=h.id, slug=h.slug, name=h.name,
+        description=h.description, kind=h.kind, status=h.status,
+        created_at=h.created_at, config=h.config,
+        n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+        competitions=[CompetitionRef(slug=c.slug, name=c.name) for c in comps],
+        languages=langs,
+        top_models=top[:5],
+    )
+
+
+@app.post("/api/admin/harnesses",
+          response_model=HarnessPublic,
+          status_code=status.HTTP_201_CREATED)
+def add_harness(
+    payload: HarnessIn,
+    admin: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    if session.exec(select(Harness).where(Harness.slug == payload.slug)).first():
+        raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    h = Harness(**payload.model_dump(), created_by_user_id=admin.id)
+    session.add(h); session.commit(); session.refresh(h)
+    return HarnessPublic(
+        id=h.id, slug=h.slug, name=h.name, description=h.description,
+        kind=h.kind, status=h.status, created_at=h.created_at, config=h.config,
+        n_competitions=0, n_submissions=0, n_runs=0,
+    )
+
+
+@app.put("/api/admin/harnesses/{hid}", response_model=HarnessPublic)
+def edit_harness(
+    hid: int, payload: HarnessIn,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    h = session.get(Harness, hid)
+    if h is None:
+        raise HTTPException(404, "harness not found")
+    if payload.slug != h.slug:
+        clash = session.exec(select(Harness).where(Harness.slug == payload.slug)).first()
+        if clash and clash.id != hid:
+            raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    for k, v in payload.model_dump().items():
+        setattr(h, k, v)
+    session.add(h); session.commit(); session.refresh(h)
+    n_comps, n_subs, n_runs, _l, _j = _harness_stats(session, h.id)
+    return HarnessPublic(
+        id=h.id, slug=h.slug, name=h.name, description=h.description,
+        kind=h.kind, status=h.status, created_at=h.created_at, config=h.config,
+        n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+    )
+
+
+@app.delete("/api/admin/harnesses/{hid}",
+            status_code=status.HTTP_204_NO_CONTENT)
+def delete_harness(
+    hid: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    h = session.get(Harness, hid)
+    if h is None:
+        raise HTTPException(404, "harness not found")
+    # Refuse to delete a harness that still has rows pointing at it — we
+    # don't want silent NULLs cascading through Competition / Submission /
+    # Run and orphaning existing leaderboard scopes. Operator can null out
+    # or reassign first.
+    n_comps, n_subs, n_runs, _l, _j = _harness_stats(session, hid)
+    if n_comps or n_subs or n_runs:
+        raise HTTPException(409, {
+            "detail": "harness is in use — reassign before deleting",
+            "n_competitions": n_comps,
+            "n_submissions": n_subs,
+            "n_runs": n_runs,
+        })
+    session.delete(h); session.commit()
+    return None
 
 
 # ---------- Blog ------------------------------------------------------------
@@ -3411,6 +3710,8 @@ def submission_detail(submission_id: int, session: Session = Depends(get_session
             memory_mb=r.memory_mb if r else None,
             runtime_percentile=r.runtime_percentile if r else None,
             memory_percentile=r.memory_percentile if r else None,
+            runtime_energy_j=r.runtime_energy_j if r else None,
+            runtime_energy_percentile=r.runtime_energy_percentile if r else None,
             total_correct=r.total_correct if r else None,
             total_testcases=r.total_testcases if r else None,
             error_log=_build_error_log(r.raw_response, r.status_msg) if r else None,
@@ -3545,6 +3846,15 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
     # Competition reference for the new SPA column. None on legacy rows
     # that pre-date the per-submission competition scope.
     comp = session.get(Competition, s.competition_id) if s.competition_id is not None else None
+    # Effective harness for this submission: explicit override → competition
+    # default → NULL. Resolves in-process so the row's Harness column can
+    # link straight to /harnesses/{slug}.
+    _hid = (
+        s.harness_id
+        if s.harness_id is not None
+        else (comp.harness_id if comp is not None else None)
+    )
+    harness_row = session.get(Harness, _hid) if _hid is not None else None
     # Last-attempt timestamp — drives the SPA's "When" sort on the
     # /submissions table so a running sweep stays at the top of the
     # list while it's still landing attempts. None when the submission
@@ -3583,6 +3893,10 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         best_memory_mb=s.best_memory_mb,
         avg_runtime_percentile=s.avg_runtime_percentile,
         avg_memory_percentile=s.avg_memory_percentile,
+        avg_runtime_energy_j=s.avg_runtime_energy_j,
+        best_runtime_energy_j=s.best_runtime_energy_j,
+        avg_runtime_energy_percentile=s.avg_runtime_energy_percentile,
+        best_runtime_energy_percentile=s.best_runtime_energy_percentile,
         time_human_avg=s.time_human_avg,
         time_human_expert=s.time_human_expert,
         mem_human_avg=s.mem_human_avg,
@@ -3615,6 +3929,8 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         total_generation_energy_j=s.total_generation_energy_j,
         competition_slug=comp.slug if comp else None,
         competition_name=comp.name if comp else None,
+        harness_slug=harness_row.slug if harness_row else None,
+        harness_name=harness_row.name if harness_row else None,
         last_attempt_at=last_attempt_at,
     )
 
@@ -4129,6 +4445,10 @@ def problem_detail(slug: str, session: Session = Depends(get_session)):
             avg_memory_mb=a.avg_memory_mb,
             avg_runtime_percentile=a.avg_runtime_percentile,
             avg_memory_percentile=a.avg_memory_percentile,
+            runtime_energy_j=a.best_runtime_energy_j,
+            avg_runtime_energy_j=a.avg_runtime_energy_j,
+            runtime_energy_percentile=a.best_runtime_energy_percentile,
+            avg_runtime_energy_percentile=a.avg_runtime_energy_percentile,
             n_runs=a.n_runs,
             n_accepted_runs=a.n_accepted_runs,
         )
