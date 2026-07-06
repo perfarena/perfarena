@@ -68,6 +68,7 @@ RUN pip install -r /app/requirements.txt
 
 # Backend source.
 COPY webapp/backend/ /app/
+COPY leetbot.py /leetbot.py
 
 # LeetCode submission CLI — lives at the repo root in the source tree,
 # but the runtime expects to subprocess it from /app/leetbot.py (and
