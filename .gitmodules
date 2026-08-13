@@ -1,0 +1,3 @@
+[submodule "Energy-Languages"]
+	path = Energy-Languages
+	url = git@github.com:sanadlab/Energy-Languages.git
