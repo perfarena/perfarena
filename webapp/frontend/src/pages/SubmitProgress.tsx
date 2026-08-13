@@ -38,9 +38,9 @@ export default function SubmitProgress() {
     try {
       const parsed = JSON.parse(raw);
       const attempts: AttemptIn[] = Array.isArray(parsed) ? parsed : parsed.attempts;
-      if (!attempts?.length) throw new Error("payload must be an array of attempts (or {attempts: [...]})");
+      if (!attempts?.length) throw new Error("The payload must be an array of attempts (or {attempts: [...]}).");
       const out = await api.appendAttempts(Number(id), attempts);
-      setResult(`Appended ${out.appended} attempt(s); dispatch queued.`);
+      setResult(`The platform appended ${out.appended} attempt(s). The dispatch is queued.`);
       await refresh();
     } catch (e: unknown) {
       setErr(String(e));
@@ -50,7 +50,7 @@ export default function SubmitProgress() {
   }
 
   if (err && !progress) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!progress || !meta) return <div className="empty">Loading…</div>;
+  if (!progress || !meta) return <div className="empty">Please wait…</div>;
 
   const pct = progress.total_supported > 0
     ? (progress.accepted / progress.total_supported) * 100 : 0;
@@ -94,11 +94,11 @@ export default function SubmitProgress() {
         <h2 style={{ marginBottom: 4 }}>Append attempts</h2>
         <div className="card col">
           <p className="muted" style={{ marginTop: 0 }}>
-            Paste an array of attempts (or <code>{"{attempts: [...]}"}</code>). Each attempt re-runs through the LeetCode dispatch pipeline and updates this submission's totals. Inference trace is required (≥ 20 chars).
+            Paste an array of attempts (or <code>{"{attempts: [...]}"}</code>). The correctness oracle (LeetCode) checks each attempt and updates the totals of this submission. You must include an inference trace of 20 characters or more.
           </p>
           <textarea rows={12} value={raw} onChange={e => setRaw(e.target.value)} className="code" />
           <div className="row">
-            <button onClick={append} disabled={busy}>{busy ? "Appending…" : "Append attempts"}</button>
+            <button onClick={append} disabled={busy}>{busy ? "Please wait…" : "Append attempts"}</button>
             <button className="secondary" onClick={() => setRaw(APPEND_SAMPLE)} disabled={busy}>Reset to sample</button>
           </div>
           {result && <div className="muted" style={{ color: "var(--accent-2)" }}>{result}</div>}
@@ -128,7 +128,7 @@ export default function SubmitProgress() {
               ))}
             </ul>
             {filteredMissing.length > 500 && (
-              <div className="muted" style={{ marginTop: 8 }}>Showing first 500.</div>
+              <div className="muted" style={{ marginTop: 8 }}>This list shows the first 500 problems.</div>
             )}
           </div>
         )}
@@ -138,7 +138,7 @@ export default function SubmitProgress() {
         <section className="col">
           <h2 style={{ marginBottom: 4 }}>Rejected ({progress.rejected.length})</h2>
           <p className="muted" style={{ marginTop: 0 }}>
-            These problems were attempted but didn't pass LeetCode. Re-submit a corrected solution to overwrite the latest run.
+            You attempted these problems, but LeetCode did not accept them. Submit a corrected solution again to replace the latest run.
           </p>
           <div className="card" style={{ padding: 12, maxHeight: 240, overflowY: "auto" }}>
             <ul style={{ margin: 0, paddingLeft: 18, columns: 2, columnGap: 24 }}>

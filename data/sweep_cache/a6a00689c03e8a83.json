@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|remove-invalid-parentheses",
+  "code": "object Solution {\n  import scala.collection.mutable\n\n  def removeInvalidParentheses(s: String): List[String] = {\n    def isValid(str: String): Boolean = {\n      var count = 0\n      for (c <- str) {\n        if (c == '(') count += 1\n        else if (c == ')') {\n          count -= 1\n          if (count < 0) return false\n        }\n      }\n      count == 0\n    }\n\n    val res = mutable.ListBuffer[String]()\n    val visited = mutable.HashSet[String]()\n    val queue = mutable.Queue[String]()\n\n    queue.enqueue(s)\n    visited.add(s)\n    var found = false\n\n    while (queue.nonEmpty && !found) {\n      val levelSize = queue.size\n      for (_ <- 0 until levelSize) {\n        val cur = queue.dequeue()\n        if (isValid(cur)) {\n          res += cur\n          found = true\n        }\n        if (!found) {\n          for (i <- cur.indices) {\n            if (cur(i) == '(' || cur(i) == ')') {\n              val next = cur.substring(0, i) + cur.substring(i + 1)\n              if (!visited.contains(next)) {\n                queue.enqueue(next)\n                visited.add(next)\n              }\n            }\n          }\n        }\n      }\n    }\n\n    if (res.isEmpty) List(\"\") else res.toList.distinct\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `remove-invalid-parentheses` in Scala.\n\nGiven a string `s` that contains parentheses and letters, remove the minimum number of invalid parentheses to make the input string valid.\n\nReturn _a list of **unique strings** that are valid with the minimum number of removals_. You may return the answer in **any order**.\n\n**Example 1:**\n\n**Input:** s =  \"()())() \"\n**Output:** \\[ \"(())() \", \"()()() \"\\]\n\n**Example 2:**\n\n**Input:** s =  \"(a)())() \"\n**Output:** \\[ \"(a())() \", \"(a)()() \"\\]\n\n**Example 3:**\n\n**Input:** s =  \")( \"\n**Output:** \\[ \" \"\\]\n\n**Constraints:**\n\n*   `1 <= s.length <= 25`\n*   `s` consists of lowercase English letters and parentheses `'('` and `')'`.\n*   There will be at most `20` parentheses in `s`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  import scala.collection.mutable\n\n  def removeInvalidParentheses(s: String): List[String] = {\n    def isValid(str: String): Boolean = {\n      var count = 0\n      for (c <- str) {\n        if (c == '(') count += 1\n        else if (c == ')') {\n          count -= 1\n          if (count < 0) return false\n        }\n      }\n      count == 0\n    }\n\n    val res = mutable.ListBuffer[String]()\n    val visited = mutable.HashSet[String]()\n    val queue = mutable.Queue[String]()\n\n    queue.enqueue(s)\n    visited.add(s)\n    var found = false\n\n    while (queue.nonEmpty && !found) {\n      val levelSize = queue.size\n      for (_ <- 0 until levelSize) {\n        val cur = queue.dequeue()\n        if (isValid(cur)) {\n          res += cur\n          found = true\n        }\n        if (!found) {\n          for (i <- cur.indices) {\n            if (cur(i) == '(' || cur(i) == ')') {\n              val next = cur.substring(0, i) + cur.substring(i + 1)\n              if (!visited.contains(next)) {\n                queue.enqueue(next)\n                visited.add(next)\n              }\n            }\n          }\n        }\n      }\n    }\n\n    if (res.isEmpty) List(\"\") else res.toList.distinct\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-17T08:24:44.542024+00:00",
+    "wall_clock_ms": 4582,
+    "provider_meta": {
+      "system_fingerprint": "fp_ef7acfd95b",
+      "usage": {
+        "prompt_tokens": 288,
+        "completion_tokens": 303,
+        "total_tokens": 591,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-17T08:24:44.542349+00:00"
+}

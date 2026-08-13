@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|php|find-minimum-time-to-finish-all-jobs",
+  "code": "class Solution {\n\n    /**\n     * @param Integer[] $jobs\n     * @param Integer $k\n     * @return Integer\n     */\n    function minimumTimeRequired($jobs, $k) {\n        n = count($jobs);\n        sort($jobs);\n        $jobs = array_reverse($jobs); // Sort descending order\n        \n        $left = max($jobs);\n        $right = array_sum($jobs);\n        $res = $right;\n\n        $workerTimes = array_fill(0, $k, 0);\n\n        // Check if it's possible to assign jobs such that max working time <= limit\n        function canAssign($jobs, $workerTimes, $limit, $index, $k) {\n            if ($index == count($jobs)) {\n                return true;\n            }\n\n            $job = $jobs[$index];\n\n            $used = [];\n            for ($i = 0; $i < $k; $i++) {\n                if ($workerTimes[$i] + $job <= $limit && !isset($used[$workerTimes[$i]])) {\n                    $workerTimes[$i] += $job;\n                    if (canAssign($jobs, $workerTimes, $limit, $index + 1, $k)) {\n                        return true;\n                    }\n                    $workerTimes[$i] -= $job;\n                    $used[$workerTimes[$i]] = true;\n\n                    // If worker has no jobs assigned and still didn't lead to solution, no point trying next empty worker\n                    if ($workerTimes[$i] == 0) {\n                        break;\n                    }\n                }\n            }\n            return false;\n        }\n\n        while ($left <= $right) {\n            $mid = intdiv($left + $right, 2);\n\n            if (canAssign($jobs, $workerTimes, $mid, 0, $k)) {\n                $res = $mid;\n                $right = $mid - 1;\n            } else {\n                $left = $mid + 1;\n            }\n        }\n\n        return $res;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `find-minimum-time-to-finish-all-jobs` in PHP.\n\nYou are given an integer array `jobs`, where `jobs[i]` is the amount of time it takes to complete the `ith` job.\n\nThere are `k` workers that you can assign jobs to. Each job should be assigned to **exactly** one worker. The **working time** of a worker is the sum of the time it takes to complete all jobs assigned to them. Your goal is to devise an optimal assignment such that the **maximum working time** of any worker is **minimized**.\n\n_Return the **minimum** possible **maximum working time** of any assignment._\n\n**Example 1:**\n\n**Input:** jobs = \\[3,2,3\\], k = 3\n**Output:** 3\n**Explanation:** By assigning each person one job, the maximum time is 3.\n\n**Example 2:**\n\n**Input:** jobs = \\[1,2,4,7,8\\], k = 2\n**Output:** 11\n**Explanation:** Assign the jobs the following way:\nWorker 1: 1, 2, 8 (working time = 1 + 2 + 8 = 11)\nWorker 2: 4, 7 (working time = 4 + 7 = 11)\nThe maximum working time is 11.\n\n**Constraints:**\n\n*   `1 <= k <= jobs.length <= 12`\n*   `1 <= jobs[i] <= 107`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in PHP using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```php code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```php\n<?php\nclass Solution {\n\n    /**\n     * @param Integer[] $jobs\n     * @param Integer $k\n     * @return Integer\n     */\n    function minimumTimeRequired($jobs, $k) {\n        n = count($jobs);\n        sort($jobs);\n        $jobs = array_reverse($jobs); // Sort descending order\n        \n        $left = max($jobs);\n        $right = array_sum($jobs);\n        $res = $right;\n\n        $workerTimes = array_fill(0, $k, 0);\n\n        // Check if it's possible to assign jobs such that max working time <= limit\n        function canAssign($jobs, $workerTimes, $limit, $index, $k) {\n            if ($index == count($jobs)) {\n                return true;\n            }\n\n            $job = $jobs[$index];\n\n            $used = [];\n            for ($i = 0; $i < $k; $i++) {\n                if ($workerTimes[$i] + $job <= $limit && !isset($used[$workerTimes[$i]])) {\n                    $workerTimes[$i] += $job;\n                    if (canAssign($jobs, $workerTimes, $limit, $index + 1, $k)) {\n                        return true;\n                    }\n                    $workerTimes[$i] -= $job;\n                    $used[$workerTimes[$i]] = true;\n\n                    // If worker has no jobs assigned and still didn't lead to solution, no point trying next empty worker\n                    if ($workerTimes[$i] == 0) {\n                        break;\n                    }\n                }\n            }\n            return false;\n        }\n\n        while ($left <= $right) {\n            $mid = intdiv($left + $right, 2);\n\n            if (canAssign($jobs, $workerTimes, $mid, 0, $k)) {\n                $res = $mid;\n                $right = $mid - 1;\n            } else {\n                $left = $mid + 1;\n            }\n        }\n\n        return $res;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-08T16:33:42.373410+00:00",
+    "wall_clock_ms": 7155,
+    "provider_meta": {
+      "system_fingerprint": "fp_1c860afa4b",
+      "usage": {
+        "prompt_tokens": 399,
+        "completion_tokens": 432,
+        "total_tokens": 831,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-08T16:33:42.373699+00:00"
+}

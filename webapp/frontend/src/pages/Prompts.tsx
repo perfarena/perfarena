@@ -38,10 +38,11 @@ export default function Prompts() {
       <div className="hero">
         <h1>Prompt templates</h1>
         <p>
-          The exact prompts the platform uses when producing submissions.
-          Placeholders <code>{"{{slug}}"}</code>, <code>{"{{statement}}"}</code>,{" "}
+          These are the exact prompts that the team sends to the model to
+          produce a submission. The system expands the placeholders{" "}
+          <code>{"{{slug}}"}</code>, <code>{"{{statement}}"}</code>,{" "}
           <code>{"{{language}}"}</code>, <code>{"{{language_display}}"}</code>,{" "}
-          <code>{"{{language_fence}}"}</code> are expanded per problem at run time.
+          and <code>{"{{language_fence}}"}</code> for each problem at run time.
         </p>
       </div>
 
@@ -206,7 +207,7 @@ function PromptForm({
       <h3 style={{ margin: 0 }}>{existing ? `Edit "${existing.name}"` : "Add prompt"}</h3>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <label className="col" style={{ flex: "1 1 260px" }}>
-          <span className="muted">Name (slug-like, used in trace metadata)</span>
+          <span className="muted">Name (slug-like, for the trace metadata)</span>
           <input required value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
         </label>
         <label className="col" style={{ flex: "0 0 160px" }}>
@@ -238,7 +239,7 @@ function PromptForm({
         <textarea rows={2} value={f.notes ?? ""} onChange={e => setF({ ...f, notes: e.target.value })} />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

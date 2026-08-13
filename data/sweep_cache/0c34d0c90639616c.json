@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|rust|best-pairing-total-for-students-and-mentors",
+  "code": "impl Solution {\n    pub fn max_compatibility_sum(students: Vec<Vec<i32>>, mentors: Vec<Vec<i32>>) -> i32 {\n        let m = students.len();\n        let n = students[0].len();\n\n        // Precompute compatibility scores for all student-mentor pairs\n        let mut score = vec![vec![0; m]; m];\n        for i in 0..m {\n            for j in 0..m {\n                let mut s = 0;\n                for k in 0..n {\n                    if students[i][k] == mentors[j][k] {\n                        s += 1;\n                    }\n                }\n                score[i][j] = s;\n            }\n        }\n\n        // Use bitmask dp to assign mentors to students\n        // dp[mask] = max compatibility sum for assigning mentors in mask to first count_ones(mask) students\n        // We'll assign students in order 0..m-1, and mask represents which mentors are assigned\n        let mut dp = vec![0; 1 << m];\n        for mask in 0..(1 << m) {\n            let student_idx = mask.count_ones() as usize;\n            if student_idx == m {\n                continue;\n            }\n            for mentor in 0..m {\n                if (mask & (1 << mentor)) == 0 {\n                    let next_mask = mask | (1 << mentor);\n                    dp[next_mask] = dp[next_mask].max(dp[mask] + score[student_idx][mentor]);\n                }\n            }\n        }\n\n        dp[(1 << m) - 1]\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `best-pairing-total-for-students-and-mentors` in Rust.\n\nConsider a questionnaire made up of `n` items, where each item has an answer of either `0` (no) or `1` (yes).\n\nThe questionnaire was given to `m` students with labels `0` through `m - 1` and to `m` mentors also labeled `0` through `m - 1`. The students' responses appear in a 2D integer array `students`, where `students[i]` lists the answers from the `ith` student (**0-indexed**). The mentors' responses appear similarly in a 2D integer array `mentors`, with `mentors[j]` listing the answers from the `jth` mentor (**0-indexed**).\n\nEvery student receives **one** mentor, and every mentor receives **one** student. For a paired student and mentor, the **compatibility score** counts how many positions hold identical responses across both.\n\n*   As an illustration, if a student replied `[1, 0, 1]` and their mentor replied `[0, 0, 1]`, the compatibility score equals 2 since only the second and third positions match.\n\nYour goal is to choose the assignment of students to mentors that **maximizes** the **sum of the compatibility scores**.\n\nGiven `students` and `mentors`, return _the largest achievable **compatibility score sum**._\n\n**Example 1:**\n\n**Input:** students = \\[\\[1,1,0\\],\\[1,0,1\\],\\[0,0,1\\]\\], mentors = \\[\\[1,0,0\\],\\[0,0,1\\],\\[1,1,0\\]\\]\n**Output:** 8\n**Explanation:** Pair the students with mentors like this:\n- student 0 to mentor 2 with a compatibility score of 3.\n- student 1 to mentor 0 with a compatibility score of 2.\n- student 2 to mentor 1 with a compatibility score of 3.\nThe compatibility score sum is 3 + 2 + 3 = 8.\n\n**Example 2:**\n\n**Input:** students = \\[\\[0,0\\],\\[0,0\\],\\[0,0\\]\\], mentors = \\[\\[1,1\\],\\[1,1\\],\\[1,1\\]\\]\n**Output:** 0\n**Explanation:** Every possible student-mentor pair scores 0.\n\n**Constraints:**\n\n*   `m == students.length == mentors.length`\n*   `n == students[i].length == mentors[j].length`\n*   `1 <= m, n <= 8`\n*   `students[i][k]` is either `0` or `1`.\n*   `mentors[j][k]` is either `0` or `1`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Rust using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```rust code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```rust\nimpl Solution {\n    pub fn max_compatibility_sum(students: Vec<Vec<i32>>, mentors: Vec<Vec<i32>>) -> i32 {\n        let m = students.len();\n        let n = students[0].len();\n\n        // Precompute compatibility scores for all student-mentor pairs\n        let mut score = vec![vec![0; m]; m];\n        for i in 0..m {\n            for j in 0..m {\n                let mut s = 0;\n                for k in 0..n {\n                    if students[i][k] == mentors[j][k] {\n                        s += 1;\n                    }\n                }\n                score[i][j] = s;\n            }\n        }\n\n        // Use bitmask dp to assign mentors to students\n        // dp[mask] = max compatibility sum for assigning mentors in mask to first count_ones(mask) students\n        // We'll assign students in order 0..m-1, and mask represents which mentors are assigned\n        let mut dp = vec![0; 1 << m];\n        for mask in 0..(1 << m) {\n            let student_idx = mask.count_ones() as usize;\n            if student_idx == m {\n                continue;\n            }\n            for mentor in 0..m {\n                if (mask & (1 << mentor)) == 0 {\n                    let next_mask = mask | (1 << mentor);\n                    dp[next_mask] = dp[next_mask].max(dp[mask] + score[student_idx][mentor]);\n                }\n            }\n        }\n\n        dp[(1 << m) - 1]\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T18:26:16.035430+00:00",
+    "wall_clock_ms": 6084,
+    "provider_meta": {
+      "system_fingerprint": "fp_23edd81528",
+      "usage": {
+        "prompt_tokens": 686,
+        "completion_tokens": 339,
+        "total_tokens": 1025,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T18:26:16.035895+00:00"
+}

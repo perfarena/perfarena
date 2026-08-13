@@ -249,6 +249,7 @@ def find_existing_submission(
     optimization_target: str | None = None,
     n_rounds: int = 1,
     competition_slug: str | None = None,
+    harness_slug: str | None = None,
 ) -> dict | None:
     """Most recent ongoing submission for this user that matches the FULL
     experiment cell — model + language + prompt + every placeholder-affecting
@@ -303,6 +304,19 @@ def find_existing_submission(
             # pre-date the per-submission scope and aren't bound to any
             # competition. New rows must match exactly.
             if existing_slug is not None and existing_slug != competition_slug:
+                continue
+        # Harness filter — critical for pipelines that run the same
+        # (model, prompt, language) cell against MULTIPLE perf oracles.
+        # Without this, a --harness arena-local sweep would attach to a
+        # prior leetcode-harness submission for the same cell, and the
+        # arena-local runs would mix with LC verdicts in one Submission
+        # row. The Submission's harness_id maps to harness_slug via
+        # /api/me/submissions; legacy rows (harness_slug=None) match any
+        # requested slug to preserve back-compat with pre-abstraction
+        # data.
+        if harness_slug is not None:
+            existing_harness = s.get("harness_slug") or None
+            if existing_harness is not None and existing_harness != harness_slug:
                 continue
         matches.append(s)
     matches.sort(key=lambda s: s.get("created_at", ""), reverse=True)

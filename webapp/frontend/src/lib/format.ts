@@ -2,7 +2,20 @@ export const DASH = "–";
 
 export function formatRuntime(ms: number | null | undefined): string {
   if (ms == null) return DASH;
-  return `${ms.toFixed(ms < 10 ? 2 : 1)} ms`;
+  if (ms === 0) return "0 ms";
+  // Sub-millisecond values (arena-local per-call measurements can be
+  // 10⁻⁴ ms) would clip to "0.00 ms" under the old fixed-decimal rule.
+  // Scale down to µs / ns using the same SI-prefix pattern as formatEnergy.
+  const abs = Math.abs(ms);
+  let unit = "ms";
+  let scaled = ms;
+  if      (abs >= 1)     { unit = "ms"; scaled = ms;        }
+  else if (abs >= 1e-3)  { unit = "µs"; scaled = ms * 1e3;  }
+  else if (abs >= 1e-6)  { unit = "ns"; scaled = ms * 1e6;  }
+  else                   { unit = "ps"; scaled = ms * 1e9;  }
+  const a = Math.abs(scaled);
+  const dp = a >= 100 ? 0 : a >= 10 ? 1 : 2;
+  return `${scaled.toFixed(dp)} ${unit}`;
 }
 
 export function formatMemory(mb: number | null | undefined): string {
@@ -36,9 +49,37 @@ export function formatDuration(ms: number | null | undefined): string {
  *  Returns DASH for null so callers can render conditionally. */
 export function formatEnergy(j: number | null | undefined): string {
   if (j == null) return DASH;
-  if (j < 1000) return `${j.toFixed(j < 10 ? 2 : 1)} J`;
-  if (j < 1_000_000) return `${(j / 1000).toFixed(2)} kJ`;
-  return `${(j / 1_000_000).toFixed(2)} MJ`;
+  if (j === 0) return "0 J";
+  // Scale to the SI prefix that puts the display value in ~1..999. Covers
+  // MJ (LLM-scale accumulated cost) all the way down to nJ (per-call CPU
+  // energy on tiny benchmarks like the arena-local harness on 2-keys-
+  // keyboard, ~2.5e-6 J). Without this range the formatter clipped every
+  // tiny per-call reading to "0.00 J".
+  const abs = Math.abs(j);
+  let unit = "J";
+  let scaled = j;
+  if      (abs >= 1e6)  { unit = "MJ";  scaled = j / 1e6;  }
+  else if (abs >= 1e3)  { unit = "kJ";  scaled = j / 1e3;  }
+  else if (abs >= 1)    { unit = "J";   scaled = j;        }
+  else if (abs >= 1e-3) { unit = "mJ";  scaled = j * 1e3;  }
+  else if (abs >= 1e-6) { unit = "µJ";  scaled = j * 1e6;  }
+  else if (abs >= 1e-9) { unit = "nJ";  scaled = j * 1e9;  }
+  else                  { unit = "pJ";  scaled = j * 1e12; }
+  // Adaptive precision inside the chosen unit — keep ~3 significant figures
+  // so "486 µJ" doesn't render as "486.00 µJ" and "2.58 µJ" doesn't drop
+  // its meaningful digits to "3 µJ".
+  const a = Math.abs(scaled);
+  const dp = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : 3;
+  return `${scaled.toFixed(dp)} ${unit}`;
+}
+
+/** Per-op time is reported in MICROSECONDS. Reuse formatRuntime's SI-scaler
+ *  (which expects ms) by converting µs → ms, so tiny per-op times render as
+ *  ns / µs and larger ones as ms with the same adaptive precision. e.g.
+ *  50 → "50 µs", 1200 → "1.20 ms". Returns DASH for null. */
+export function formatMicros(us: number | null | undefined): string {
+  if (us == null) return DASH;
+  return formatRuntime(us / 1e3);
 }
 
 export function formatCoefficient(c: number | null | undefined): string {

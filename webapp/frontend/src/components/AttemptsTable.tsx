@@ -18,6 +18,16 @@ import { RunsChart } from "./RunsChart";
 
 export type StatusFilter = "all" | "accepted" | "rejected" | "queued";
 
+/* Subtle "/op" marker appended to runtime cells when the submission was
+ * measured locally (arena-local per-op methodology). Runtime is then time
+ * per single solve, not whole-run wall time — so the qualifier is correct
+ * only for those rows. Memory is peak on both oracles and never gets it. */
+function OpMark({ show }: { show: boolean }) {
+  return show
+    ? <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/op</sup>
+    : null;
+}
+
 export function bucket(a: AttemptResultPayload): Exclude<StatusFilter, "all"> {
   if (a.accepted) return "accepted";
   if (a.status === "queued") return "queued";
@@ -32,7 +42,7 @@ function StatusBadge({ a }: { a: AttemptResultPayload }) {
   // so users can tell them apart from real LC verdicts.
   const isPrefailed = !!a.prefailed_reason;
   const title = isPrefailed
-    ? `client-flagged as malformed (${a.prefailed_reason}) — recorded as failed without LeetCode dispatch; raw response preserved in trace`
+    ? `The client marked this attempt as malformed (${a.prefailed_reason}). The system recorded it as failed and did not dispatch it to LeetCode. The record keeps the raw response.`
     : undefined;
   return (
     <span className={`badge ${cls}`} title={title}>
@@ -41,7 +51,7 @@ function StatusBadge({ a }: { a: AttemptResultPayload }) {
   );
 }
 
-function RunRow({ run }: { run: AttemptRunDetail }) {
+function RunRow({ run, perOp }: { run: AttemptRunDetail; perOp: boolean }) {
   const [open, setOpen] = useState(false);
   const log = run.error_log;
   const showLog = hasErrorLog(log);
@@ -60,7 +70,10 @@ function RunRow({ run }: { run: AttemptRunDetail }) {
             {run.status_msg}
           </span>
         </td>
-        <td className="metric">{formatRuntime(run.runtime_ms)}</td>
+        <td className="metric">
+          {formatRuntime(run.runtime_ms)}
+          <OpMark show={perOp && run.runtime_ms != null} />
+        </td>
         <td className="metric">{formatMemory(run.memory_mb)}</td>
         <td className="metric">{formatPercentile(run.runtime_percentile)}</td>
         <td className="metric">{formatPercentile(run.memory_percentile)}</td>
@@ -102,7 +115,7 @@ function RawLeetCodeResponse({
           {open ? "Hide" : "Show"} raw LeetCode response
         </button>
         <span className="muted" style={{ fontSize: "0.78rem" }}>
-          Full verbatim payload — includes fields the structured log doesn't enumerate.
+          This is the full raw payload. It includes the fields that the structured log does not list.
         </span>
       </div>
       {open && (
@@ -118,7 +131,52 @@ function RawLeetCodeResponse({
 
 type AttemptPanel = null | "runs" | "error" | "provenance" | "log";
 
-function AttemptRow({ a, showEnergy }: { a: AttemptResultPayload; showEnergy: boolean }) {
+/* Round-chain header rendered inline with the problem slug when the row is
+ * part of an N-round refinement chain (--rounds N in matrix_sweep or
+ * iterative_refine). Shows the round index + a link to the previous round's
+ * attempt so an operator can walk the chain forward-backward and see which
+ * failure informed which retry. */
+function RoundChainBadge({
+  a, chainSize,
+}: { a: AttemptResultPayload; chainSize: number }) {
+  const roundIdx = a.round_index ?? 0;
+  const prevAid = a.previous_attempt_id ?? null;
+  if (chainSize <= 1) return null;   // no chain — hide the badge entirely
+  const isRefinementStart = roundIdx === 0;
+  return (
+    <div className="row" style={{ gap: 6, marginTop: 3, alignItems: "center" }}>
+      <span className="badge"
+            title={
+              isRefinementStart
+                ? "Round 0 is the first attempt and starts with no prior context. The system adds its verdict and error log to the prompt for round 1."
+                : `The system generated round ${roundIdx} after it read the LeetCode verdict and error log of round ${roundIdx - 1}. It passes them through {{rounds_history}}.`
+            }
+            style={{
+              fontSize: "0.72rem", padding: "1px 6px",
+              background: isRefinementStart ? "var(--panel-2)" : "var(--accent-soft)",
+              borderColor: isRefinementStart ? "var(--border)" : "var(--accent)",
+            }}>
+        round {roundIdx}
+      </span>
+      {prevAid != null && (
+        <span className="muted" style={{ fontSize: "0.72rem" }}>
+          ← from #{prevAid}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function AttemptRow({
+  a, showEnergy, showRuntimeEnergy, showMemory, chainSize, perOp,
+}: {
+  a: AttemptResultPayload;
+  showEnergy: boolean;
+  showRuntimeEnergy: boolean;
+  showMemory: boolean;
+  chainSize: number;
+  perOp: boolean;
+}) {
   const [open, setOpen] = useState<AttemptPanel>(null);
   // "Error log" at the attempt level surfaces the LAST run's error (the most
   // recent dispatch). Per-run errors are still reachable through the runs
@@ -137,27 +195,44 @@ function AttemptRow({ a, showEnergy }: { a: AttemptResultPayload; showEnergy: bo
         <td>
           <Link to={`/problems/${a.problem_slug}`}><code>{a.problem_slug}</code></Link>
           <div className="muted" style={{ fontSize: "0.75rem" }}>{a.level}</div>
+          <RoundChainBadge a={a} chainSize={chainSize} />
         </td>
         <td><StatusBadge a={a} /></td>
         <td className="metric">{a.n_accepted_runs}/{a.n_runs || "–"}</td>
-        <td className="metric">{formatRuntime(a.avg_runtime_ms)}</td>
-        <td className="metric">{formatRuntime(a.best_runtime_ms)}</td>
-        <td className="metric">{formatMemory(a.avg_memory_mb)}</td>
-        <td className="metric">{formatMemory(a.best_memory_mb)}</td>
+        <td className="metric">
+          {formatRuntime(a.avg_runtime_ms)}
+          <OpMark show={perOp && a.avg_runtime_ms != null} />
+        </td>
+        <td className="metric">
+          {formatRuntime(a.best_runtime_ms)}
+          <OpMark show={perOp && a.best_runtime_ms != null} />
+        </td>
+        {showMemory && (
+          <td className="metric">{formatMemory(a.avg_memory_mb)}</td>
+        )}
+        {showMemory && (
+          <td className="metric">{formatMemory(a.best_memory_mb)}</td>
+        )}
+        {showRuntimeEnergy && (
+          <td className="metric">{formatEnergy(a.avg_runtime_energy_j)}</td>
+        )}
+        {showRuntimeEnergy && (
+          <td className="metric">{formatEnergy(a.best_runtime_energy_j)}</td>
+        )}
         <td className="metric">
           {formatPercentile(a.avg_runtime_percentile)} / {formatPercentile(a.avg_memory_percentile)}
         </td>
-        <td className="metric" title="$ cost of this LLM call (0 for Ollama)">
+        <td className="metric" title="The cost of this LLM call in dollars. The cost is 0 for Ollama.">
           {a.cost_usd == null ? "–" : `$${a.cost_usd.toFixed(4)}`}
         </td>
-        <td className="metric" title="code-only response tokens (estimate)">
+        <td className="metric" title="The response tokens for code only. This is an estimate.">
           {a.response_tokens == null ? "–" : a.response_tokens.toLocaleString()}
         </td>
-        <td className="metric" title="generation wall-clock for this solution">
+        <td className="metric" title="The generation wall-clock time for this solution.">
           {formatDuration(a.wall_clock_ms)}
         </td>
         {showEnergy && (
-          <td className="metric" title="generation energy for this solution (Joules)">
+          <td className="metric" title="The generation energy for this solution in Joules.">
             {formatEnergy(a.generation_energy_j)}
           </td>
         )}
@@ -190,7 +265,7 @@ function AttemptRow({ a, showEnergy }: { a: AttemptResultPayload; showEnergy: bo
       </tr>
       {open !== null && (
         <tr>
-          <td colSpan={showEnergy ? 13 : 12} style={{
+          <td colSpan={10 + (showMemory ? 2 : 0) + (showRuntimeEnergy ? 2 : 0) + (showEnergy ? 1 : 0)} style={{
             background: open === "error" ? "rgba(255,80,80,0.06)" : "rgba(127,127,127,0.06)",
           }}>
             {open === "runs" && (
@@ -198,11 +273,11 @@ function AttemptRow({ a, showEnergy }: { a: AttemptResultPayload; showEnergy: bo
                 <RunsChart runs={a.runs} />
                 <table className="tbl" style={{ margin: 0 }}>
                   <thead><tr>
-                    <th>Run</th><th>Status</th><th>Runtime</th><th>Memory</th>
+                    <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>
                     <th>RT %ile</th><th>Mem %ile</th><th>Tests</th><th></th>
                   </tr></thead>
                   <tbody>
-                    {a.runs.map(r => <RunRow key={r.run_index} run={r} />)}
+                    {a.runs.map(r => <RunRow key={r.run_index} run={r} perOp={perOp} />)}
                   </tbody>
                 </table>
               </div>
@@ -219,19 +294,66 @@ function AttemptRow({ a, showEnergy }: { a: AttemptResultPayload; showEnergy: bo
   );
 }
 
-export default function AttemptsTable({ rows }: { rows: AttemptResultPayload[] }) {
-  if (rows.length === 0) return <div className="empty">No attempts to show.</div>;
-  // Energy column appears only when at least one attempt reports a measurement.
-  // LeetCode-only data paths leave every row null and the column stays hidden.
+export default function AttemptsTable(
+  { rows, perOp = false }: { rows: AttemptResultPayload[]; perOp?: boolean },
+) {
+  if (rows.length === 0) return <div className="empty">There are no attempts to show.</div>;
+  // Generation-energy column (LLM-side) — only rendered when at least one
+  // row reports it.
   const showEnergy = rows.some(a => a.generation_energy_j != null);
-  // Newest first. Sort by `submitted_at` when present (it's the trace log
-  // timestamp, set at ingest), and fall back to attempt_id for any row
-  // where the timestamp didn't get backfilled. Both are monotonic with
-  // creation order, so the fallback never reorders relative to itself.
+  // Runtime-energy columns (execution-side, third perf axis) — only rendered
+  // when a harness measured it. arena-local imports populate this; LC-only
+  // submissions leave every row null and the columns stay hidden.
+  const showRuntimeEnergy = rows.some(
+    a => a.avg_runtime_energy_j != null || a.best_runtime_energy_j != null,
+  );
+  // Memory columns render only when at least one row has a value. The
+  // arena-local harness doesn't measure memory yet — hiding these prevents
+  // rows of "–" placeholders for arena-local imports.
+  const showMemory = rows.some(
+    a => a.avg_memory_mb != null || a.best_memory_mb != null,
+  );
+  // How many attempts share each problem_slug — > 1 means the slug is part
+  // of an N-round refinement chain, so the row's `RoundChainBadge` should
+  // render. Single-attempt slugs keep the classic flat layout (no badge).
+  const chainSize: Record<string, number> = {};
+  for (const a of rows) {
+    chainSize[a.problem_slug] = (chainSize[a.problem_slug] ?? 0) + 1;
+  }
+  const anyChain = Object.values(chainSize).some(n => n > 1);
+  // Sort order:
+  //  • If ANY slug is a chain: group by problem_slug so the chain reads as
+  //    a single vertical block, and within a chain order by round_index
+  //    ASCENDING (round 0 first, then round 1, then round 2 …) so the
+  //    refinement reads top-to-bottom. Groups themselves are ordered by
+  //    the newest attempt inside them so recent activity floats up.
+  //  • Otherwise: keep the legacy newest-first flat ordering by
+  //    submitted_at → attempt_id (both monotonic with creation).
+  //
   // Sort on a defensive COPY so the parent's rows array stays untouched
-  // (React state immutability + downstream consumers that rely on stable
-  // input ordering for memoisation).
+  // (React state immutability + downstream memoisation).
   const sorted = [...rows].sort((a, b) => {
+    if (anyChain) {
+      if (a.problem_slug !== b.problem_slug) {
+        // Order groups by the newest attempt inside each — recency for the
+        // group as a whole, not per-round.
+        const newestForGroup = (slug: string): number => {
+          let t = 0;
+          for (const r of rows) {
+            if (r.problem_slug !== slug) continue;
+            const rt = r.submitted_at ? Date.parse(r.submitted_at) : r.attempt_id;
+            if (rt > t) t = rt;
+          }
+          return t;
+        };
+        return newestForGroup(b.problem_slug) - newestForGroup(a.problem_slug);
+      }
+      // Same slug → chain order (round 0 first).
+      const ra = a.round_index ?? 0;
+      const rb = b.round_index ?? 0;
+      if (ra !== rb) return ra - rb;
+      return a.attempt_id - b.attempt_id;
+    }
     const ta = a.submitted_at ? Date.parse(a.submitted_at) : 0;
     const tb = b.submitted_at ? Date.parse(b.submitted_at) : 0;
     if (ta !== tb) return tb - ta;
@@ -242,20 +364,33 @@ export default function AttemptsTable({ rows }: { rows: AttemptResultPayload[] }
       <table className="tbl">
         <thead><tr>
           <th>Problem</th><th>Status</th>
-          <th title="accepted runs / total dispatch runs">Runs ✓</th>
-          <th title="mean over accepted runs">Avg runtime</th>
-          <th title="fastest single run">Best runtime</th>
-          <th title="mean over accepted runs">Avg memory</th>
-          <th title="leanest single run">Best memory</th>
-          <th title="avg runtime / memory percentile">%ile (rt/mem)</th>
-          <th title="$ cost of this LLM call (one sample)">Cost</th>
-          <th title="code-only response tokens (estimate)">Tokens</th>
-          <th title="generation wall-clock for this solution">Gen time</th>
-          {showEnergy && <th title="generation energy for this solution (Joules)">Gen energy</th>}
+          <th title="The number of accepted runs out of the total dispatch runs.">Runs ✓</th>
+          <th title="The mean runtime over the accepted runs.">Avg runtime</th>
+          <th title="The fastest single run.">Best runtime</th>
+          {showMemory && <th title="The mean peak memory (maximum resident) over the accepted runs. This is peak memory on both oracles. It is never per-op.">Peak mem</th>}
+          {showMemory && <th title="The lowest peak memory of any single run.">Best peak mem</th>}
+          {showRuntimeEnergy && (
+            <th title="Runtime energy in Joules. This is the execution energy that this solution consumes when it runs. Harnesses with execution instruments report this value, for example arena-local. A lower value is better.">Avg energy</th>
+          )}
+          {showRuntimeEnergy && (
+            <th title="The best (least) runtime energy across the dispatch runs. It has the same source as the Avg energy column.">Best energy</th>
+          )}
+          <th title="The average runtime percentile and the average memory percentile.">%ile (rt/mem)</th>
+          <th title="The cost of this LLM call in dollars for one sample.">Cost</th>
+          <th title="The response tokens for code only. This is an estimate.">Tokens</th>
+          <th title="The generation wall-clock time for this solution.">Gen time</th>
+          {showEnergy && <th title="The generation energy for this solution in Joules.">Gen energy</th>}
           <th></th>
         </tr></thead>
         <tbody>
-          {sorted.map(a => <AttemptRow key={a.attempt_id} a={a} showEnergy={showEnergy} />)}
+          {sorted.map(a => (
+            <AttemptRow key={a.attempt_id} a={a}
+                        showEnergy={showEnergy}
+                        showRuntimeEnergy={showRuntimeEnergy}
+                        showMemory={showMemory}
+                        perOp={perOp}
+                        chainSize={chainSize[a.problem_slug] ?? 1} />
+          ))}
         </tbody>
       </table>
     </div>

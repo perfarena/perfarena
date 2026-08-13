@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|php|burst-balloons",
+  "code": "class Solution {\n    /**\n     * @param Integer[] $nums\n     * @return Integer\n     */\n    function maxCoins($nums) {\n        $n = count($nums);\n        // Add 1 to both ends to simplify calculations\n        $points = array_merge([1], $nums, [1]);\n        // DP array: dp[left][right] = max coins obtained \n        // by bursting all balloons between left and right (exclusive)\n        $dp = array_fill(0, $n + 2, array_fill(0, $n + 2, 0));\n        \n        // we only consider intervals with length >= 2 (left + 1 < right)\n        for ($length = 2; $length <= $n + 1; $length++) {\n            for ($left = 0; $left + $length <= $n + 1; $left++) {\n                $right = $left + $length;\n                for ($k = $left + 1; $k < $right; $k++) {\n                    // last burst balloon k in (left, right)\n                    $coins = $points[$left] * $points[$k] * $points[$right];\n                    $coins += $dp[$left][$k] + $dp[$k][$right];\n                    $dp[$left][$right] = max($dp[$left][$right], $coins);\n                }\n            }\n        }\n        return $dp[0][$n + 1];\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `burst-balloons` in PHP.\n\nYou are given `n` balloons, indexed from `0` to `n - 1`. Each balloon is painted with a number on it represented by an array `nums`. You are asked to burst all the balloons.\n\nIf you burst the `ith` balloon, you will get `nums[i - 1] * nums[i] * nums[i + 1]` coins. If `i - 1` or `i + 1` goes out of bounds of the array, then treat it as if there is a balloon with a `1` painted on it.\n\nReturn _the maximum coins you can collect by bursting the balloons wisely_.\n\n**Example 1:**\n\n**Input:** nums = \\[3,1,5,8\\]\n**Output:** 167\n**Explanation:**\nnums = \\[3,1,5,8\\] --> \\[3,5,8\\] --> \\[3,8\\] --> \\[8\\] --> \\[\\]\ncoins =  3\\*1\\*5    +   3\\*5\\*8   +  1\\*3\\*8  + 1\\*8\\*1 = 167\n\n**Example 2:**\n\n**Input:** nums = \\[1,5\\]\n**Output:** 10\n\n**Constraints:**\n\n*   `n == nums.length`\n*   `1 <= n <= 300`\n*   `0 <= nums[i] <= 100`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in PHP using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```php code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```php\n<?php\nclass Solution {\n    /**\n     * @param Integer[] $nums\n     * @return Integer\n     */\n    function maxCoins($nums) {\n        $n = count($nums);\n        // Add 1 to both ends to simplify calculations\n        $points = array_merge([1], $nums, [1]);\n        // DP array: dp[left][right] = max coins obtained \n        // by bursting all balloons between left and right (exclusive)\n        $dp = array_fill(0, $n + 2, array_fill(0, $n + 2, 0));\n        \n        // we only consider intervals with length >= 2 (left + 1 < right)\n        for ($length = 2; $length <= $n + 1; $length++) {\n            for ($left = 0; $left + $length <= $n + 1; $left++) {\n                $right = $left + $length;\n                for ($k = $left + 1; $k < $right; $k++) {\n                    // last burst balloon k in (left, right)\n                    $coins = $points[$left] * $points[$k] * $points[$right];\n                    $coins += $dp[$left][$k] + $dp[$k][$right];\n                    $dp[$left][$right] = max($dp[$left][$right], $coins);\n                }\n            }\n        }\n        return $dp[0][$n + 1];\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-08T11:06:10.604389+00:00",
+    "wall_clock_ms": 11133,
+    "provider_meta": {
+      "system_fingerprint": "fp_8a1cea7c77",
+      "usage": {
+        "prompt_tokens": 404,
+        "completion_tokens": 318,
+        "total_tokens": 722,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-08T11:06:10.604695+00:00"
+}

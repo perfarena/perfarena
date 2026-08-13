@@ -35,18 +35,30 @@ from sqlmodel import Session, select
 
 from . import leetcode_dist
 from .db import engine
+from . import arena_local_runner as _arena
 from .models import (
     Attempt, Baseline, BaselineRefreshState,
-    Competition, CompetitionProblem,
+    Competition, CompetitionProblem, Harness, Machine,
     Problem, Run, Submission, SubmissionStatus,
 )
 
 def _resolve_leetbot() -> Path:
     """Locate leetbot.py across the layouts we actually deploy to:
       1. ARENA_LEETBOT — explicit override for ops.
-      2. <repo_root>/leetbot.py — source-tree dev runs.
-      3. /app/leetbot.py — container layout (Dockerfile copies it there).
+      2. /app/leetbot.py — container layout (Dockerfile copies it there).
+      3. <repo_root>/leetbot.py — source-tree dev runs.
       4. /leetbot.py — legacy fallback path (older container images).
+
+    /app/leetbot.py MUST be tried before the source-tree fallback: inside
+    the container, `Path(__file__).parent.parent.parent.parent` computes
+    to `/`, so `src_layout` accidentally resolves to `/leetbot.py`. If we
+    picked that first, subprocess cwd would be `/` — where `/app` is a
+    directory but not a Python package (the real package is `/app/app/`)
+    — and leetbot's `from app.leetcode_accounts import …` would silently
+    fail. That would fall back to the single-account .env path, using the
+    stale LEETCODE_SESSION from container env, and the pool rotation
+    would appear broken with "no signed-in LeetCode account available"
+    even though the pool is healthy.
 
     Returns the first existing candidate; if nothing exists yet we fall
     back to the source-tree default so error messages name the path a
@@ -56,7 +68,7 @@ def _resolve_leetbot() -> Path:
     if override:
         return Path(override)
     src_layout = Path(__file__).parent.parent.parent.parent / "leetbot.py"
-    candidates = (src_layout, Path("/app/leetbot.py"), Path("/leetbot.py"))
+    candidates = (Path("/app/leetbot.py"), src_layout, Path("/leetbot.py"))
     for cand in candidates:
         if cand.is_file():
             return cand
@@ -64,6 +76,162 @@ def _resolve_leetbot() -> Path:
 
 
 LEETBOT = _resolve_leetbot()
+
+
+def _resolve_effective_harness(session: "Session", sub: Submission) -> Harness | None:
+    """Which Harness this submission dispatches against.
+
+    Every Submission carries its own harness_id (the API enforces
+    `harness_slug` required on POST). We used to fall back to the
+    competition's default when Submission.harness_id was NULL, but
+    Competition is now decoupled from Harness — the field no longer
+    exists in the CRUD API and legacy rows have been backfilled to
+    `leetcode` (id=1). Any remaining NULL after that migration means
+    a Submission got written by a code path that bypassed the API
+    contract — surfacing None here forces the dispatcher onto the
+    legacy leetbot fallback (which is `leetcode` by construction),
+    matching what those rows would have inherited before.
+    """
+    if sub.harness_id is not None:
+        h = session.get(Harness, sub.harness_id)
+        if h is not None:
+            return h
+    return None
+
+
+def _is_remote_runner_harness(h: Harness | None) -> bool:
+    """True when the harness dispatches via a remote HTTP runner rather
+    than leetbot. Requires both an arena-local-ish kind AND a configured
+    endpoint — a placeholder harness row with kind='arena-local' but no
+    config still falls through to the leetbot path so operators can
+    stage a new harness without dispatching submissions to a broken URL."""
+    if h is None:
+        return False
+    if h.kind not in ("arena-local", "custom"):
+        return False
+    cfg = h.config or {}
+    return bool(cfg.get("endpoint"))
+
+
+def _upsert_machine(session: "Session", desc: dict) -> Machine:
+    """Find-or-create the Machine row for a runner-reported descriptor.
+    Identity is (name, hostname) — a stable pair for a given box. Non-key
+    attributes (cpu_model, cores, energy_source, os) are refreshed on match
+    so a hardware/OS detail correction lands without a manual edit."""
+    name = desc.get("name") or "unknown"
+    hostname = desc.get("hostname")
+    q = select(Machine).where(Machine.name == name)
+    if hostname is not None:
+        q = q.where(Machine.hostname == hostname)
+    m = session.exec(q).first()
+    if m is None:
+        m = Machine(
+            name=name, hostname=hostname,
+            cpu_model=desc.get("cpu_model"), cores=desc.get("cores"),
+            energy_source=desc.get("energy_source"), os=desc.get("os"),
+        )
+        session.add(m)
+        session.commit()
+        session.refresh(m)
+    else:
+        m.cpu_model = desc.get("cpu_model") or m.cpu_model
+        m.cores = desc.get("cores") or m.cores
+        m.energy_source = desc.get("energy_source") or m.energy_source
+        m.os = desc.get("os") or m.os
+        session.add(m)
+    return m
+
+
+def _stamp_submission_provenance(
+    session: "Session", sub: Submission,
+    tools: set[str], machines: list[dict],
+) -> None:
+    """Enforce ONE energy tool + ONE machine per submission (Parts 2+3).
+
+    A submission dispatches to a single runner, so its runs must all report
+    the same energy tool and machine. If the runner reported more than one
+    distinct tool/machine (should not happen — surfaced here rather than
+    silently averaging across incomparable measurements), we refuse to
+    stamp a mixed value and log the conflict; the per-run numbers are still
+    persisted, but the submission-level tool/machine stays unset so no one
+    mistakes it for a single-provenance measurement.
+
+    Also guards re-dispatch: if the submission was already stamped with a
+    machine, a later batch of attempts measured on a DIFFERENT machine is a
+    conflict (energy across machines is not comparable) — we log it and keep
+    the original stamp."""
+    # Energy tool
+    if len(tools) == 1:
+        tool = next(iter(tools))
+        if sub.energy_tool and sub.energy_tool != tool:
+            print(f"[dispatch] sub {sub.id}: energy_tool conflict — already "
+                  f"{sub.energy_tool!r}, new runs report {tool!r}; keeping "
+                  f"original", file=sys.stderr)
+        else:
+            sub.energy_tool = tool
+    elif len(tools) > 1:
+        print(f"[dispatch] sub {sub.id}: MULTIPLE energy tools {sorted(tools)} "
+              f"in one submission — leaving energy_tool unset", file=sys.stderr)
+
+    # Machine — dedupe reported descriptors by (name, hostname)
+    uniq: dict[tuple, dict] = {}
+    for d in machines:
+        uniq[(d.get("name"), d.get("hostname"))] = d
+    if len(uniq) == 1:
+        desc = next(iter(uniq.values()))
+        m = _upsert_machine(session, desc)
+        if sub.machine_id and sub.machine_id != m.id:
+            print(f"[dispatch] sub {sub.id}: machine conflict — already "
+                  f"machine_id={sub.machine_id}, new runs on machine_id={m.id}; "
+                  f"keeping original", file=sys.stderr)
+        else:
+            sub.machine_id = m.id
+    elif len(uniq) > 1:
+        print(f"[dispatch] sub {sub.id}: runs span MULTIPLE machines "
+              f"{sorted(k[0] for k in uniq)} — leaving machine_id unset",
+              file=sys.stderr)
+
+    # Unique measurement-run identifier: a stable opaque handle for THIS
+    # submission's measurement, distinct from the autoincrement id, for
+    # correlating with external measurement logs. Set once, only for
+    # submissions that were actually measured (tool or machine present).
+    if sub.run_uid is None and (tools or uniq):
+        import uuid
+        sub.run_uid = uuid.uuid4().hex
+    session.add(sub)
+
+
+def _resolve_effective_correctness_oracle(
+    session: "Session", sub: Submission,
+) -> "CorrectnessOracle | None":
+    """Which CorrectnessOracle judges this submission.
+
+    Just Submission.correctness_oracle_id — no competition fallback,
+    matching the decoupled harness resolution above. When NULL,
+    correctness comes from the perf harness's own response (LC does
+    both; arena-local's clbg_handler runs `make validate` inside
+    `make measure`).
+    """
+    from .models import CorrectnessOracle  # local import — avoid cycles
+    if sub.correctness_oracle_id is not None:
+        o = session.get(CorrectnessOracle, sub.correctness_oracle_id)
+        if o is not None:
+            return o
+    return None
+
+
+def _is_remote_validate_oracle(o: "CorrectnessOracle | None") -> bool:
+    """True when the oracle judges via a remote HTTP /validate call
+    (rather than piggybacking on the perf harness's own verdict, which
+    is what kind='leetcode' means). Same endpoint-presence rule as the
+    harness variant so a half-configured oracle row can't silently
+    misroute a live sweep."""
+    if o is None:
+        return False
+    if o.kind not in ("arena-local", "custom"):
+        return False
+    cfg = o.config or {}
+    return bool(cfg.get("endpoint"))
 
 # Per-ACCOUNT inter-submission gap. Drives `pick_for_submission(min_gap_s=
 # INTER_DELAY)` — the picker refuses to return an account whose
@@ -839,6 +1007,9 @@ def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -
     a.best_runtime_energy_j = min(en) if en else None
     a.avg_runtime_energy_percentile = _mean(enp)
     a.best_runtime_energy_percentile = max(enp) if enp else None
+    # Per-op solve count (B3) — mean iterations across accepted runs.
+    its = [r["iterations"] for r in accepted if r.get("iterations") is not None]
+    a.avg_iterations = _mean(its)
 
 
 def dispatch_submission(submission_id: int) -> None:
@@ -861,16 +1032,112 @@ def dispatch_submission(submission_id: int) -> None:
             if not session.exec(select(Run).where(Run.attempt_id == a.id)).first()
         ]
 
-        # Pre-flight: in real mode, check LeetCode auth ONCE before burning
-        # through every pending attempt with the same 403. If auth is dead we
-        # stamp a dispatch_warning on each pending attempt and SKIP writing
-        # Run rows entirely — those would just pollute pass@k denominators
-        # with non-verdicts. Because attempts are filtered into `pending` by
-        # "no Run rows yet", the next dispatch call (after credentials are
-        # refreshed) will pick them right back up — the dispatch_warning
-        # column also acts as a retry signal for the polling client.
+        # Resolve which harness this submission dispatches against BEFORE
+        # any pre-flight so we can route the health check + skip the LC
+        # credential pool entirely when the operator picked a remote
+        # runner. Legacy submissions with no harness_id and no
+        # competition-default fall through to the leetbot path unchanged.
+        effective_harness = _resolve_effective_harness(session, sub)
+        use_remote_runner = _is_remote_runner_harness(effective_harness)
+        if use_remote_runner:
+            print(f"[dispatch] sub {submission_id}: harness "
+                  f"{effective_harness.slug!r} kind={effective_harness.kind} "
+                  f"— dispatching to remote runner",
+                  file=sys.stderr)
+
+        # Correctness oracle resolution runs alongside harness resolution
+        # so /validate can gate /measure per attempt. See
+        # `_resolve_effective_correctness_oracle` for the layering rules.
+        effective_correctness = _resolve_effective_correctness_oracle(session, sub)
+        use_remote_validate = _is_remote_validate_oracle(effective_correctness)
+        if use_remote_validate:
+            print(f"[dispatch] sub {submission_id}: correctness oracle "
+                  f"{effective_correctness.slug!r} "
+                  f"kind={effective_correctness.kind} "
+                  f"— will call /validate before /measure per attempt",
+                  file=sys.stderr)
+
+        # Explicit-non-LC harness with missing config → hard fail, do NOT
+        # silently fall through to leetbot. If the operator picked
+        # `arena-local` on the submission or the competition, we must
+        # honour that choice — the alternative is misrouting real
+        # arena-local sweeps to LeetCode without telling anyone, which
+        # is exactly the bug that made this comment necessary.
+        if (real and pending and effective_harness is not None
+                and effective_harness.kind in ("arena-local", "custom")
+                and not use_remote_runner):
+            cfg_missing = not (effective_harness.config or {}).get("endpoint")
+            warn = (
+                f"Harness {effective_harness.slug!r} (kind={effective_harness.kind}) "
+                f"has no runnable endpoint configured. Set "
+                f"`config.endpoint` on /harnesses (and `auth_token` when the "
+                f"runner requires one), then re-run — the attempts are still "
+                f"pending because no Run rows were written. "
+            ) if cfg_missing else (
+                f"Harness {effective_harness.slug!r} refused a health check. "
+            )
+            print(f"[dispatch] {warn}", file=sys.stderr)
+            for a in pending:
+                a.dispatch_warning = warn
+                session.add(a)
+            session.commit()
+            return
+
+        # Pre-flight: in real mode, check the harness's health ONCE before
+        # burning through every pending attempt with the same failure. If
+        # the runner (leetbot's LC pool OR a remote /healthz) is dead we
+        # stamp a dispatch_warning on each pending attempt and SKIP
+        # writing Run rows entirely — those would just pollute pass@k
+        # denominators with non-verdicts. Because attempts are filtered
+        # into `pending` by "no Run rows yet", the next dispatch call
+        # (after credentials/runner are fixed) will pick them right back
+        # up — the dispatch_warning column also acts as a retry signal
+        # for the polling client.
         auth_error: str | None = None
-        if real and pending:
+        if real and pending and use_remote_runner:
+            ok, msg = _arena.probe_healthz(effective_harness)
+            if not ok:
+                auth_error = msg
+                print(f"[dispatch] remote runner health check failed: {msg}",
+                      file=sys.stderr)
+                warn = (
+                    f"Runner unreachable: {msg}. Fix via the SPA's admin "
+                    f"→ Harnesses page (set config.endpoint / auth_token, "
+                    f"or start the runner process), then re-run the sweep "
+                    f"— the attempts will be retried automatically because "
+                    f"no Run rows were recorded."
+                )
+                for a in pending:
+                    a.dispatch_warning = warn
+                    session.add(a)
+                session.commit()
+                return
+        # Correctness oracle pre-flight — same shape as the harness one.
+        # If a remote validate oracle is bound and its /healthz is down,
+        # bail before burning attempts. Runs BEFORE the LC auth check
+        # because if a validate oracle is going to gate every attempt
+        # anyway, an LC auth error would come out after the validate
+        # failure and just add noise.
+        if real and pending and use_remote_validate and not auth_error:
+            ok, msg = _arena.probe_healthz(effective_correctness)
+            if not ok:
+                auth_error = msg
+                print(f"[dispatch] correctness oracle health check failed: "
+                      f"{msg}", file=sys.stderr)
+                warn = (
+                    f"Correctness oracle unreachable: {msg}. Fix on "
+                    f"/oracles (config.endpoint, config.auth_token) or "
+                    f"unbind it from the competition/submission, then "
+                    f"re-run — no Run rows were written so attempts stay "
+                    f"pending."
+                )
+                for a in pending:
+                    a.dispatch_warning = warn
+                    session.add(a)
+                session.commit()
+                return
+
+        if real and pending and not use_remote_runner and not auth_error:
             ok, msg = _check_leetcode_auth()
             if not ok:
                 auth_error = msg
@@ -909,6 +1176,16 @@ def dispatch_submission(submission_id: int) -> None:
         CONSECUTIVE_FAIL_SLEEP_S = 50.0
         consecutive_failures = 0
 
+        # Measurement provenance accumulators (Parts 2+3): every remote run
+        # reports the energy tool + machine it was measured on. A submission
+        # dispatches to exactly ONE runner, so these should collapse to a
+        # single tool / single machine — we assert that after the loop and
+        # stamp the submission. LeetCode dispatches never populate these, so
+        # LC-scored submissions keep energy_tool NULL + machine_id NULL
+        # (= "unknown machine").
+        runner_tools: set[str] = set()
+        runner_machines: list[dict] = []
+
         for idx, a in enumerate(pending):
             # Pause before THIS attempt if we've just crossed the
             # consecutive-fail threshold (3, 6, 9, …). Doing it before
@@ -928,8 +1205,87 @@ def dispatch_submission(submission_id: int) -> None:
             # failure that should produce ZERO Run rows (vs an actual LC
             # verdict like Wrong Answer / TLE which we DO want to persist).
             dispatch_warn: str | None = None
+            # When the /validate gate rejects an attempt, we jump past the
+            # measure branches with `runs` already populated (a single
+            # synthetic verdict Run) — this flag tells the downstream
+            # post-processing that the correctness path already owns
+            # the Run row so it should NOT be double-persisted, only
+            # aggregated.
+            validate_gate_rejected = False
             try:
-                if a.prefailed_reason:
+                if (real and use_remote_validate and not a.prefailed_reason):
+                    # Correctness gate: call /validate BEFORE spending a
+                    # /measure iteration. If not Accepted we persist one
+                    # Run row with the verdict (perf fields NULL) and
+                    # skip the measure branch entirely — saves a lot of
+                    # time on Wrong Answer / Runtime Error solutions.
+                    vr = _arena.validate_via_arena_local(
+                        problem, sub.language, a.code,
+                        effective_correctness,
+                        meta={"submission_id": sub.id, "attempt_id": a.id},
+                    )
+                    if vr.get("system_failure"):
+                        # Transport / auth / parse failure — treat like a
+                        # leetbot outage. Stamp dispatch_warning, write
+                        # zero Run rows, attempt stays pending. Setting
+                        # both `dispatch_warn` and a marker flag lets us
+                        # jump past every measure branch without extra
+                        # control flow — the flag also keeps the outer
+                        # `except Exception` from overwriting our
+                        # carefully-constructed warning.
+                        note = (vr.get("raw_response") or {}).get("note") or ""
+                        dispatch_warn = (
+                            f"{vr['status_msg']}"
+                            + (f": {note}" if note else "")
+                        )
+                        runs = []
+                        validate_gate_rejected = True   # skip measure
+                        print(f"[dispatch] attempt {a.id}: /validate → "
+                              f"SYSTEM FAIL ({vr['status_msg']}) — skipping "
+                              f"/measure, attempt stays pending",
+                              file=sys.stderr)
+                    if vr.get("status_msg") != "Accepted":
+                        # REAL correctness verdict = "not accepted". Persist
+                        # one Run row with the verdict, perf fields NULL,
+                        # correctness_oracle_id stamped. Skip /measure.
+                        session.add(Run(
+                            attempt_id=a.id, run_index=1,
+                            status_msg=vr["status_msg"],
+                            runtime_ms=None, memory_mb=None,
+                            runtime_percentile=None, memory_percentile=None,
+                            runtime_energy_j=None,
+                            runtime_energy_percentile=None,
+                            total_correct=None, total_testcases=None,
+                            raw_response=vr.get("raw_response") or {
+                                "note": "correctness oracle rejected",
+                            },
+                            harness_id=None,       # no /measure happened
+                            correctness_oracle_id=effective_correctness.id,
+                        ))
+                        runs = [{
+                            "status_msg": vr["status_msg"],
+                            "runtime_ms": None, "memory_mb": None,
+                            "runtime_percentile": None, "memory_percentile": None,
+                            "runtime_energy_j": None,
+                            "runtime_energy_percentile": None,
+                            "total_correct": None, "total_testcases": None,
+                            "raw_response": vr.get("raw_response"),
+                            "leetcode_full_response": None,
+                        }]
+                        validate_gate_rejected = True
+                        print(f"[dispatch] attempt {a.id}: /validate → "
+                              f"{vr['status_msg']} — skipping /measure",
+                              file=sys.stderr)
+                    else:
+                        print(f"[dispatch] attempt {a.id}: /validate → "
+                              f"Accepted — proceeding to /measure",
+                              file=sys.stderr)
+
+                if validate_gate_rejected:
+                    # Fall through to persist-runs/aggregate below with
+                    # the single-Run row we just wrote.
+                    pass
+                elif a.prefailed_reason:
                     # Client already flagged this response as malformed (wrong
                     # language extracted, no code, etc.). We record one synthetic
                     # failure run with the reason — no LeetCode quota burned,
@@ -939,6 +1295,103 @@ def dispatch_submission(submission_id: int) -> None:
                         1, a.prefailed_reason,
                         "client-detected malformed response; "
                         "raw model output preserved in attempt.trace",
+                    )
+                elif real and use_remote_runner:
+                    # Arena-local (or a custom HTTP runner) — one POST per
+                    # attempt returns all N repeats. No credential pool, no
+                    # inter-submission delay (the runner box is ours).
+                    _SYSTEM_FAIL = {
+                        "Rate limited", "Auth failed",
+                        "Dispatch timeout", "Dispatch error",
+                        "Dispatch parse error",
+                        "LeetCode transient error",
+                    }
+                    runs_so_far: list[dict] = []
+                    def _persist_run_remote(result: dict, idx_1based: int) -> None:
+                        runs_so_far.append(result)
+                        status_msg = result.get("status_msg", "Unknown")
+                        is_real_verdict = status_msg not in _SYSTEM_FAIL
+                        if is_real_verdict:
+                            # Capture measurement provenance (energy tool +
+                            # machine) so the submission can be stamped with a
+                            # single tool/machine after the loop (Parts 2+3).
+                            if is_real_verdict:
+                                _rp = result.get("energy_tool")
+                                if _rp:
+                                    runner_tools.add(_rp)
+                                _rm = result.get("machine")
+                                if isinstance(_rm, dict) and _rm.get("name"):
+                                    runner_machines.append(_rm)
+                            session.add(Run(
+                                attempt_id=a.id,
+                                run_index=idx_1based,
+                                submission_id_external=result.get("submission_id_external"),
+                                status_msg=status_msg,
+                                runtime_ms=result.get("runtime_ms"),
+                                memory_mb=result.get("memory_mb"),
+                                runtime_percentile=result.get("runtime_percentile"),
+                                memory_percentile=result.get("memory_percentile"),
+                                runtime_energy_j=result.get("runtime_energy_j"),
+                                runtime_energy_percentile=result.get("runtime_energy_percentile"),
+                                # Per-op metrics (Part 4) — looped curated methodology.
+                                iterations=result.get("iterations"),
+                                energy_j_per_op=result.get("energy_j_per_op"),
+                                time_us_per_op=result.get("time_us_per_op"),
+                                total_correct=result.get("total_correct"),
+                                total_testcases=result.get("total_testcases"),
+                                raw_response=result.get("raw_response") or result,
+                                # Stamp the harness so /submissions/{id}
+                                # aggregation can attribute runs to the
+                                # oracle that produced them, matching
+                                # what the import path already does.
+                                harness_id=(effective_harness.id
+                                            if effective_harness else None),
+                                # When a separate correctness oracle is
+                                # bound (e.g. arena-local /validate paired
+                                # with LC /measure — hypothetical, but
+                                # supported), stamp it too. When the perf
+                                # harness itself owns correctness (typical
+                                # arena-local), effective_correctness may
+                                # be None or point at the same runner —
+                                # we still stamp None here since the
+                                # arena-local /measure response already
+                                # carries the correctness verdict inside
+                                # status_msg and we don't want to imply a
+                                # separate oracle judged it.
+                                correctness_oracle_id=(
+                                    effective_correctness.id
+                                    if use_remote_validate else None),
+                            ))
+                            real_so_far = [r for r in runs_so_far
+                                           if r.get("status_msg") not in _SYSTEM_FAIL]
+                            _aggregate_attempt(a, real_so_far, partial=True)
+                            session.add(a)
+                        # Same commit-with-retry pattern as the LC branch.
+                        from sqlalchemy.exc import OperationalError, PendingRollbackError
+                        for retry in range(3):
+                            try:
+                                session.commit(); break
+                            except OperationalError as oe:
+                                if "locked" not in str(oe).lower() or retry == 2:
+                                    raise
+                                session.rollback()
+                                time.sleep(0.5 + 0.5 * retry)
+                                break
+                            except PendingRollbackError:
+                                session.rollback()
+                                time.sleep(0.5)
+                        tail = ("verdict" if is_real_verdict
+                                else f"fail (not persisted) — "
+                                     f"{(result.get('raw_response') or {}).get('note') or 'no detail'}")
+                        print(f"[dispatch] attempt {a.id}: "
+                              f"run {idx_1based}/{REPEATS} → {status_msg} ({tail})",
+                              file=sys.stderr)
+
+                    runs = _arena.dispatch_via_arena_local(
+                        problem, sub.language, a.code, REPEATS,
+                        harness=effective_harness,
+                        on_run_completed=_persist_run_remote,
+                        meta={"submission_id": sub.id, "attempt_id": a.id},
                     )
                 elif real:
                     # Per-account pacing: instead of a fixed cross-attempt
@@ -1260,6 +1713,7 @@ def dispatch_submission(submission_id: int) -> None:
         # Runtime-energy accumulators — populated only when the harness that
         # judged this attempt measured execution energy (LeetCode never does).
         avg_en, best_en, avg_enp, best_enp = [], [], [], []
+        avg_it: list[float] = []       # per-op solve counts (B3)
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
         # Per-submission pass metrics:
         #   pass@1    — Chen unbiased estimator with k=1, i.e. c/n per problem,
@@ -1302,6 +1756,7 @@ def dispatch_submission(submission_id: int) -> None:
             if best.best_memory_mb is not None:    best_mem.append(best.best_memory_mb)
             if best.avg_runtime_percentile is not None:  avg_rtp.append(best.avg_runtime_percentile)
             if best.avg_memory_percentile is not None:   avg_memp.append(best.avg_memory_percentile)
+            if best.avg_iterations is not None:                 avg_it.append(best.avg_iterations)
             if best.avg_runtime_energy_j is not None:            avg_en.append(best.avg_runtime_energy_j)
             if best.best_runtime_energy_j is not None:           best_en.append(best.best_runtime_energy_j)
             if best.avg_runtime_energy_percentile is not None:   avg_enp.append(best.avg_runtime_energy_percentile)
@@ -1357,6 +1812,7 @@ def dispatch_submission(submission_id: int) -> None:
         sub.avg_memory_percentile = _mean(avg_memp)
         # Runtime energy rollup — stays None on LC-scored submissions since
         # every accumulator is empty (LeetCode's payload has no energy key).
+        sub.avg_iterations = _mean(avg_it)
         sub.avg_runtime_energy_j = _mean(avg_en)
         sub.best_runtime_energy_j = _mean(best_en)
         sub.avg_runtime_energy_percentile = _mean(avg_enp)
@@ -1365,6 +1821,10 @@ def dispatch_submission(submission_id: int) -> None:
         sub.time_human_expert = _mean(t_h_exp)
         sub.mem_human_avg = _mean(m_h_avg)
         sub.mem_human_expert = _mean(m_h_exp)
+        # Stamp the single energy tool + machine this submission was measured
+        # on (Parts 2+3). No-op for LeetCode-scored submissions (accumulators
+        # stay empty) so those keep energy_tool NULL + machine_id NULL.
+        _stamp_submission_provenance(session, sub, runner_tools, runner_machines)
         sub.status = SubmissionStatus.judged
         session.add(sub)
         session.commit()

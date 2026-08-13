@@ -35,29 +35,33 @@ export default function Home() {
              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
              style={{ height: 96, width: 96, display: "block", marginBottom: 12 }} />
         <h1 style={{ fontSize: "2.4rem", lineHeight: 1.1 }}>
-          A multi-competition performance Arena for coding LLMs
+          A ranking of code models by performance
         </h1>
         <p style={{ maxWidth: 760, fontSize: "1.1rem", lineHeight: 1.5 }}>
-          PerfArena hosts curated competitions that aim to rank models according to the performance of the code they generate. The
-          original {primary?.n_problems ?? 99}-problem LeetCode set lives
-          alongside any new sets the team adds — HumanEval, CLBG -
-          specific contests, custom problem suites — each with its own
-          leaderboard. The team runs every registered model itself, against
-          the a limited set of curated prompts, so every result is validated, reproducible and the
-          full provenance trace is anchored in an append-only hash chain.
+          PerfArena ranks language models. It ranks them by the performance
+          of the code that they write. Each competition has a problem set and
+          two oracles. The correctness oracle finds if a solution is correct.
+          The performance oracle measures the runtime, the memory, and the
+          energy. Each competition has its own leaderboard. The first
+          competition has the {primary?.n_problems ?? 99} LeetCode problems.
+          The team can add more problem sets. The team runs each model. A run
+          has three steps: the prompt, the solution, and the analysis. The
+          team checks each result. Anyone can do the analysis again and get
+          the same result. A hash chain keeps the full record, and no person
+          can change a result later.
         </p>
         <div className="row" style={{ marginTop: 16, gap: 12, flexWrap: "wrap" }}>
-          <Link to="/competitions"><button>Browse competitions</button></Link>
+          <Link to="/competitions"><button>See the competitions</button></Link>
           <Link to="/rankings"><button className="secondary">Open the leaderboard</button></Link>
-          <Link to="/models"><button className="secondary">Models</button></Link>
-          <Link to="/blog"><button className="secondary">Blog</button></Link>
+          <Link to="/models"><button className="secondary">See the models</button></Link>
+          <Link to="/blog"><button className="secondary">Read the blog</button></Link>
         </div>
       </section>
 
       <section className="col" style={{ gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>Competitions</h2>
-          <Link to="/competitions" className="muted">all competitions →</Link>
+          <Link to="/competitions" className="muted">See all competitions →</Link>
         </div>
         {comps.length === 0 ? (
           <div className="empty">No competitions yet.</div>
@@ -83,13 +87,13 @@ export default function Home() {
           )}
         </h2>
         {top.length === 0 ? (
-          <div className="empty">No judged submissions in this competition yet.</div>
+          <div className="empty">This competition has no scored submissions yet.</div>
         ) : (
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
-                <th title="Registered prompt template used. Different prompts = different experimental cells.">Prompt</th>
+                <th title="The prompt template for this run. A different prompt is a different experiment.">Prompt</th>
                 <th>pass@1</th><th>Runtime %ile</th><th>Memory %ile</th><th></th>
               </tr></thead>
               <tbody>
@@ -121,55 +125,62 @@ export default function Home() {
       </section>
 
       <section>
-        <h2>How the benchmark works</h2>
+        <h2>How it works</h2>
         <div className="row" style={{ gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
-          <Step n={1} title="Pick a competition">
-            Each <Link to="/competitions">competition</Link> defines its own
-            problem set and judge — LeetCode for the seed LC-99 set, future
-            ones may use CLBG / Rosetta Code harnesses. Submissions for the same
-            problem are pooled across competitions that include it.
+          <Step n={1} title="Select a competition">
+            Each <Link to="/competitions">competition</Link> has its own
+            problem set and its own oracles. The first competition uses
+            LeetCode. Later competitions can use other problem sets and other
+            oracles. If two competitions have the same problem, they share its
+            submissions.
           </Step>
-          <Step n={2} title="Registered + prompted">
-            Builders who want their model evaluated grant the team access by providing an endpoint to access the model and the respective specs.
-            The model joins the <Link to="/models">model list</Link>; runs
-            use the published <Link to="/prompts">prompts</Link> as-is so
-            the experiment is reproducible.
+          <Step n={2} title="Register a model">
+            Give the team an endpoint to your model and the model
+            specifications. The team adds the model to the{" "}
+            <Link to="/models">model list</Link>. Each run uses a{" "}
+            <Link to="/prompts">prompt</Link> from the list. The prompt does
+            not change, so you can do the run again.
           </Step>
-          <Step n={3} title="Judged automatically">
-            Each solution is dispatched to its competition's judge — for
-            LC-99, LeetCode runs it 5× per attempt to smooth timing noise.
-            Accepted answers count toward pass@1 / pass@k; performance metrics such as runtime and
-            memory and energy  come straight from the performance oracle's judgment, not a synthetic proxy. 
-           </Step>
-          <Step n={4} title="Auditable rankings">
-            Each competition's leaderboard updates as soon as a batch lands.
-            Every attempt carries a structured provenance trace (prompt,
-            response, reasoning, signature, model digest) anchored in an
-            append-only hash chain — so no result can be silently rewritten
-            after the fact.
+          <Step n={3} title="The team runs and scores it">
+            The team runs the full process. Each solution goes to the two
+            oracles. The correctness oracle gives a pass result or a fail
+            result. The performance oracle gives the runtime, the memory, and
+            the energy. For the LeetCode competition, LeetCode runs each
+            attempt five times. This decreases the timing differences. The
+            team counts each accepted solution in the pass@1 score and the
+            pass@k score.
+          </Step>
+          <Step n={4} title="Examine the results">
+            Each leaderboard changes when a new batch of results comes in.
+            PerfArena keeps a full record for each attempt. The record has the
+            prompt, the response, the reasoning, the signature, and the digest
+            of the model. A hash chain protects the record. No person can
+            change a result later.
           </Step>
         </div>
       </section>
 
       <section>
-        <h2>Ground rules</h2>
+        <h2>The rules</h2>
         <ul className="muted" style={{ lineHeight: 1.7 }}>
-          <li>Every submission belongs to one  competition; each competition's leaderboard is computed independently from its own problem set.</li>
-          <li>Each model uses one of the published <Link to="/prompts">prompt templates</Link>; the exact prompt is part of every submission's record.</li>
-          <li>Model identity is captured with a provider-agnostic digest (Ollama sha256, HF revision SHA, OpenAI system fingerprint, etc.).</li>
-          <li>The judge's verdict is final. Solutions that don't compile or time out count as misses.</li>
-          <li>Rankings are openly browsable. The full solutions dataset is downloadable for verification.</li>
+          <li>Each submission is part of one competition. Each leaderboard uses the problem set of its competition.</li>
+          <li>Each model uses one <Link to="/prompts">prompt template</Link> from the list. The record of the submission shows the prompt.</li>
+          <li>PerfArena identifies each model with a digest. The digest works for all providers, for example Ollama sha256, HF revision SHA, or OpenAI system fingerprint.</li>
+          <li>The result from the oracle is final. If a solution does not compile or does not finish in time, it is a fail.</li>
+          <li>Anyone can look at the rankings. Anyone can download the full set of solutions and check the results.</li>
         </ul>
       </section>
 
       <section>
-        <h2>Want your model included?</h2>
+        <h2>Do you want the team to rank your model?</h2>
         <p>
-          All the results are openly available for the community. Contributions to the rankings are  open to research labs, independent builders, and researchers upon request; we welcome new models and can onboard them ourselves once access is granted. We also welcome new competitions built around
-          their own problem set.{" "}
-          See the <Link to="/about">team page</Link> and reach out: we onboard
-          models ourselves once access is granted, and we can scaffold a new
-          competition around a fresh problem suite.
+          All results are open to everyone. The team keeps the rankings up to
+          date. The team also welcomes help. A research lab, an independent
+          builder, or a researcher can ask the team to add a model. Give the
+          team an endpoint. The team then adds the model and monitors each
+          run, from the generation to the analysis. The team can also make a
+          new competition for a different problem set. Look at the{" "}
+          <Link to="/about">team page</Link> to contact the team.
         </p>
       </section>
     </div>

@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|determine-if-points-are-collinear",
+  "code": "bool checkStraightLine(int** coordinates, int coordinatesSize, int* coordinatesColSize){\n    // Extract first two points\n    int x0 = coordinates[0][0], y0 = coordinates[0][1];\n    int x1 = coordinates[1][0], y1 = coordinates[1][1];\n    \n    // Calculate differences for the first segment\n    int dx = x1 - x0;\n    int dy = y1 - y0;\n    \n    for(int i = 2; i < coordinatesSize; i++){\n        int x = coordinates[i][0], y = coordinates[i][1];\n        // Check cross product (dx, dy) x (x - x0, y - y0) == 0\n        // (dx)*(y - y0) - (dy)*(x - x0) == 0 means collinear\n        if (dx * (y - y0) != dy * (x - x0)) {\n            return false;\n        }\n    }\n    return true;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `determine-if-points-are-collinear` in C.\n\nYou are provided with an array `coordinates`, where `coordinates[i] = [x, y]` denotes the position of one point. Decide whether all of these points lie on a single line within the XY plane.\n\n**Example 1:**\n\n**Input:** coordinates = \\[\\[1,2\\],\\[2,3\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[6,7\\]\\]\n**Output:** true\n\n**Example 2:**\n\n**Input:** coordinates = \\[\\[1,1\\],\\[2,2\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[7,7\\]\\]\n**Output:** false\n\n**Constraints:**\n\n*   `2 <= coordinates.length <= 1000`\n*   `coordinates[i].length == 2`\n*   `-10^4 <= coordinates[i][0], coordinates[i][1] <= 10^4`\n*   `coordinates` contains no duplicate point.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\nbool checkStraightLine(int** coordinates, int coordinatesSize, int* coordinatesColSize){\n    // Extract first two points\n    int x0 = coordinates[0][0], y0 = coordinates[0][1];\n    int x1 = coordinates[1][0], y1 = coordinates[1][1];\n    \n    // Calculate differences for the first segment\n    int dx = x1 - x0;\n    int dy = y1 - y0;\n    \n    for(int i = 2; i < coordinatesSize; i++){\n        int x = coordinates[i][0], y = coordinates[i][1];\n        // Check cross product (dx, dy) x (x - x0, y - y0) == 0\n        // (dx)*(y - y0) - (dy)*(x - x0) == 0 means collinear\n        if (dx * (y - y0) != dy * (x - x0)) {\n            return false;\n        }\n    }\n    return true;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T20:05:50.608156+00:00",
+    "wall_clock_ms": 3819,
+    "provider_meta": {
+      "system_fingerprint": "fp_e89fc7b09f",
+      "usage": {
+        "prompt_tokens": 312,
+        "completion_tokens": 217,
+        "total_tokens": 529,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T20:05:50.608698+00:00"
+}

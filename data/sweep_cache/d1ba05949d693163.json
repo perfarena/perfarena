@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|typeahead-product-recommendations",
+  "code": "import java.util.*;\n\nclass Solution {\n    public List<List<String>> suggestedProducts(String[] products, String searchWord) {\n        Arrays.sort(products);\n        List<List<String>> result = new ArrayList<>();\n        int start = 0, end = products.length - 1;\n        \n        for (int i = 0; i < searchWord.length(); i++) {\n            char c = searchWord.charAt(i);\n            // Move start forward if product at start doesn't match prefix\n            while (start <= end && (products[start].length() <= i || products[start].charAt(i) != c)) {\n                start++;\n            }\n            // Move end backward if product at end doesn't match prefix\n            while (start <= end && (products[end].length() <= i || products[end].charAt(i) != c)) {\n                end--;\n            }\n            \n            List<String> suggestions = new ArrayList<>();\n            int remain = Math.min(3, end - start + 1);\n            for (int j = 0; j < remain; j++) {\n                suggestions.add(products[start + j]);\n            }\n            result.add(suggestions);\n        }\n        \n        return result;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `typeahead-product-recommendations` in Java.\n\nA string array `products` is supplied alongside a string `searchWord`.\n\nBuild a system that, after every letter of `searchWord` is entered, proposes up to three product names from `products`. A recommended product must share a prefix with the portion of `searchWord` entered so far. Whenever more than three products share that prefix, return the three that come first in lexicographic order.\n\nReturn _a list of lists giving the recommended products after each letter of_ `searchWord` _has been entered_.\n\n**Example 1:**\n\n**Input:** products = \\[ \"mobile \", \"mouse \", \"moneypot \", \"monitor \", \"mousepad \"\\], searchWord =  \"mouse \"\n**Output:** \\[\\[ \"mobile \", \"moneypot \", \"monitor \"\\],\\[ \"mobile \", \"moneypot \", \"monitor \"\\],\\[ \"mouse \", \"mousepad \"\\],\\[ \"mouse \", \"mousepad \"\\],\\[ \"mouse \", \"mousepad \"\\]\\]\n**Explanation:** products sorted lexicographically = \\[ \"mobile \", \"moneypot \", \"monitor \", \"mouse \", \"mousepad \"\\].\nOnce m and then mo have been entered, every product qualifies and we show the user \\[ \"mobile \", \"moneypot \", \"monitor \"\\].\nOnce mou, mous, and mouse have been entered, the system recommends \\[ \"mouse \", \"mousepad \"\\].\n\n**Example 2:**\n\n**Input:** products = \\[ \"havana \"\\], searchWord =  \"havana \"\n**Output:** \\[\\[ \"havana \"\\],\\[ \"havana \"\\],\\[ \"havana \"\\],\\[ \"havana \"\\],\\[ \"havana \"\\],\\[ \"havana \"\\]\\]\n**Explanation:** The lone word  \"havana \" will keep being recommended throughout typing of the search term.\n\n**Constraints:**\n\n*   `1 <= products.length <= 1000`\n*   `1 <= products[i].length <= 3000`\n*   `1 <= sum(products[i].length) <= 2 * 104`\n*   All the strings of `products` are **unique**.\n*   `products[i]` consists of lowercase English letters.\n*   `1 <= searchWord.length <= 1000`\n*   `searchWord` consists of lowercase English letters.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public List<List<String>> suggestedProducts(String[] products, String searchWord) {\n        Arrays.sort(products);\n        List<List<String>> result = new ArrayList<>();\n        int start = 0, end = products.length - 1;\n        \n        for (int i = 0; i < searchWord.length(); i++) {\n            char c = searchWord.charAt(i);\n            // Move start forward if product at start doesn't match prefix\n            while (start <= end && (products[start].length() <= i || products[start].charAt(i) != c)) {\n                start++;\n            }\n            // Move end backward if product at end doesn't match prefix\n            while (start <= end && (products[end].length() <= i || products[end].charAt(i) != c)) {\n                end--;\n            }\n            \n            List<String> suggestions = new ArrayList<>();\n            int remain = Math.min(3, end - start + 1);\n            for (int j = 0; j < remain; j++) {\n                suggestions.add(products[start + j]);\n            }\n            result.add(suggestions);\n        }\n        \n        return result;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-17T01:43:59.448393+00:00",
+    "wall_clock_ms": 5137,
+    "provider_meta": {
+      "system_fingerprint": "fp_7c5d442c61",
+      "usage": {
+        "prompt_tokens": 578,
+        "completion_tokens": 247,
+        "total_tokens": 825,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-17T01:43:59.448558+00:00"
+}

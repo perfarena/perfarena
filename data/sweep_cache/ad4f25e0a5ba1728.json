@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system|java|remove-invalid-parentheses",
+  "code": "import java.util.*;\n\nclass Solution {\n    public List<String> removeInvalidParentheses(String s) {\n        int leftRemove = 0, rightRemove = 0;\n        for (char c : s.toCharArray()) {\n            if (c == '(') {\n                leftRemove++;\n            } else if (c == ')') {\n                if (leftRemove > 0) leftRemove--;\n                else rightRemove++;\n            }\n        }\n\n        Set<String> result = new HashSet<>();\n        dfs(s, 0, leftRemove, rightRemove, 0, new StringBuilder(), result);\n        return new ArrayList<>(result);\n    }\n\n    private void dfs(String s, int index, int leftRemove, int rightRemove, int balance,\n                     StringBuilder path, Set<String> result) {\n        if (index == s.length()) {\n            if (leftRemove == 0 && rightRemove == 0 && balance == 0) {\n                result.add(path.toString());\n            }\n            return;\n        }\n\n        char c = s.charAt(index);\n        int len = path.length();\n\n        if (c == '(') {\n            if (leftRemove > 0) {\n                dfs(s, index + 1, leftRemove - 1, rightRemove, balance, path, result);\n            }\n            path.append(c);\n            dfs(s, index + 1, leftRemove, rightRemove, balance + 1, path, result);\n            path.setLength(len);\n        } else if (c == ')') {\n            if (rightRemove > 0) {\n                dfs(s, index + 1, leftRemove, rightRemove - 1, balance, path, result);\n            }\n            if (balance > 0) {\n                path.append(c);\n                dfs(s, index + 1, leftRemove, rightRemove, balance - 1, path, result);\n                path.setLength(len);\n            }\n        } else {\n            path.append(c);\n            dfs(s, index + 1, leftRemove, rightRemove, balance, path, result);\n            path.setLength(len);\n        }\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `remove-invalid-parentheses` in Java.\n\nGiven a string `s` that contains parentheses and letters, remove the minimum number of invalid parentheses to make the input string valid.\n\nReturn _a list of **unique strings** that are valid with the minimum number of removals_. You may return the answer in **any order**.\n\n**Example 1:**\n\n**Input:** s =  \"()())() \"\n**Output:** \\[ \"(())() \", \"()()() \"\\]\n\n**Example 2:**\n\n**Input:** s =  \"(a)())() \"\n**Output:** \\[ \"(a())() \", \"(a)()() \"\\]\n\n**Example 3:**\n\n**Input:** s =  \")( \"\n**Output:** \\[ \" \"\\]\n\n**Constraints:**\n\n*   `1 <= s.length <= 25`\n*   `s` consists of lowercase English letters and parentheses `'('` and `')'`.\n*   There will be at most `20` parentheses in `s`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public List<String> removeInvalidParentheses(String s) {\n        int leftRemove = 0, rightRemove = 0;\n        for (char c : s.toCharArray()) {\n            if (c == '(') {\n                leftRemove++;\n            } else if (c == ')') {\n                if (leftRemove > 0) leftRemove--;\n                else rightRemove++;\n            }\n        }\n\n        Set<String> result = new HashSet<>();\n        dfs(s, 0, leftRemove, rightRemove, 0, new StringBuilder(), result);\n        return new ArrayList<>(result);\n    }\n\n    private void dfs(String s, int index, int leftRemove, int rightRemove, int balance,\n                     StringBuilder path, Set<String> result) {\n        if (index == s.length()) {\n            if (leftRemove == 0 && rightRemove == 0 && balance == 0) {\n                result.add(path.toString());\n            }\n            return;\n        }\n\n        char c = s.charAt(index);\n        int len = path.length();\n\n        if (c == '(') {\n            if (leftRemove > 0) {\n                dfs(s, index + 1, leftRemove - 1, rightRemove, balance, path, result);\n            }\n            path.append(c);\n            dfs(s, index + 1, leftRemove, rightRemove, balance + 1, path, result);\n            path.setLength(len);\n        } else if (c == ')') {\n            if (rightRemove > 0) {\n                dfs(s, index + 1, leftRemove, rightRemove - 1, balance, path, result);\n            }\n            if (balance > 0) {\n                path.append(c);\n                dfs(s, index + 1, leftRemove, rightRemove, balance - 1, path, result);\n                path.setLength(len);\n            }\n        } else {\n            path.append(c);\n            dfs(s, index + 1, leftRemove, rightRemove, balance, path, result);\n            path.setLength(len);\n        }\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T16:29:18.502538+00:00",
+    "wall_clock_ms": 3252,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 287,
+        "completion_tokens": 442,
+        "total_tokens": 729,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-5.4-mini-2026-03-17"
+    }
+  },
+  "saved_at": "2026-06-14T16:29:18.503038+00:00"
+}

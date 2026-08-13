@@ -191,6 +191,19 @@ _ADDITIVE_COLUMNS = [
     ("submission", "best_runtime_energy_j", "FLOAT"),
     ("submission", "avg_runtime_energy_percentile", "FLOAT"),
     ("submission", "best_runtime_energy_percentile", "FLOAT"),
+    # Retry-until-accepted workflow flag. See models.Submission.stop_on_accept
+    # for semantics. SQLite has no bool → 0/1 INTEGER; legacy rows stay NULL
+    # and the ingest treats NULL as False (all-rounds behavior).
+    ("submission", "stop_on_accept", "INTEGER"),
+    # Correctness oracle FKs — the decoupled twin of the harness (perf
+    # oracle) FKs above. Same layered binding (Competition → Submission
+    # override → Run captures what actually judged). Legacy rows get
+    # backfilled to the seeded "leetcode" correctness oracle by
+    # _seed_default_correctness_oracle so pre-abstraction data keeps its
+    # implied provenance intact.
+    ("competition", "correctness_oracle_id", "INTEGER"),
+    ("submission", "correctness_oracle_id", "INTEGER"),
+    ("run", "correctness_oracle_id", "INTEGER"),
 ]
 
 
@@ -274,11 +287,56 @@ def _seed_default_harness() -> None:
                 pass
 
 
+def _seed_default_correctness_oracle() -> None:
+    """Seed the built-in "leetcode" correctness oracle (id=1) and backfill
+    every Competition / Submission / Run that lacks a correctness_oracle_id
+    to it. Mirror of _seed_default_harness for the correctness half of the
+    two-oracle model. Idempotent: repeat calls are no-ops."""
+    with engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT id FROM correctnessoracle WHERE slug = 'leetcode' LIMIT 1"
+        )).fetchone()
+        if row is None:
+            from datetime import datetime as _dt
+            conn.execute(text(
+                "INSERT INTO correctnessoracle (slug, name, kind, description, status, created_at) "
+                "VALUES (:slug, :name, :kind, :desc, 'active', :created_at)"
+            ), {
+                "slug": "leetcode",
+                "name": "LeetCode Online Judge",
+                "kind": "leetcode",
+                "desc": (
+                    "LeetCode's public online judge — the correctness half "
+                    "of the two-oracle model. Every Accepted / Wrong Answer "
+                    "/ Runtime Error / Time Limit Exceeded / Compile Error "
+                    "verdict on runs from this oracle comes straight from "
+                    "LC's /check/ endpoint. The legacy default — every "
+                    "competition, submission, and run that predates the "
+                    "correctness-oracle abstraction is backfilled to it."
+                ),
+                "created_at": _dt.utcnow(),
+            })
+            row = conn.execute(text(
+                "SELECT id FROM correctnessoracle WHERE slug = 'leetcode' LIMIT 1"
+            )).fetchone()
+        leetcode_oracle_id = int(row[0])
+        for stmt in (
+            "UPDATE competition SET correctness_oracle_id = :oid WHERE correctness_oracle_id IS NULL",
+            "UPDATE submission SET correctness_oracle_id = :oid WHERE correctness_oracle_id IS NULL",
+            "UPDATE run SET correctness_oracle_id = :oid WHERE correctness_oracle_id IS NULL",
+        ):
+            try:
+                conn.execute(text(stmt), {"oid": leetcode_oracle_id})
+            except Exception:
+                pass
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported before create_all
     SQLModel.metadata.create_all(engine)
     _apply_additive_migrations()
     _seed_default_harness()
+    _seed_default_correctness_oracle()
 
 
 def get_session():

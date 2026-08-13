@@ -66,7 +66,7 @@ export default function Layout() {
       <main><Outlet /></main>
       <footer className="col" style={{ gap: 4 }}>
         <div>
-          Public benchmark · Solutions verified against LeetCode ·
+          Open rankings of code models · anyone can check every result ·
           {" "}<a href="/docs" target="_blank" rel="noreferrer">API docs</a> ·
           {" "}<a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a> ·
           {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
@@ -74,8 +74,8 @@ export default function Layout() {
         </div>
         {/* Consolidated from the former per-page footers on Home / About. */}
         <div>
-          Licensed under the Apache License 2.0. Problem statements © LeetCode;
-          this site is not affiliated with LeetCode.
+          This project has the Apache License 2.0. The problem statements are the
+          property of LeetCode. This site has no connection to LeetCode.
         </div>
       </footer>
     </div>
@@ -175,9 +175,13 @@ function MenuItem({
  * itself as `active` whenever the route is on any sub-page so the user
  * can tell at a glance which tab the current page belongs to. */
 const CATALOG_PATHS = [
-  "/competitions", "/harnesses", "/problems", "/models", "/languages",
-  "/prompts", "/submissions", "/snapshots",
+  "/competitions", "/harnesses", "/correctness-oracles", "/problems",
+  "/models", "/languages", "/prompts", "/submissions", "/snapshots",
 ];
+// /correctness-oracles stays in the highlight set because the DETAIL route
+// (/correctness-oracles/:slug) is still reachable directly — the LIST route
+// now redirects to /harnesses?tab=correctness, but a user landing on a
+// detail deep link should still see the Catalog menu highlighted.
 
 function CatalogMenu() {
   const [open, setOpen] = useState(false);

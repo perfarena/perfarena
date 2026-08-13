@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import errno
 import json
 import os
 import threading
@@ -185,11 +186,37 @@ def _load_raw() -> list[dict]:
 
 def _save_raw(rows: list[dict]) -> None:
     """Atomic write — tmp + rename — so a concurrent reader never sees a
-    half-written file."""
+    half-written file.
+
+    Fallback path for when the destination is a bind-mounted FILE (rather
+    than a regular file inside a bind-mounted directory or a plain path).
+    Docker's file bind mounts pin an inode as a mount point, so
+    `rename(tmp, dest)` returns EBUSY — the kernel refuses to swap a
+    mount point. We detect that specific errno and drop back to a
+    non-atomic in-place write. Still safer than nothing: concurrent
+    readers may see an intermediate state, but the file-bind-mount
+    layout only exists on operator-owned single-node dev boxes where
+    the race window is tiny in practice."""
     ACCOUNTS_JSON.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(rows, indent=2)
     tmp = ACCOUNTS_JSON.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(rows, indent=2))
-    tmp.replace(ACCOUNTS_JSON)
+    tmp.write_text(payload)
+    try:
+        tmp.replace(ACCOUNTS_JSON)
+    except OSError as e:
+        # errno.EBUSY (16) on bind-mounted-file destinations. Fall back
+        # to an in-place write and clean up the .tmp we just created.
+        # Any other errno is a real problem — re-raise so the operator
+        # sees it.
+        if getattr(e, "errno", None) != errno.EBUSY:
+            raise
+        try:
+            ACCOUNTS_JSON.write_text(payload)
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _bootstrap_from_env() -> list[dict]:

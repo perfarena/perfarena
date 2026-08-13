@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|nearest-ancestor-with-coprime-value",
+  "code": "import java.util.*;\n\nclass Solution {\n    int[] nums;\n    List<Integer>[] graph;\n    int[] ans;\n    // For each value from 1 to 50, store a stack of pairs (node, depth)\n    // representing the ancestors with that value currently in the path.\n    Deque<int[]>[] stacks = new Deque[51];\n    \n    public int[] getCoprimes(int[] nums, int[][] edges) {\n        int n = nums.length;\n        this.nums = nums;\n        ans = new int[n];\n        Arrays.fill(ans, -1);\n        \n        graph = new ArrayList[n];\n        for (int i = 0; i < n; i++) graph[i] = new ArrayList<>();\n        for (int[] e : edges) {\n            graph[e[0]].add(e[1]);\n            graph[e[1]].add(e[0]);\n        }\n        \n        for (int i = 1; i <= 50; i++) {\n            stacks[i] = new ArrayDeque<>();\n        }\n        \n        dfs(0, -1, 0);\n        return ans;\n    }\n    \n    private void dfs(int node, int parent, int depth) {\n        int val = nums[node];\n        \n        // Find nearest ancestor with coprime value\n        int nearestAncestor = -1;\n        int nearestDepth = -1;\n        for (int v = 1; v <= 50; v++) {\n            if (gcd(val, v) == 1 && !stacks[v].isEmpty()) {\n                int[] top = stacks[v].peek();\n                if (top[1] > nearestDepth) {\n                    nearestDepth = top[1];\n                    nearestAncestor = top[0];\n                }\n            }\n        }\n        ans[node] = nearestAncestor;\n        \n        // Add current node to stack of its value\n        stacks[val].push(new int[]{node, depth});\n        \n        for (int nxt : graph[node]) {\n            if (nxt != parent) {\n                dfs(nxt, node, depth + 1);\n            }\n        }\n        \n        // Remove current node from stack before backtracking\n        stacks[val].pop();\n    }\n    \n    private int gcd(int a, int b) {\n        while (b != 0) {\n            int t = b;\n            b = a % b;\n            a = t;\n        }\n        return a;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `nearest-ancestor-with-coprime-value` in Java.\n\nConsider a tree (a linked, undirected graph free of cycles) made up of `n` nodes indexed `0` through `n - 1` with precisely `n - 1` connecting edges. Every node carries a value, and the tree's **root** is node `0`.\n\nThe tree is encoded by an integer array `nums` together with a 2D array `edges`. Position `nums[i]` stores the value at node `i`, while each `edges[j] = [uj, vj]` marks a link between nodes `uj` and `vj`.\n\nA pair `x` and `y` is **coprime** when `gcd(x, y) == 1`, where `gcd(x, y)` denotes the **greatest common divisor** of `x` and `y`.\n\nFor any node `i`, an ancestor is any distinct node that lies on the shortest route from `i` up to the **root**. A node is **never** considered its own ancestor.\n\nProduce _an array_ `ans` _of length_ `n`, _whose entry_ `ans[i]` _identifies the nearest ancestor of node_ `i` _whose value is coprime with_ `nums[i]`, or `-1` _when no such ancestor exists_.\n\n**Example 1:**\n\n**Input:** nums = \\[2,3,3,2\\], edges = \\[\\[0,1\\],\\[1,2\\],\\[1,3\\]\\]\n**Output:** \\[-1,0,0,1\\]\n**Explanation:** Each node's value appears in parentheses in the figure above.\n- Node 0 lacks any coprime ancestor.\n- Node 1 owns just one ancestor, node 0. Their values are coprime (gcd(2,3) == 1).\n- Node 2 has ancestors nodes 1 and 0. Node 1's value fails the coprime check (gcd(3,3) == 3), whereas node 0's\n  value succeeds (gcd(2,3) == 1), so node 0 is the nearest qualifying ancestor.\n- Node 3 has ancestors nodes 1 and 0. Node 1 is coprime with it (gcd(3,2) == 1), so node 1 is the nearest\n  qualifying ancestor.\n\n**Example 2:**\n\n**Input:** nums = \\[5,6,10,2,3,6,15\\], edges = \\[\\[0,1\\],\\[0,2\\],\\[1,3\\],\\[1,4\\],\\[2,5\\],\\[2,6\\]\\]\n**Output:** \\[-1,0,-1,0,0,0,-1\\]\n\n**Constraints:**\n\n*   `nums.length == n`\n*   `1 <= nums[i] <= 50`\n*   `1 <= n <= 105`\n*   `edges.length == n - 1`\n*   `edges[j].length == 2`\n*   `0 <= uj, vj < n`\n*   `uj != vj`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    int[] nums;\n    List<Integer>[] graph;\n    int[] ans;\n    // For each value from 1 to 50, store a stack of pairs (node, depth)\n    // representing the ancestors with that value currently in the path.\n    Deque<int[]>[] stacks = new Deque[51];\n    \n    public int[] getCoprimes(int[] nums, int[][] edges) {\n        int n = nums.length;\n        this.nums = nums;\n        ans = new int[n];\n        Arrays.fill(ans, -1);\n        \n        graph = new ArrayList[n];\n        for (int i = 0; i < n; i++) graph[i] = new ArrayList<>();\n        for (int[] e : edges) {\n            graph[e[0]].add(e[1]);\n            graph[e[1]].add(e[0]);\n        }\n        \n        for (int i = 1; i <= 50; i++) {\n            stacks[i] = new ArrayDeque<>();\n        }\n        \n        dfs(0, -1, 0);\n        return ans;\n    }\n    \n    private void dfs(int node, int parent, int depth) {\n        int val = nums[node];\n        \n        // Find nearest ancestor with coprime value\n        int nearestAncestor = -1;\n        int nearestDepth = -1;\n        for (int v = 1; v <= 50; v++) {\n            if (gcd(val, v) == 1 && !stacks[v].isEmpty()) {\n                int[] top = stacks[v].peek();\n                if (top[1] > nearestDepth) {\n                    nearestDepth = top[1];\n                    nearestAncestor = top[0];\n                }\n            }\n        }\n        ans[node] = nearestAncestor;\n        \n        // Add current node to stack of its value\n        stacks[val].push(new int[]{node, depth});\n        \n        for (int nxt : graph[node]) {\n            if (nxt != parent) {\n                dfs(nxt, node, depth + 1);\n            }\n        }\n        \n        // Remove current node from stack before backtracking\n        stacks[val].pop();\n    }\n    \n    private int gcd(int a, int b) {\n        while (b != 0) {\n            int t = b;\n            b = a % b;\n            a = t;\n        }\n        return a;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T05:38:29.292705+00:00",
+    "wall_clock_ms": 6452,
+    "provider_meta": {
+      "system_fingerprint": "fp_56e642c734",
+      "usage": {
+        "prompt_tokens": 767,
+        "completion_tokens": 505,
+        "total_tokens": 1272,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T05:38:29.293306+00:00"
+}

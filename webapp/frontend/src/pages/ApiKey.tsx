@@ -17,7 +17,7 @@ export default function ApiKey() {
   useEffect(() => { setK(getApiKey()); }, []);
 
   async function regenerate() {
-    if (!confirm("Issue a NEW key and revoke the current one? Any script using the old key will stop working.")) return;
+    if (!confirm("Issue a new key and revoke the current key? Any script that uses the old key will stop.")) return;
     setBusy("regen"); setErr("");
     try {
       const r = await api.regenerateApiKey();
@@ -28,7 +28,7 @@ export default function ApiKey() {
   }
 
   async function discard() {
-    if (!confirm("Discard your API key entirely? You'll be logged out; sign back in to get a new one.")) return;
+    if (!confirm("Discard your API key? The platform signs you out. Sign in again to get a new key.")) return;
     setBusy("discard"); setErr("");
     try {
       await api.discardApiKey();
@@ -50,9 +50,9 @@ export default function ApiKey() {
       <div className="hero">
         <h1>API key</h1>
         <p>
-          A personal access token for programmatic use of the PerfArena API.
-          Send it as <code>Authorization: Bearer &lt;key&gt;</code>. You don't
-          need it for the web UI — the browser uses it under the hood after you
+          This is a personal access token for the PerfArena API. Programs use it
+          to call the API. Send it as <code>Authorization: Bearer &lt;key&gt;</code>. You
+          do not need it for the web UI. The browser uses it automatically after you
           sign in.
         </p>
       </div>
@@ -62,19 +62,19 @@ export default function ApiKey() {
           Your key
         </div>
         <pre className="code" style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-          {k ?? "(no key — discarded; sign in to issue a new one)"}
+          {k ?? "(No key. You discarded it. Sign in to get a new key.)"}
         </pre>
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
           <button className="secondary" onClick={copy} disabled={!k}>
             {copied ? "Copied ✓" : "Copy"}
           </button>
           <button onClick={regenerate} disabled={busy !== null}>
-            {busy === "regen" ? "Regenerating…" : "Regenerate"}
+            {busy === "regen" ? "Please wait…" : "Regenerate"}
           </button>
           <button className="secondary"
                   style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
                   onClick={discard} disabled={busy !== null || !k}>
-            {busy === "discard" ? "Discarding…" : "Discard"}
+            {busy === "discard" ? "Please wait…" : "Discard"}
           </button>
         </div>
         {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}
@@ -83,9 +83,9 @@ export default function ApiKey() {
       <div className="card col">
         <h2 style={{ margin: 0 }}>What these buttons do</h2>
         <ul>
-          <li><b>Copy</b> — copies the key to your clipboard. The key never leaves the server in plaintext otherwise.</li>
-          <li><b>Regenerate</b> — issues a new key and revokes the previous one. Scripts using the old key start getting 401s. The new key is wired into this browser automatically.</li>
-          <li><b>Discard</b> — clears the key entirely. You'll be logged out. Next time you sign in, a fresh key is issued automatically.</li>
+          <li><b>Copy</b> puts the key on your clipboard. At other times the server does not send the key as plaintext.</li>
+          <li><b>Regenerate</b> issues a new key and revokes the previous key. A script that uses the old key then gets a 401 error. The browser gets the new key automatically.</li>
+          <li><b>Discard</b> removes the key. The platform signs you out. When you sign in again, you get a new key automatically.</li>
         </ul>
       </div>
     </div>

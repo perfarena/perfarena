@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|python3|enumerate-vowel-sequences-with-rules",
+  "code": "class Solution:\n    def countVowelPermutation(self, n: int) -> int:\n        MOD = 10**9 + 7\n        \n        # dp arrays for each vowel count at position i\n        a = e = i = o = u = 1\n        \n        for _ in range(2, n+1):\n            a_new = (e + i + u) % MOD  # Actually from rules: after 'e' -> 'a', after 'i' -> 'a', after 'u' -> 'a'\n            e_new = (a + i) % MOD      # after 'a' -> 'e', after 'i' -> 'e'\n            i_new = (e + o) % MOD      # after 'e' -> 'i', after 'o' -> 'i'\n            o_new = i % MOD            # after 'i' -> 'o'\n            u_new = (i + o) % MOD      # after 'i' -> 'u', after 'o' -> 'u'\n            \n            # But the problem states:\n            # After 'a' only 'e' may appear.\n            # After 'e' only 'a' or 'i' may appear.\n            # The letter 'i' cannot be followed by another 'i'.\n            # After 'o' only 'i' or 'u' may appear.\n            # After 'u' only 'a' may appear.\n            #\n            # So let's rewrite transitions carefully:\n            # a -> e\n            # e -> a or i\n            # i -> a or e or o or u except i (cannot be followed by i)\n            # o -> i or u\n            # u -> a\n            \n            # So the transitions are:\n            # a_new = count of strings ending with 'a' at position i\n            # a can only come after e, i, u? No, from rules:\n            # after 'e' -> 'a'\n            # after 'i' -> 'a'\n            # after 'u' -> 'a'\n            # So a_new = e + i + u\n            #\n            # e_new = after 'a' -> 'e', after 'i' -> 'e'\n            # so e_new = a + i\n            #\n            # i_new = after 'e' -> 'i', after 'o' -> 'i'\n            # so i_new = e + o\n            #\n            # o_new = after 'i' -> 'o'\n            # so o_new = i\n            #\n            # u_new = after 'i' -> 'u', after 'o' -> 'u'\n            # so u_new = i + o\n            \n            a, e, i, o, u = a_new % MOD, e_new % MOD, i_new % MOD, o_new % MOD, u_new % MOD\n        \n        return (a + e + i + o + u) % MOD",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `enumerate-vowel-sequences-with-rules` in Python 3.\n\nGiven an integer `n`, your goal is to tally how many strings whose length equals `n` satisfy the rules below:\n\n*   Every character is a lowercase vowel (`'a'`, `'e'`, `'i'`, `'o'`, `'u'`)\n*   After `'a'` only `'e'` may appear.\n*   After `'e'` only `'a'` or `'i'` may appear.\n*   The letter `'i'` **cannot be followed** by another `'i'`.\n*   After `'o'` only `'i'` or `'u'` may appear.\n*   After `'u'` only `'a'` may appear.\n\nBecause the result can be huge, return it modulo `10^9 + 7.`\n\n**Example 1:**\n\n**Input:** n = 1\n**Output:** 5\n**Explanation:** All possible strings are:  \"a \",  \"e \",  \"i \" ,  \"o \" and  \"u \".\n\n**Example 2:**\n\n**Input:** n = 2\n**Output:** 10\n**Explanation:** All possible strings are:  \"ae \",  \"ea \",  \"ei \",  \"ia \",  \"ie \",  \"io \",  \"iu \",  \"oi \",  \"ou \" and  \"ua \".\n\n**Example 3:**\n\n**Input:** n = 5\n**Output:** 68\n\n**Constraints:**\n\n*   `1 <= n <= 2 * 10^4`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nclass Solution:\n    def countVowelPermutation(self, n: int) -> int:\n        MOD = 10**9 + 7\n        \n        # dp arrays for each vowel count at position i\n        a = e = i = o = u = 1\n        \n        for _ in range(2, n+1):\n            a_new = (e + i + u) % MOD  # Actually from rules: after 'e' -> 'a', after 'i' -> 'a', after 'u' -> 'a'\n            e_new = (a + i) % MOD      # after 'a' -> 'e', after 'i' -> 'e'\n            i_new = (e + o) % MOD      # after 'e' -> 'i', after 'o' -> 'i'\n            o_new = i % MOD            # after 'i' -> 'o'\n            u_new = (i + o) % MOD      # after 'i' -> 'u', after 'o' -> 'u'\n            \n            # But the problem states:\n            # After 'a' only 'e' may appear.\n            # After 'e' only 'a' or 'i' may appear.\n            # The letter 'i' cannot be followed by another 'i'.\n            # After 'o' only 'i' or 'u' may appear.\n            # After 'u' only 'a' may appear.\n            #\n            # So let's rewrite transitions carefully:\n            # a -> e\n            # e -> a or i\n            # i -> a or e or o or u except i (cannot be followed by i)\n            # o -> i or u\n            # u -> a\n            \n            # So the transitions are:\n            # a_new = count of strings ending with 'a' at position i\n            # a can only come after e, i, u? No, from rules:\n            # after 'e' -> 'a'\n            # after 'i' -> 'a'\n            # after 'u' -> 'a'\n            # So a_new = e + i + u\n            #\n            # e_new = after 'a' -> 'e', after 'i' -> 'e'\n            # so e_new = a + i\n            #\n            # i_new = after 'e' -> 'i', after 'o' -> 'i'\n            # so i_new = e + o\n            #\n            # o_new = after 'i' -> 'o'\n            # so o_new = i\n            #\n            # u_new = after 'i' -> 'u', after 'o' -> 'u'\n            # so u_new = i + o\n            \n            a, e, i, o, u = a_new % MOD, e_new % MOD, i_new % MOD, o_new % MOD, u_new % MOD\n        \n        return (a + e + i + o + u) % MOD\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T01:35:43.901201+00:00",
+    "wall_clock_ms": 7252,
+    "provider_meta": {
+      "system_fingerprint": "fp_7cf4b7c3d0",
+      "usage": {
+        "prompt_tokens": 422,
+        "completion_tokens": 617,
+        "total_tokens": 1039,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T01:35:43.901611+00:00"
+}

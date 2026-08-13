@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|verify-ones-are-separated-by-at-least-k-zeros",
+  "code": "class Solution {\n    public boolean kLengthApart(int[] nums, int k) {\n        int prevIndex = -1;\n        for (int i = 0; i < nums.length; i++) {\n            if (nums[i] == 1) {\n                if (prevIndex != -1 && i - prevIndex - 1 < k) {\n                    return false;\n                }\n                prevIndex = i;\n            }\n        }\n        return true;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `verify-ones-are-separated-by-at-least-k-zeros` in Java.\n\nGiven a binary array `nums` along with an integer `k`, return `true` _when every pair of_ `1`_s are separated by at least_ `k` _positions, and otherwise return_ `false`.\n\n**Example 1:**\n\n**Input:** nums = \\[1,0,0,0,1,0,0,1\\], k = 2\n**Output:** true\n**Explanation:** Each of the 1s are at least 2 places away from each other.\n\n**Example 2:**\n\n**Input:** nums = \\[1,0,0,1,0,1\\], k = 2\n**Output:** false\n**Explanation:** The second 1 and third 1 are only one apart from each other.\n\n**Constraints:**\n\n*   `1 <= nums.length <= 105`\n*   `0 <= k <= nums.length`\n*   `nums[i]` is `0` or `1`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public boolean kLengthApart(int[] nums, int k) {\n        int prevIndex = -1;\n        for (int i = 0; i < nums.length; i++) {\n            if (nums[i] == 1) {\n                if (prevIndex != -1 && i - prevIndex - 1 < k) {\n                    return false;\n                }\n                prevIndex = i;\n            }\n        }\n        return true;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T20:44:17.414666+00:00",
+    "wall_clock_ms": 2753,
+    "provider_meta": {
+      "system_fingerprint": "fp_c2f481d1ac",
+      "usage": {
+        "prompt_tokens": 305,
+        "completion_tokens": 100,
+        "total_tokens": 405,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T20:44:17.414750+00:00"
+}

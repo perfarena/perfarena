@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|list-vertices-with-only-terminating-paths",
+  "code": "object Solution {\n  def eventualSafeNodes(graph: Array[Array[Int]]): List[Int] = {\n    val n = graph.length\n    // States: 0 = unvisited, 1 = visiting, 2 = safe\n    val state = Array.fill(n)(0)\n\n    def dfs(u: Int): Boolean = {\n      if (state(u) != 0) return state(u) == 2\n      state(u) = 1\n      for (v <- graph(u)) {\n        if (state(v) == 1 || !dfs(v)) return false\n      }\n      state(u) = 2\n      true\n    }\n\n    (0 until n).filter(dfs).toList\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `list-vertices-with-only-terminating-paths` in Scala.\n\nSuppose there is a directed graph having `n` vertices, each labeled from `0` through `n - 1`. The graph is captured by a **0-indexed** 2D integer array `graph` such that `graph[i]` lists the vertices reachable straight from vertex `i`, meaning an edge runs from vertex `i` toward every vertex contained in `graph[i]`.\n\nA vertex is a **terminal node** when no outgoing edges leave it. A vertex is a **safe node** when every walk that begins at that vertex eventually ends at a **terminal node** (or at another safe node).\n\nReturn _a list with every **safe node** of the graph_. Sort the list in **ascending** order.\n\n**Example 1:**\n\n**Input:** graph = \\[\\[1,2\\],\\[2,3\\],\\[5\\],\\[0\\],\\[5\\],\\[\\],\\[\\]\\]\n**Output:** \\[2,4,5,6\\]\n**Explanation:** The graph appears above.\nVertices 5 and 6 are terminal nodes because neither has any outgoing edge.\nWalks beginning at vertices 2, 4, 5, and 6 all conclude at either vertex 5 or vertex 6.\n\n**Example 2:**\n\n**Input:** graph = \\[\\[1,2,3,4\\],\\[1,2\\],\\[3,4\\],\\[0,4\\],\\[\\]\\]\n**Output:** \\[4\\]\n**Explanation:**\nOnly vertex 4 qualifies as terminal, and every walk starting at vertex 4 concludes at vertex 4.\n\n**Constraints:**\n\n*   `n == graph.length`\n*   `1 <= n <= 104`\n*   `0 <= graph[i].length <= n`\n*   `0 <= graph[i][j] <= n - 1`\n*   `graph[i]` is sorted in a strictly increasing order.\n*   The graph may contain self-loops.\n*   The number of edges in the graph will be in the range `[1, 4 * 104]`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def eventualSafeNodes(graph: Array[Array[Int]]): List[Int] = {\n    val n = graph.length\n    // States: 0 = unvisited, 1 = visiting, 2 = safe\n    val state = Array.fill(n)(0)\n\n    def dfs(u: Int): Boolean = {\n      if (state(u) != 0) return state(u) == 2\n      state(u) = 1\n      for (v <- graph(u)) {\n        if (state(v) == 1 || !dfs(v)) return false\n      }\n      state(u) = 2\n      true\n    }\n\n    (0 until n).filter(dfs).toList\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T11:57:20.825319+00:00",
+    "wall_clock_ms": 3913,
+    "provider_meta": {
+      "system_fingerprint": "fp_7cf4b7c3d0",
+      "usage": {
+        "prompt_tokens": 538,
+        "completion_tokens": 155,
+        "total_tokens": 693,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T11:57:20.825554+00:00"
+}

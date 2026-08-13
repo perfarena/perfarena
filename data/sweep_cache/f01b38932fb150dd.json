@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system|c|number-of-days-between-two-dates",
+  "code": "#include <stdlib.h>\n\nstatic int isLeap(int y) {\n    return (y % 400 == 0) || (y % 4 == 0 && y % 100 != 0);\n}\n\nstatic int daysInMonth(int y, int m) {\n    static int d[12] = {31,28,31,30,31,30,31,31,30,31,30,31};\n    if (m == 2) return d[m - 1] + isLeap(y);\n    return d[m - 1];\n}\n\nstatic int toDays(const char *s) {\n    int y = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');\n    int m = (s[5]-'0')*10 + (s[6]-'0');\n    int d = (s[8]-'0')*10 + (s[9]-'0');\n    int days = 0;\n\n    for (int year = 1971; year < y; ++year) {\n        days += 365 + isLeap(year);\n    }\n    for (int month = 1; month < m; ++month) {\n        days += daysInMonth(y, month);\n    }\n    days += d;\n    return days;\n}\n\nint daysBetweenDates(char* date1, char* date2) {\n    int a = toDays(date1);\n    int b = toDays(date2);\n    return a > b ? a - b : b - a;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `number-of-days-between-two-dates` in C.\n\nWrite a program to count the number of days between two dates.\n\nThe two dates are given as strings, their format is `YYYY-MM-DD` as shown in the examples.\n\n**Example 1:**\n\n**Input:** date1 = \"2019-06-29\", date2 = \"2019-06-30\"\n**Output:** 1\n\n**Example 2:**\n\n**Input:** date1 = \"2020-01-15\", date2 = \"2019-12-31\"\n**Output:** 15\n\n**Constraints:**\n\n*   The given dates are valid dates between the years `1971` and `2100`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdlib.h>\n\nstatic int isLeap(int y) {\n    return (y % 400 == 0) || (y % 4 == 0 && y % 100 != 0);\n}\n\nstatic int daysInMonth(int y, int m) {\n    static int d[12] = {31,28,31,30,31,30,31,31,30,31,30,31};\n    if (m == 2) return d[m - 1] + isLeap(y);\n    return d[m - 1];\n}\n\nstatic int toDays(const char *s) {\n    int y = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');\n    int m = (s[5]-'0')*10 + (s[6]-'0');\n    int d = (s[8]-'0')*10 + (s[9]-'0');\n    int days = 0;\n\n    for (int year = 1971; year < y; ++year) {\n        days += 365 + isLeap(year);\n    }\n    for (int month = 1; month < m; ++month) {\n        days += daysInMonth(y, month);\n    }\n    days += d;\n    return days;\n}\n\nint daysBetweenDates(char* date1, char* date2) {\n    int a = toDays(date1);\n    int b = toDays(date2);\n    return a > b ? a - b : b - a;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T15:17:52.326341+00:00",
+    "wall_clock_ms": 2852,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 228,
+        "completion_tokens": 350,
+        "total_tokens": 578,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-5.4-mini-2026-03-17"
+    }
+  },
+  "saved_at": "2026-06-14T15:17:52.326641+00:00"
+}

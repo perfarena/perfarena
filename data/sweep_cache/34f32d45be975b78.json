@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|stack-supporting-bulk-bump-operation",
+  "code": "typedef struct {\n    int *stack;\n    int *inc;\n    int top;\n    int maxSize;\n} CustomStack;\n\nCustomStack* customStackCreate(int maxSize) {\n    CustomStack *obj = (CustomStack*)malloc(sizeof(CustomStack));\n    obj->stack = (int*)malloc(sizeof(int)*maxSize);\n    obj->inc = (int*)calloc(maxSize, sizeof(int));\n    obj->top = -1;\n    obj->maxSize = maxSize;\n    return obj;\n}\n\nvoid customStackPush(CustomStack* obj, int x) {\n    if (obj->top + 1 < obj->maxSize) {\n        obj->top++;\n        obj->stack[obj->top] = x;\n        obj->inc[obj->top] = 0;\n    }\n}\n\nint customStackPop(CustomStack* obj) {\n    if (obj->top == -1) return -1;\n    int idx = obj->top;\n    int res = obj->stack[idx] + obj->inc[idx];\n    if (idx > 0) {\n        obj->inc[idx-1] += obj->inc[idx];\n    }\n    obj->inc[idx] = 0;\n    obj->top--;\n    return res;\n}\n\nvoid customStackIncrement(CustomStack* obj, int k, int val) {\n    int idx = k - 1;\n    if (idx > obj->top) idx = obj->top;\n    if (idx >= 0) {\n        obj->inc[idx] += val;\n    }\n}\n\nvoid customStackFree(CustomStack* obj) {\n    free(obj->stack);\n    free(obj->inc);\n    free(obj);\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `stack-supporting-bulk-bump-operation` in C.\n\nBuild a stack that allows bumping its stored values upward.\n\nImplement the `CustomStack` class with:\n\n*   `CustomStack(int maxSize)` Sets up the object using `maxSize`, the cap on how many elements the stack may hold.\n*   `void push(int x)` Places `x` on top of the stack provided the stack has not yet hit `maxSize`.\n*   `int pop()` Removes and returns the top item of the stack, or `-1` if it is empty.\n*   `void inc(int k, int val)` Adds `val` to the lowest `k` items of the stack. When fewer than `k` items are present, bump every item in the stack.\n\n**Example 1:**\n\n**Input**\n\\[ \"CustomStack \", \"push \", \"push \", \"pop \", \"push \", \"push \", \"push \", \"increment \", \"increment \", \"pop \", \"pop \", \"pop \", \"pop \"\\]\n\\[\\[3\\],\\[1\\],\\[2\\],\\[\\],\\[2\\],\\[3\\],\\[4\\],\\[5,100\\],\\[2,100\\],\\[\\],\\[\\],\\[\\],\\[\\]\\]\n**Output**\n\\[null,null,null,2,null,null,null,null,null,103,202,201,-1\\]\n**Explanation**\nCustomStack stk = new CustomStack(3); // Empty stack \\[\\]\nstk.push(1);                          // stack now holds \\[1\\]\nstk.push(2);                          // stack now holds \\[1, 2\\]\nstk.pop();                            // returns 2 --> Removes the top item 2, stack now holds \\[1\\]\nstk.push(2);                          // stack now holds \\[1, 2\\]\nstk.push(3);                          // stack now holds \\[1, 2, 3\\]\nstk.push(4);                          // stack still holds \\[1, 2, 3\\], no further additions because capacity is 4\nstk.increment(5, 100);                // stack now holds \\[101, 102, 103\\]\nstk.increment(2, 100);                // stack now holds \\[201, 202, 103\\]\nstk.pop();                            // returns 103 --> Removes the top item 103, stack now holds \\[201, 202\\]\nstk.pop();                            // returns 202 --> Removes the top item 202, stack now holds \\[201\\]\nstk.pop();                            // returns 201 --> Removes the top item 201, stack now holds \\[\\]\nstk.pop();                            // returns -1 --> Stack empty so return -1.\n\n**Constraints:**\n\n*   `1 <= maxSize, x, k <= 1000`\n*   `0 <= val <= 100`\n*   At most `1000` calls will be made to each method of `increment`, `push` and `pop` each separately.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\ntypedef struct {\n    int *stack;\n    int *inc;\n    int top;\n    int maxSize;\n} CustomStack;\n\nCustomStack* customStackCreate(int maxSize) {\n    CustomStack *obj = (CustomStack*)malloc(sizeof(CustomStack));\n    obj->stack = (int*)malloc(sizeof(int)*maxSize);\n    obj->inc = (int*)calloc(maxSize, sizeof(int));\n    obj->top = -1;\n    obj->maxSize = maxSize;\n    return obj;\n}\n\nvoid customStackPush(CustomStack* obj, int x) {\n    if (obj->top + 1 < obj->maxSize) {\n        obj->top++;\n        obj->stack[obj->top] = x;\n        obj->inc[obj->top] = 0;\n    }\n}\n\nint customStackPop(CustomStack* obj) {\n    if (obj->top == -1) return -1;\n    int idx = obj->top;\n    int res = obj->stack[idx] + obj->inc[idx];\n    if (idx > 0) {\n        obj->inc[idx-1] += obj->inc[idx];\n    }\n    obj->inc[idx] = 0;\n    obj->top--;\n    return res;\n}\n\nvoid customStackIncrement(CustomStack* obj, int k, int val) {\n    int idx = k - 1;\n    if (idx > obj->top) idx = obj->top;\n    if (idx >= 0) {\n        obj->inc[idx] += val;\n    }\n}\n\nvoid customStackFree(CustomStack* obj) {\n    free(obj->stack);\n    free(obj->inc);\n    free(obj);\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T18:58:28.553223+00:00",
+    "wall_clock_ms": 6612,
+    "provider_meta": {
+      "system_fingerprint": "fp_56e642c734",
+      "usage": {
+        "prompt_tokens": 713,
+        "completion_tokens": 348,
+        "total_tokens": 1061,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T18:58:28.554197+00:00"
+}

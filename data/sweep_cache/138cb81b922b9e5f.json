@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|children-who-could-tie-or-beat-the-top-candy-count",
+  "code": "/**\n * Note: The returned array must be malloced, assume caller calls free().\n */\nbool* kidsWithCandies(int* candies, int candiesSize, int extraCandies, int* returnSize){\n    int max = 0;\n    for (int i = 0; i < candiesSize; i++) {\n        if (candies[i] > max) max = candies[i];\n    }\n    \n    bool* result = (bool*)malloc(sizeof(bool) * candiesSize);\n    *returnSize = candiesSize;\n    \n    for (int i = 0; i < candiesSize; i++) {\n        result[i] = (candies[i] + extraCandies >= max);\n    }\n    \n    return result;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `children-who-could-tie-or-beat-the-top-candy-count` in C.\n\nSuppose there are `n` children, each holding some candies. Given an integer array `candies` where every `candies[i]` is how many sweets child `i` holds, plus an integer `extraCandies` showing how many bonus sweets you possess.\n\nReturn _a boolean array_ `result` _whose length is_ `n`_, in which_ `result[i]` _is_ `true` _whenever giving the_ `ith` _child every one of the_ `extraCandies` _would leave them tied for or holding the **most** candies among the group__, otherwise_ `false`.\n\nKeep in mind that **several** children may share the **greatest** candy total.\n\n**Example 1:**\n\n**Input:** candies = \\[2,3,5,1,3\\], extraCandies = 3\n**Output:** \\[true,true,true,false,true\\] \n**Explanation:** If you give all extraCandies to:\n- Kid 1, they will have 2 + 3 = 5 candies, which is the greatest among the kids.\n- Kid 2, they will have 3 + 3 = 6 candies, which is the greatest among the kids.\n- Kid 3, they will have 5 + 3 = 8 candies, which is the greatest among the kids.\n- Kid 4, they will have 1 + 3 = 4 candies, which is not the greatest among the kids.\n- Kid 5, they will have 3 + 3 = 6 candies, which is the greatest among the kids.\n\n**Example 2:**\n\n**Input:** candies = \\[4,2,1,1,2\\], extraCandies = 1\n**Output:** \\[true,false,false,false,false\\] \n**Explanation:** There is only 1 extra candy.\nKid 1 will always have the greatest number of candies, even if a different kid is given the extra candy.\n\n**Example 3:**\n\n**Input:** candies = \\[12,1,12\\], extraCandies = 10\n**Output:** \\[true,false,true\\]\n\n**Constraints:**\n\n*   `n == candies.length`\n*   `2 <= n <= 100`\n*   `1 <= candies[i] <= 100`\n*   `1 <= extraCandies <= 50`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n/**\n * Note: The returned array must be malloced, assume caller calls free().\n */\nbool* kidsWithCandies(int* candies, int candiesSize, int extraCandies, int* returnSize){\n    int max = 0;\n    for (int i = 0; i < candiesSize; i++) {\n        if (candies[i] > max) max = candies[i];\n    }\n    \n    bool* result = (bool*)malloc(sizeof(bool) * candiesSize);\n    *returnSize = candiesSize;\n    \n    for (int i = 0; i < candiesSize; i++) {\n        result[i] = (candies[i] + extraCandies >= max);\n    }\n    \n    return result;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T18:07:47.316118+00:00",
+    "wall_clock_ms": 3009,
+    "provider_meta": {
+      "system_fingerprint": "fp_7cf4b7c3d0",
+      "usage": {
+        "prompt_tokens": 602,
+        "completion_tokens": 155,
+        "total_tokens": 757,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T18:07:47.316386+00:00"
+}

@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|python3|binary-trees",
+  "code": "import sys\n\nclass TreeNode:\n    __slots__ = ('left', 'right')  # reduces memory usage\n    def __init__(self, left=None, right=None):\n        self.left = left\n        self.right = right\n\ndef bottom_up_tree(depth):\n    if depth > 0:\n        left = bottom_up_tree(depth - 1)\n        right = bottom_up_tree(depth - 1)\n        return TreeNode(left, right)\n    else:\n        return TreeNode()\n\ndef item_check(node):\n    if node.left is None and node.right is None:\n        return 1\n    return 1 + item_check(node.left) + item_check(node.right)\n\nclass Solution:\n    def binaryTrees(self, N: int) -> None:\n        if N < 0:\n            return\n        \n        stretch_depth = N + 1\n        # Stretch tree\n        stretch_tree = bottom_up_tree(stretch_depth)\n        print(f\"stretch tree of depth {stretch_depth}\\t check: {item_check(stretch_tree)}\")\n\n        # Long-lived tree\n        long_lived_tree = bottom_up_tree(N)\n\n        depths = list(range(4, N+1, 2))\n        for depth in depths:\n            iterations = 2 ** (N - depth + 4)\n            check = 0\n            for _ in range(iterations):\n                t = bottom_up_tree(depth)\n                check += item_check(t)\n            print(f\"{iterations}\\t trees of depth {depth}\\t check: {check}\")\n\n        print(f\"long lived tree of depth {N}\\t check: {item_check(long_lived_tree)}\")\n\nif __name__ == \"__main__\":\n    N = 21\n    if len(sys.argv) > 1:\n        try:\n            N = int(sys.argv[1])\n        except:\n            pass\n    sol = Solution()\n    sol.binaryTrees(N)",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `binary-trees` in Python 3.\n\n# binary-trees\n\nAllocate and deallocate many binary trees to exercise memory management. Build one \"stretch\" tree of depth N+1, one long-lived tree of depth N, and for each depth d in 4, 6, ..., N build 2^(N-d+4) short-lived trees of depth d. Print the node-count checksums for each group.\n\n## Input\nA single non-negative integer N read as a command-line argument.\n\n## Output\n```\nstretch tree of depth N+1\\t check: <count>\n<count>\\t trees of depth 4\\t check: <sum>\n...\nlong lived tree of depth N\\t check: <count>\n```\n\n## Invocation\nThe program is invoked as: <prog> 21\n\n**Default N:** `21` \u00b7 **Validation N:** `10` \u00b7 **Algorithm class:** recursive allocation, globally structured\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nimport sys\n\nclass TreeNode:\n    __slots__ = ('left', 'right')  # reduces memory usage\n    def __init__(self, left=None, right=None):\n        self.left = left\n        self.right = right\n\ndef bottom_up_tree(depth):\n    if depth > 0:\n        left = bottom_up_tree(depth - 1)\n        right = bottom_up_tree(depth - 1)\n        return TreeNode(left, right)\n    else:\n        return TreeNode()\n\ndef item_check(node):\n    if node.left is None and node.right is None:\n        return 1\n    return 1 + item_check(node.left) + item_check(node.right)\n\nclass Solution:\n    def binaryTrees(self, N: int) -> None:\n        if N < 0:\n            return\n        \n        stretch_depth = N + 1\n        # Stretch tree\n        stretch_tree = bottom_up_tree(stretch_depth)\n        print(f\"stretch tree of depth {stretch_depth}\\t check: {item_check(stretch_tree)}\")\n\n        # Long-lived tree\n        long_lived_tree = bottom_up_tree(N)\n\n        depths = list(range(4, N+1, 2))\n        for depth in depths:\n            iterations = 2 ** (N - depth + 4)\n            check = 0\n            for _ in range(iterations):\n                t = bottom_up_tree(depth)\n                check += item_check(t)\n            print(f\"{iterations}\\t trees of depth {depth}\\t check: {check}\")\n\n        print(f\"long lived tree of depth {N}\\t check: {item_check(long_lived_tree)}\")\n\nif __name__ == \"__main__\":\n    N = 21\n    if len(sys.argv) > 1:\n        try:\n            N = int(sys.argv[1])\n        except:\n            pass\n    sol = Solution()\n    sol.binaryTrees(N)\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-22T18:07:09.923600+00:00",
+    "wall_clock_ms": 6736,
+    "provider_meta": {
+      "system_fingerprint": "fp_3b8c25ab46",
+      "usage": {
+        "prompt_tokens": 276,
+        "completion_tokens": 393,
+        "total_tokens": 669,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-22T18:07:09.924237+00:00"
+}

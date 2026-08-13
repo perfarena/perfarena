@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|rust|tally-pythagorean-integer-tuples-up-to-n",
+  "code": "impl Solution {\n    pub fn count_triplets(n: i32) -> i32 {\n        let n = n as usize;\n        let mut count = 0;\n        for c in 1..=n {\n            let c2 = c * c;\n            for a in 1..=n {\n                if a * a >= c2 {\n                    break;\n                }\n                let b2 = c2 - a * a;\n                let b = (b2 as f64).sqrt() as usize;\n                if b <= n && b * b == b2 {\n                    count += 1;\n                }\n            }\n        }\n        count as i32\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `tally-pythagorean-integer-tuples-up-to-n` in Rust.\n\nDefine a **square triple** `(a,b,c)` as one in which `a`, `b`, and `c` are **integers** that satisfy `a2 + b2 = c2`.\n\nFor a given integer `n`, return _how many **square triples** exist where_ `1 <= a, b, c <= n`.\n\n**Example 1:**\n\n**Input:** n = 5\n**Output:** 2\n**Explanation**: The square triples are (3,4,5) and (4,3,5).\n\n**Example 2:**\n\n**Input:** n = 10\n**Output:** 4\n**Explanation**: The square triples are (3,4,5), (4,3,5), (6,8,10), and (8,6,10).\n\n**Constraints:**\n\n*   `1 <= n <= 250`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Rust using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```rust code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```rust\nimpl Solution {\n    pub fn count_triplets(n: i32) -> i32 {\n        let n = n as usize;\n        let mut count = 0;\n        for c in 1..=n {\n            let c2 = c * c;\n            for a in 1..=n {\n                if a * a >= c2 {\n                    break;\n                }\n                let b2 = c2 - a * a;\n                let b = (b2 as f64).sqrt() as usize;\n                if b <= n && b * b == b2 {\n                    count += 1;\n                }\n            }\n        }\n        count as i32\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T08:33:13.815408+00:00",
+    "wall_clock_ms": 5671,
+    "provider_meta": {
+      "system_fingerprint": "fp_d4640b3194",
+      "usage": {
+        "prompt_tokens": 287,
+        "completion_tokens": 143,
+        "total_tokens": 430,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T08:33:13.815814+00:00"
+}

@@ -45,7 +45,7 @@ from .dispatch import (
 from .ratelimit import enforce_submission_limit
 from .models import (
     Attempt, Baseline, BaselineRefreshState, BlogPost,
-    Competition, CompetitionProblem, Harness, Problem,
+    Competition, CompetitionProblem, CorrectnessOracle, Harness, Machine, Problem,
     PromptTemplate, RegisteredModel,
     Run, Snapshot,
     Submission, SubmissionStatus, TraceLogEntry,
@@ -67,6 +67,8 @@ from .schemas import (
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
     HarnessDetail, HarnessIn, HarnessPublic, HarnessRef,
+    CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
+    CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
     LeetCodeAccountIn, LeetCodeAccountStatus, LeetCodeAccountsResponse,
     ModelDetail, ModelDetailLanguageStat, ModelListEntry,
@@ -655,44 +657,92 @@ def _seed_bootstrap_admin() -> None:
     """First-boot admin bootstrap so a fresh container is reachable as
     admin without docker-exec'ing into it.
 
-    Honoured env vars:
-      ARENA_BOOTSTRAP_ADMIN_EMAIL     (required to trigger anything)
-      ARENA_BOOTSTRAP_ADMIN_NAME      default "Admin"
-      ARENA_BOOTSTRAP_ADMIN_API_KEY   default = freshly generated
-      ARENA_BOOTSTRAP_ADMIN_PASSWORD  default = unset (no password login;
-                                      use the API key with Bearer auth)
+    Two paths:
 
-    Idempotent: if a user with the given email already exists we leave it
-    alone — we don't downgrade or rotate keys for existing rows. To rotate
-    after the fact, do it via the admin endpoints or directly in the DB.
-    The fresh API key is printed to stderr so a `docker logs` can recover
-    it when it was auto-generated."""
+    * OPT-IN (operator sets `ARENA_BOOTSTRAP_ADMIN_EMAIL`): create/reuse
+      the named admin using the caller-provided credentials. Honoured
+      env vars:
+        ARENA_BOOTSTRAP_ADMIN_EMAIL     (required to trigger the opt-in path)
+        ARENA_BOOTSTRAP_ADMIN_NAME      default "Admin"
+        ARENA_BOOTSTRAP_ADMIN_API_KEY   default = freshly generated
+        ARENA_BOOTSTRAP_ADMIN_PASSWORD  default = unset (API-key only login)
+
+    * SAFETY NET (nothing set + no admin exists yet): auto-provision a
+      default admin (`admin@perfarena.local`) with a freshly-generated
+      API key. Without this, a fresh container ships with zero admin
+      accounts and the operator has no way to hit /api/admin/* endpoints
+      — a footgun disguised as security. The generated key is printed to
+      stderr so `docker logs` recovers it, and the whole path is skipped
+      the moment ANY admin already exists (so restarts against a
+      persistent volume never regenerate keys).
+
+    Set `ARENA_BOOTSTRAP_DISABLE_AUTO_ADMIN=1` to disable the safety net
+    for hardened deployments that provision users out-of-band and want
+    zero surprises.
+
+    Idempotent throughout: an existing admin is never touched — we don't
+    downgrade, rotate keys, or overwrite passwords."""
     from sqlmodel import Session                                          # noqa: E402
     email = os.environ.get("ARENA_BOOTSTRAP_ADMIN_EMAIL")
-    if not email:
-        return
     with Session(engine) as s:
-        if s.exec(select(User).where(User.email == email)).first():
+        if email:
+            # Opt-in path — precise: only touch the named row.
+            if s.exec(select(User).where(User.email == email)).first():
+                return
+            api_key = (
+                os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY")
+                or generate_api_key()
+            )
+            password = os.environ.get("ARENA_BOOTSTRAP_ADMIN_PASSWORD")
+            u = User(
+                email=email,
+                display_name=os.environ.get("ARENA_BOOTSTRAP_ADMIN_NAME", "Admin"),
+                role=UserRole.admin,
+                status=UserStatus.approved,
+                api_key=api_key,
+                password_hash=hash_password(password) if password else None,
+            )
+            s.add(u); s.commit()
+            print(f"[bootstrap] created admin user {email!r}", file=sys.stderr)
+            if not os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY"):
+                print(f"[bootstrap]   api_key = {api_key}", file=sys.stderr)
+            if password:
+                print(f"[bootstrap]   password login enabled (use /login)",
+                      file=sys.stderr)
             return
-        api_key = os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY") or generate_api_key()
-        password = os.environ.get("ARENA_BOOTSTRAP_ADMIN_PASSWORD")
+
+        # Safety-net path — only runs when NO admin exists at all AND the
+        # operator hasn't disabled it. Prevents fresh containers from
+        # coming up locked out of their own admin surface.
+        if os.environ.get("ARENA_BOOTSTRAP_DISABLE_AUTO_ADMIN", "").lower() \
+                in ("1", "true", "yes", "on"):
+            return
+        if s.exec(select(User).where(User.role == UserRole.admin)).first():
+            return
+        default_email = "admin@perfarena.local"
+        api_key = generate_api_key()
         u = User(
-            email=email,
-            display_name=os.environ.get("ARENA_BOOTSTRAP_ADMIN_NAME", "Admin"),
+            email=default_email,
+            display_name="Admin",
             role=UserRole.admin,
             status=UserStatus.approved,
             api_key=api_key,
-            password_hash=hash_password(password) if password else None,
         )
         s.add(u); s.commit()
-        # Surface the credentials so `docker logs <container>` can read them
-        # back. Skip the api_key line if the operator supplied one — they
-        # already know it and re-printing it to logs is needless exposure.
-        print(f"[bootstrap] created admin user {email!r}", file=sys.stderr)
-        if not os.environ.get("ARENA_BOOTSTRAP_ADMIN_API_KEY"):
-            print(f"[bootstrap]   api_key = {api_key}", file=sys.stderr)
-        if password:
-            print(f"[bootstrap]   password login enabled (use /login)", file=sys.stderr)
+        print(
+            "[bootstrap] no admin user found — auto-provisioned one. "
+            "Set ARENA_BOOTSTRAP_ADMIN_EMAIL to pin the identity, or "
+            "ARENA_BOOTSTRAP_DISABLE_AUTO_ADMIN=1 to suppress this "
+            "fallback entirely.",
+            file=sys.stderr,
+        )
+        print(f"[bootstrap]   email   = {default_email}", file=sys.stderr)
+        print(f"[bootstrap]   api_key = {api_key}", file=sys.stderr)
+        print(
+            "[bootstrap]   USE IT NOW: `docker logs <container>` will not "
+            "reprint the key on future restarts.",
+            file=sys.stderr,
+        )
 
 
 _DEFAULT_PROMPTS: list[dict] = [
@@ -1128,6 +1178,14 @@ def rankings(
                     "competition.harness_id → drop. Legacy rows all resolve "
                     "to `leetcode` via the startup backfill.",
     ),
+    correctness_oracle: str | None = Query(
+        None,
+        description="restrict the leaderboard to submissions judged by this "
+                    "correctness oracle (slug). Decoupled from `harness` "
+                    "above so a client can filter by 'who said this was "
+                    "correct' independently of 'who measured how fast it "
+                    "was'. Legacy rows all resolve to `leetcode`.",
+    ),
     sort: str = Query(
         "pass_at_1",
         regex="^(pass_at_1|pass_at_k|pass_at_full|avg_runtime_percentile|avg_memory_percentile|time_human_avg|time_human_expert|mem_human_avg|mem_human_expert)$",
@@ -1189,6 +1247,26 @@ def rankings(
         subs = [
             s for s in subs
             if _resolve_submission_harness_id(s, _comps_all) == target.id
+        ]
+
+    # Correctness-oracle scope — same resolution shape as harness above.
+    if correctness_oracle:
+        target_co = session.exec(
+            select(CorrectnessOracle).where(
+                CorrectnessOracle.slug == correctness_oracle
+            )
+        ).first()
+        if target_co is None:
+            raise HTTPException(
+                404, f"correctness oracle '{correctness_oracle}' not found",
+            )
+        _comps_all = {
+            c.id: c for c in session.exec(select(Competition)).all()
+        }
+        subs = [
+            s for s in subs
+            if _resolve_submission_correctness_oracle_id(s, _comps_all)
+                == target_co.id
         ]
 
     # Eligibility gate: only complete (all problems attempted) submissions with
@@ -1256,6 +1334,15 @@ def rankings(
     harness_by_id: dict[int, Harness] = {
         h.id: h for h in session.exec(select(Harness)).all()
     } if subs else {}
+    # Correctness-oracle lookup for the twin resolution — same shape.
+    correctness_by_id: dict[int, CorrectnessOracle] = {
+        o.id: o for o in session.exec(select(CorrectnessOracle)).all()
+    } if subs else {}
+    # Machine lookup (B4) — prefetch once so the leaderboard can show which
+    # machine each entry was measured on without an N+1 query per row.
+    machine_by_id: dict[int, Machine] = {
+        m.id: m for m in session.exec(select(Machine)).all()
+    } if subs else {}
     _all_comps_for_harness = {
         c.id: c for c in session.exec(select(Competition)).all()
     } if subs else {}
@@ -1275,6 +1362,12 @@ def rankings(
         comp = comp_by_id.get(s.competition_id) if s.competition_id else None
         hid = _resolve_submission_harness_id(s, _all_comps_for_harness)
         harness_row = harness_by_id.get(hid) if hid else None
+        cid_correct = _resolve_submission_correctness_oracle_id(
+            s, _all_comps_for_harness,
+        )
+        correctness_row = (
+            correctness_by_id.get(cid_correct) if cid_correct else None
+        )
         atts = sub_attempts.get(s.id, [])
         # Per-attempt cost: live recompute when possible, else snapshot.
         per_cost: list[float] = []
@@ -1304,6 +1397,10 @@ def rankings(
             best_runtime_energy_j=s.best_runtime_energy_j,
             avg_runtime_energy_percentile=s.avg_runtime_energy_percentile,
             best_runtime_energy_percentile=s.best_runtime_energy_percentile,
+            machine_name=(machine_by_id.get(s.machine_id).name
+                          if s.machine_id and machine_by_id.get(s.machine_id)
+                          else None),
+            energy_tool=s.energy_tool,
             time_human_avg=s.time_human_avg,
             time_human_expert=s.time_human_expert,
             mem_human_avg=s.mem_human_avg,
@@ -1322,6 +1419,8 @@ def rankings(
             competition_name=comp.name if comp else None,
             harness_slug=harness_row.slug if harness_row else None,
             harness_name=harness_row.name if harness_row else None,
+            correctness_oracle_slug=correctness_row.slug if correctness_row else None,
+            correctness_oracle_name=correctness_row.name if correctness_row else None,
             total_response_tokens=total_tokens,
             median_response_tokens_per_attempt=_median_or_none(per_tokens),
             total_cost_usd=total_cost,
@@ -1985,12 +2084,25 @@ def list_competitions(
             n_problems=len(pids),
             n_submissions=n_subs,
             n_models=n_models,
+            harnesses_with_data=_competition_harnesses_with_data(session, c),
+            compatible_harness_slugs=c.compatible_harness_slugs or [],
         ))
     return out
 
 
 @app.get("/api/competitions/{slug}", response_model=CompetitionDetail)
-def get_competition(slug: str, session: Session = Depends(get_session)):
+def get_competition(
+    slug: str,
+    harness_slug: str | None = Query(
+        default=None,
+        description="Scope the leaderboard (`top_models`) to submissions "
+                    "measured by this harness. Omit to include every "
+                    "harness's data pooled together. Available harness "
+                    "slugs for this competition are in "
+                    "`harnesses_with_data`.",
+    ),
+    session: Session = Depends(get_session),
+):
     c = session.exec(
         select(Competition).where(Competition.slug == slug)
     ).first()
@@ -2006,7 +2118,29 @@ def get_competition(slug: str, session: Session = Depends(get_session)):
         .order_by(Problem.level, Problem.title)
     ).all() if member_pids else []
 
+    # Resolve the optional harness scope BEFORE computing stats so the
+    # numbers (`n_submissions`, `n_models`, `languages`, leaderboard)
+    # all reflect the same slice — an operator viewing the arena-local
+    # tab must see arena-local's own model/language count, not the
+    # pooled totals.
+    scope_harness_id: int | None = None
+    if harness_slug:
+        h = session.exec(
+            select(Harness).where(Harness.slug == harness_slug)
+        ).first()
+        if h is None:
+            raise HTTPException(400, f"unknown harness slug {harness_slug!r}")
+        scope_harness_id = h.id
+
     n_subs, n_models, langs, judged = _competition_stats(session, member_pids)
+    if scope_harness_id is not None:
+        judged = [s for s in judged if s.harness_id == scope_harness_id]
+        # Recompute the scoped rollups so the top strip matches the
+        # tab. Languages come from the scoped submissions' language
+        # column; model count from distinct (name, version) pairs.
+        n_subs = len(judged)
+        n_models = len({(s.model_name, s.model_version) for s in judged})
+        langs = sorted({s.language for s in judged if s.language})
 
     # Per-model leaderboard SCOPED to this competition.
     #
@@ -2110,6 +2244,8 @@ def get_competition(slug: str, session: Session = Depends(get_session)):
         n_problems=len(member_pids),
         n_submissions=n_subs,
         n_models=n_models,
+        harnesses_with_data=_competition_harnesses_with_data(session, c),
+        compatible_harness_slugs=c.compatible_harness_slugs or [],
         problems=[
             ProblemPublic(
                 id=p.id, title_slug=p.title_slug, title=p.title,
@@ -2122,6 +2258,53 @@ def get_competition(slug: str, session: Session = Depends(get_session)):
     )
 
 
+def _validate_compat_slugs(
+    session: Session, slugs: list[str],
+) -> list[str]:
+    """Verify every slug in `slugs` resolves to an existing Harness row.
+    De-dupes, drops empties, preserves order. Raises 400 on unknown
+    slugs so a typo on the admin form fails at edit-time rather than
+    at first-submit time."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for s in (slugs or []):
+        s = (s or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        ordered.append(s)
+    if not ordered:
+        return []
+    existing = session.exec(
+        select(Harness.slug).where(Harness.slug.in_(ordered))       # type: ignore[arg-type]
+    ).all()
+    existing_set = set(existing)
+    unknown = [s for s in ordered if s not in existing_set]
+    if unknown:
+        raise HTTPException(
+            400, f"unknown harness slug(s) in compatible_harness_slugs: {unknown}"
+        )
+    return ordered
+
+
+def _competition_harnesses_with_data(
+    session: Session, c: Competition,
+) -> list[str]:
+    """Slugs of every harness that actually has Submission rows for this
+    competition. Drives the SPA's per-harness leaderboard tabs — a tab
+    appears iff there's data behind it. Sorted alphabetically for a
+    stable UI order."""
+    if c.id is None:
+        return []
+    slugs = session.exec(
+        select(Harness.slug)
+        .join(Submission, Submission.harness_id == Harness.id)
+        .where(Submission.competition_id == c.id)
+        .distinct()
+    ).all()
+    return sorted(slugs)
+
+
 @app.post("/api/admin/competitions",
           response_model=CompetitionPublic,
           status_code=status.HTTP_201_CREATED)
@@ -2132,12 +2315,19 @@ def add_competition(
 ):
     if session.exec(select(Competition).where(Competition.slug == payload.slug)).first():
         raise HTTPException(409, f"slug '{payload.slug}' already in use")
-    c = Competition(**payload.model_dump(), created_by_user_id=admin.id)
+    # Validate every entry in the compat allow-list resolves to a real
+    # harness slug before persisting, so a typo surfaces at edit time.
+    compat = _validate_compat_slugs(session, payload.compatible_harness_slugs)
+    data = payload.model_dump()
+    data["compatible_harness_slugs"] = compat
+    c = Competition(**data, created_by_user_id=admin.id)
     session.add(c); session.commit(); session.refresh(c)
     return CompetitionPublic(
         id=c.id, slug=c.slug, name=c.name, description=c.description,
         kind=c.kind, status=c.status, created_at=c.created_at,
         n_problems=0, n_submissions=0, n_models=0,
+        harnesses_with_data=[],
+        compatible_harness_slugs=compat,
     )
 
 
@@ -2156,7 +2346,10 @@ def edit_competition(
         ).first()
         if clash and clash.id != cid:
             raise HTTPException(409, f"slug '{payload.slug}' already in use")
-    for k, v in payload.model_dump().items():
+    compat = _validate_compat_slugs(session, payload.compatible_harness_slugs)
+    data = payload.model_dump()
+    data["compatible_harness_slugs"] = compat
+    for k, v in data.items():
         setattr(c, k, v)
     session.add(c); session.commit(); session.refresh(c)
     member_pids = {
@@ -2169,6 +2362,8 @@ def edit_competition(
         id=c.id, slug=c.slug, name=c.name, description=c.description,
         kind=c.kind, status=c.status, created_at=c.created_at,
         n_problems=len(member_pids), n_submissions=n_subs, n_models=n_models,
+        harnesses_with_data=_competition_harnesses_with_data(session, c),
+        compatible_harness_slugs=compat,
     )
 
 
@@ -2224,6 +2419,8 @@ def set_competition_problems(
         kind=c.kind, status=c.status, created_at=c.created_at,
         n_problems=len(payload.problem_slugs),
         n_submissions=n_subs, n_models=n_models,
+        harnesses_with_data=_competition_harnesses_with_data(session, c),
+        compatible_harness_slugs=c.compatible_harness_slugs or [],
     )
 
 
@@ -2407,6 +2604,42 @@ def edit_harness(
     )
 
 
+@app.post("/api/admin/harnesses/{hid}/probe")
+def probe_harness(
+    hid: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Ping the remote runner's /healthz. Only meaningful for arena-local
+    / custom harnesses that carry a config.endpoint. LeetCode-kind
+    harnesses have their own auth check on the dispatcher's pre-flight
+    (via app.dispatch._check_leetcode_auth) and return `not_applicable`.
+    """
+    h = session.get(Harness, hid)
+    if h is None:
+        raise HTTPException(404, "harness not found")
+    if h.kind == "leetcode":
+        return {
+            "ok": False,
+            "not_applicable": True,
+            "message": (
+                "LeetCode harnesses don't have a runner endpoint — "
+                "credential pool health lives on /admin/leetcode-accounts."
+            ),
+        }
+    if not (h.config or {}).get("endpoint"):
+        return {
+            "ok": False,
+            "message": (
+                "config.endpoint isn't set on this harness — nothing to probe. "
+                "Edit the harness and set { \"endpoint\": \"http://...\" } first."
+            ),
+        }
+    from . import arena_local_runner as _arena
+    ok, info = _arena.probe_healthz(h)
+    return {"ok": ok, "message": info}
+
+
 @app.delete("/api/admin/harnesses/{hid}",
             status_code=status.HTTP_204_NO_CONTENT)
 def delete_harness(
@@ -2430,6 +2663,204 @@ def delete_harness(
             "n_runs": n_runs,
         })
     session.delete(h); session.commit()
+    return None
+
+
+# ---------- Correctness oracles --------------------------------------------
+#
+# The correctness half of the two-oracle model (see models.CorrectnessOracle
+# / models.Harness). Same 5-endpoint shape as harnesses; the layered binding
+# uses the parallel `correctness_oracle_id` FK on Competition / Submission /
+# Run. Legacy rows are backfilled to the seeded `leetcode` correctness
+# oracle at startup so filtering by `?correctness_oracle=leetcode` includes
+# every pre-abstraction submission.
+
+
+def _resolve_submission_correctness_oracle_id(
+    sub: Submission, comp_by_id: dict[int, Competition],
+) -> int | None:
+    """Effective correctness oracle for a submission: explicit override →
+    competition default → NULL. Mirror of _resolve_submission_harness_id
+    for the correctness half."""
+    if sub.correctness_oracle_id is not None:
+        return sub.correctness_oracle_id
+    if sub.competition_id is not None:
+        c = comp_by_id.get(sub.competition_id)
+        if c is not None:
+            return c.correctness_oracle_id
+    return None
+
+
+def _correctness_oracle_stats(
+    session: Session, oracle_id: int,
+) -> tuple[int, int, int, list[str], list[Submission]]:
+    """Same rollup shape as _harness_stats — (n_competitions, n_submissions,
+    n_runs, languages_sorted, judged_subs) for one correctness oracle."""
+    n_comps = len(session.exec(
+        select(Competition).where(Competition.correctness_oracle_id == oracle_id)
+    ).all())
+    n_runs = len(session.exec(
+        select(Run.id).where(Run.correctness_oracle_id == oracle_id)
+    ).all())
+    comps = {c.id: c for c in session.exec(select(Competition)).all()}
+    subs = session.exec(
+        select(Submission).where(Submission.deleted_at.is_(None))
+    ).all()
+    in_scope = [s for s in subs
+                if _resolve_submission_correctness_oracle_id(s, comps) == oracle_id]
+    judged = [s for s in in_scope if s.status == SubmissionStatus.judged]
+    return (n_comps, len(in_scope), n_runs,
+            sorted({s.language for s in in_scope}),
+            judged)
+
+
+@app.get("/api/correctness-oracles", response_model=list[CorrectnessOraclePublic])
+def list_correctness_oracles(
+    include_retired: bool = False,
+    session: Session = Depends(get_session),
+):
+    """List every correctness oracle the platform tracks, with activity
+    stats per row. Retired rows hidden unless `include_retired=true`."""
+    q = select(CorrectnessOracle).order_by(CorrectnessOracle.created_at.desc())
+    if not include_retired:
+        q = q.where(CorrectnessOracle.status == "active")
+    rows = session.exec(q).all()
+    out: list[CorrectnessOraclePublic] = []
+    for o in rows:
+        n_comps, n_subs, n_runs, _l, _j = _correctness_oracle_stats(session, o.id)
+        out.append(CorrectnessOraclePublic(
+            id=o.id, slug=o.slug, name=o.name,
+            description=o.description, kind=o.kind, status=o.status,
+            created_at=o.created_at, config=o.config,
+            n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+        ))
+    return out
+
+
+@app.get("/api/correctness-oracles/{slug}", response_model=CorrectnessOracleDetail)
+def get_correctness_oracle(slug: str, session: Session = Depends(get_session)):
+    o = session.exec(
+        select(CorrectnessOracle).where(CorrectnessOracle.slug == slug)
+    ).first()
+    if o is None:
+        raise HTTPException(404, "correctness oracle not found")
+    n_comps, n_subs, n_runs, langs, judged = _correctness_oracle_stats(session, o.id)
+    comps = session.exec(
+        select(Competition).where(Competition.correctness_oracle_id == o.id)
+        .order_by(Competition.name)
+    ).all()
+
+    # Per-model leaderboard over submissions judged by this oracle.
+    by_model: dict[tuple[str, str], list[Submission]] = {}
+    for s in judged:
+        by_model.setdefault((s.model_name, s.model_version), []).append(s)
+    top: list[dict] = []
+    for (name, ver), subs in by_model.items():
+        pass1 = [s.pass_at_1 for s in subs if s.pass_at_1 is not None]
+        passk = [s.pass_at_k for s in subs if s.pass_at_k is not None]
+        rt = [s.avg_runtime_ms for s in subs if s.avg_runtime_ms is not None]
+        mem = [s.avg_memory_mb for s in subs if s.avg_memory_mb is not None]
+        rtp = [s.avg_runtime_percentile for s in subs
+               if s.avg_runtime_percentile is not None]
+        memp = [s.avg_memory_percentile for s in subs
+                if s.avg_memory_percentile is not None]
+        top.append({
+            "model_name": name,
+            "model_version": ver,
+            "best_pass_at_1": max(pass1) if pass1 else 0.0,
+            "pass_at_k": max(passk) if passk else None,
+            "n_submissions": len(subs),
+            "avg_runtime_ms": _mean_or_none(rt),
+            "avg_memory_mb": _mean_or_none(mem),
+            "avg_runtime_percentile": _mean_or_none(rtp),
+            "avg_memory_percentile": _mean_or_none(memp),
+        })
+    top.sort(key=lambda r: (
+        -(r["best_pass_at_1"] or 0),
+        -(r.get("avg_runtime_percentile") or 0),
+        -(r.get("avg_memory_percentile") or 0),
+    ))
+
+    return CorrectnessOracleDetail(
+        id=o.id, slug=o.slug, name=o.name,
+        description=o.description, kind=o.kind, status=o.status,
+        created_at=o.created_at, config=o.config,
+        n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+        competitions=[CompetitionRef(slug=c.slug, name=c.name) for c in comps],
+        languages=langs,
+        top_models=top[:5],
+    )
+
+
+@app.post("/api/admin/correctness-oracles",
+          response_model=CorrectnessOraclePublic,
+          status_code=status.HTTP_201_CREATED)
+def add_correctness_oracle(
+    payload: CorrectnessOracleIn,
+    admin: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    if session.exec(select(CorrectnessOracle).where(
+            CorrectnessOracle.slug == payload.slug)).first():
+        raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    o = CorrectnessOracle(**payload.model_dump(), created_by_user_id=admin.id)
+    session.add(o); session.commit(); session.refresh(o)
+    return CorrectnessOraclePublic(
+        id=o.id, slug=o.slug, name=o.name, description=o.description,
+        kind=o.kind, status=o.status, created_at=o.created_at, config=o.config,
+        n_competitions=0, n_submissions=0, n_runs=0,
+    )
+
+
+@app.put("/api/admin/correctness-oracles/{oid}",
+         response_model=CorrectnessOraclePublic)
+def edit_correctness_oracle(
+    oid: int, payload: CorrectnessOracleIn,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    o = session.get(CorrectnessOracle, oid)
+    if o is None:
+        raise HTTPException(404, "correctness oracle not found")
+    if payload.slug != o.slug:
+        clash = session.exec(
+            select(CorrectnessOracle).where(CorrectnessOracle.slug == payload.slug)
+        ).first()
+        if clash and clash.id != oid:
+            raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    for k, v in payload.model_dump().items():
+        setattr(o, k, v)
+    session.add(o); session.commit(); session.refresh(o)
+    n_comps, n_subs, n_runs, _l, _j = _correctness_oracle_stats(session, o.id)
+    return CorrectnessOraclePublic(
+        id=o.id, slug=o.slug, name=o.name, description=o.description,
+        kind=o.kind, status=o.status, created_at=o.created_at, config=o.config,
+        n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
+    )
+
+
+@app.delete("/api/admin/correctness-oracles/{oid}",
+            status_code=status.HTTP_204_NO_CONTENT)
+def delete_correctness_oracle(
+    oid: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    o = session.get(CorrectnessOracle, oid)
+    if o is None:
+        raise HTTPException(404, "correctness oracle not found")
+    # Same safety net as delete_harness — refuse when rows still reference
+    # this oracle so an admin doesn't accidentally orphan submission /
+    # run rows into a dangling FK.
+    n_comps, n_subs, n_runs, _l, _j = _correctness_oracle_stats(session, oid)
+    if n_comps or n_subs or n_runs:
+        raise HTTPException(409, {
+            "detail": "correctness oracle is in use — reassign before deleting",
+            "n_competitions": n_comps,
+            "n_submissions": n_subs,
+            "n_runs": n_runs,
+        })
+    session.delete(o); session.commit()
     return None
 
 
@@ -2831,6 +3262,11 @@ def compare_models(
                 runtime_percentile=best.avg_runtime_percentile,
                 memory_percentile=best.avg_memory_percentile,
                 generation_energy_j=best.generation_energy_j,
+                # Populated by execution-instrumented harnesses (arena-local
+                # etc.). None for LC-only rows — the head-to-head comparison
+                # gates its energy row on ANY model reporting it (see
+                # shouldShowEnergyColumn on the client).
+                runtime_energy_j=best.avg_runtime_energy_j,
             )
         problems_out.append(CompareProblemRow(
             problem_slug=p.title_slug, problem_title=p.title, level=p.level,
@@ -3712,6 +4148,9 @@ def submission_detail(submission_id: int, session: Session = Depends(get_session
             memory_percentile=r.memory_percentile if r else None,
             runtime_energy_j=r.runtime_energy_j if r else None,
             runtime_energy_percentile=r.runtime_energy_percentile if r else None,
+            iterations=r.iterations if r else None,
+            energy_j_per_op=r.energy_j_per_op if r else None,
+            time_us_per_op=r.time_us_per_op if r else None,
             total_correct=r.total_correct if r else None,
             total_testcases=r.total_testcases if r else None,
             error_log=_build_error_log(r.raw_response, r.status_msg) if r else None,
@@ -3846,15 +4285,29 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
     # Competition reference for the new SPA column. None on legacy rows
     # that pre-date the per-submission competition scope.
     comp = session.get(Competition, s.competition_id) if s.competition_id is not None else None
-    # Effective harness for this submission: explicit override → competition
-    # default → NULL. Resolves in-process so the row's Harness column can
-    # link straight to /harnesses/{slug}.
+    # Effective harness (PERFORMANCE oracle) for this submission: explicit
+    # override → competition default → NULL. Resolves in-process so the
+    # row's Harness column can link straight to /harnesses/{slug}.
     _hid = (
         s.harness_id
         if s.harness_id is not None
         else (comp.harness_id if comp is not None else None)
     )
     harness_row = session.get(Harness, _hid) if _hid is not None else None
+    # Effective CORRECTNESS oracle — twin resolution shape.
+    _cid = (
+        s.correctness_oracle_id
+        if s.correctness_oracle_id is not None
+        else (comp.correctness_oracle_id if comp is not None else None)
+    )
+    correctness_row = (
+        session.get(CorrectnessOracle, _cid) if _cid is not None else None
+    )
+    # Machine this submission was measured on (Parts 2+3). NULL on
+    # LeetCode-scored submissions ("unknown machine").
+    machine_row = (
+        session.get(Machine, s.machine_id) if s.machine_id is not None else None
+    )
     # Last-attempt timestamp — drives the SPA's "When" sort on the
     # /submissions table so a running sweep stays at the top of the
     # list while it's still landing attempts. None when the submission
@@ -3897,6 +4350,12 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         best_runtime_energy_j=s.best_runtime_energy_j,
         avg_runtime_energy_percentile=s.avg_runtime_energy_percentile,
         best_runtime_energy_percentile=s.best_runtime_energy_percentile,
+        # Per-op rollup (B3): time/energy per-op ARE the aliased avg_runtime_*
+        # columns; expose them explicitly (µs / J) + the solve count.
+        avg_time_us_per_op=(s.avg_runtime_ms * 1000.0
+                            if s.avg_runtime_ms is not None else None),
+        avg_energy_j_per_op=s.avg_runtime_energy_j,
+        avg_iterations=s.avg_iterations,
         time_human_avg=s.time_human_avg,
         time_human_expert=s.time_human_expert,
         mem_human_avg=s.mem_human_avg,
@@ -3916,6 +4375,7 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         n_rounds=s.n_rounds or 1,
         include_hints=bool(s.include_hints),
         optimization_target=s.optimization_target,
+        stop_on_accept=bool(s.stop_on_accept),
         # Prefer the LIVE total (current rates × stored tokens). When no
         # attempt had stored tokens AND the model has no pricing row,
         # `live_total` is None and we fall back to the snapshot column.
@@ -3931,6 +4391,12 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         competition_name=comp.name if comp else None,
         harness_slug=harness_row.slug if harness_row else None,
         harness_name=harness_row.name if harness_row else None,
+        correctness_oracle_slug=correctness_row.slug if correctness_row else None,
+        correctness_oracle_name=correctness_row.name if correctness_row else None,
+        energy_tool=s.energy_tool,
+        machine_id=s.machine_id,
+        machine_name=machine_row.name if machine_row else None,
+        run_uid=s.run_uid,
         last_attempt_at=last_attempt_at,
     )
 
@@ -4901,6 +5367,48 @@ def submit_batch(
         if session.get(PromptTemplate, payload.prompt_id) is None:
             raise HTTPException(400, f"prompt_id={payload.prompt_id} does not exist")
 
+    # Optional per-submission harness override. When set, this submission
+    # dispatches through the named harness regardless of the competition's
+    # default binding — lets a client run parallel sweeps against
+    # different perf oracles from one endpoint.
+    submission_harness_id: int | None = None
+    if payload.harness_slug:
+        h = session.exec(
+            select(Harness).where(Harness.slug == payload.harness_slug)
+        ).first()
+        if h is None:
+            raise HTTPException(
+                400, f"harness_slug={payload.harness_slug!r} does not exist")
+        # Compat enforcement — the competition's admin allow-list must
+        # include this harness. Empty list means the operator hasn't
+        # blessed any harness yet; the check surfaces both the
+        # empty-list and the "not-in-list" cases with the same clear
+        # error so the client knows exactly what to fix.
+        compat = (comp.compatible_harness_slugs or [])
+        if payload.harness_slug not in compat:
+            raise HTTPException(
+                400,
+                f"harness {payload.harness_slug!r} is not compatible with "
+                f"competition {comp.slug!r} (allowed: {compat or 'none — '
+                'add one on /competitions admin form'})"
+            )
+        submission_harness_id = h.id
+    # Same shape for the correctness oracle. Independent of the perf
+    # harness — see dispatch._resolve_effective_correctness_oracle for
+    # the layering used at dispatch time.
+    submission_correctness_oracle_id: int | None = None
+    if payload.correctness_oracle_slug:
+        o = session.exec(
+            select(CorrectnessOracle)
+            .where(CorrectnessOracle.slug == payload.correctness_oracle_slug)
+        ).first()
+        if o is None:
+            raise HTTPException(
+                400,
+                f"correctness_oracle_slug={payload.correctness_oracle_slug!r} "
+                "does not exist")
+        submission_correctness_oracle_id = o.id
+
     sub = Submission(
         user_id=user.id, model_name=payload.model_name,
         model_version=payload.model_version, language=payload.language,
@@ -4910,7 +5418,10 @@ def submit_batch(
         n_rounds=payload.n_rounds,
         include_hints=payload.include_hints,
         optimization_target=payload.optimization_target,
+        stop_on_accept=payload.stop_on_accept,
         competition_id=comp.id,
+        harness_id=submission_harness_id,
+        correctness_oracle_id=submission_correctness_oracle_id,
         total_problems=len(comp_problems),
     )
     session.add(sub)
@@ -5132,6 +5643,8 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             best_memory_mb=a.best_memory_mb,
             avg_runtime_percentile=a.avg_runtime_percentile,
             avg_memory_percentile=a.avg_memory_percentile,
+            avg_runtime_energy_j=a.avg_runtime_energy_j,
+            best_runtime_energy_j=a.best_runtime_energy_j,
             submitted_at=a.logged_at,
             runs=[AttemptRunDetail(
                 run_index=r.run_index,
@@ -5488,6 +6001,277 @@ async def admin_import(
     except ValueError as e:
         raise HTTPException(400, str(e))
     return result
+
+
+# ---------- External-harness measurement ingest ---------------------------
+#
+# Offline import path for results produced by harnesses that DON'T go
+# through the interactive attempt/dispatch flow (e.g. the perfarena-local
+# harness that measures execution energy + wall-clock on real hardware).
+# One POST creates the whole Submission + Attempts + Runs graph in the
+# right shape so the leaderboard math, energy columns, and head-to-head
+# views treat it identically to a LeetCode-dispatched submission.
+
+
+@app.post("/api/admin/import-harness-measurements",
+          status_code=status.HTTP_201_CREATED)
+async def import_harness_measurements(
+    request: Request,
+    admin: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Ingest one model's full measurement bundle from an external harness.
+
+    Expected body shape:
+    {
+      "harness_slug": "arena-local",           # perf oracle (Harness)
+      "harness_name": "PerfArena local",       # display name if creating
+      "correctness_oracle_slug": "arena-local",# correctness oracle
+      "correctness_oracle_name": "PerfArena local",
+      "competition_slug": "leetcode-99-perf",
+      "model_name": "qwen3:4b",
+      "model_version": "ollama",
+      "language": "python3",
+      "prompt_template": "(external harness — no prompt)",
+      "measurements": [
+        {
+          "title_slug": "2-keys-keyboard",
+          "code": "…solution source…",
+          "runtime_ms": 0.1039,                # median wall-clock per call
+          "runtime_energy_j": 0.000486,        # median CPU energy per call
+          "n_test_cases": 65,                  # informational
+          "accepted": true                     # verdict from the harness
+        },
+        …
+      ]
+    }
+
+    The perf + correctness oracle rows are UPSERTED (idempotent). One
+    Submission is created scoped to the given competition; one Attempt per
+    measurement (final_status derived from `accepted`); one Run per Attempt
+    carrying the runtime_ms + runtime_energy_j + harness_id. Attempt and
+    Submission aggregates are computed inline so the leaderboard math is
+    valid the instant the response returns.
+    """
+    try:
+        body = await request.json()
+    except Exception as e:                                                  # noqa: BLE001
+        raise HTTPException(400, f"body must be valid JSON: {e}")
+
+    for required in ("model_name", "model_version", "language",
+                     "measurements"):
+        if required not in body:
+            raise HTTPException(400, f"missing field: {required}")
+    if not isinstance(body["measurements"], list) or not body["measurements"]:
+        raise HTTPException(400, "measurements must be a non-empty list")
+
+    comp_slug = body.get("competition_slug") or "leetcode-99-perf"
+    comp = session.exec(
+        select(Competition).where(Competition.slug == comp_slug)
+    ).first()
+    if comp is None:
+        raise HTTPException(404, f"competition '{comp_slug}' not found")
+
+    # Upsert the two oracles. Uses the given slug + name; anything else on
+    # the row (description, config) stays at whatever the admin filled in
+    # via the SPA. Only touch `kind`+`name` when we CREATE the row so an
+    # operator's edits on an existing seed aren't clobbered by an import.
+    def _upsert_perf_harness(slug: str, name: str | None) -> Harness:
+        h = session.exec(select(Harness).where(Harness.slug == slug)).first()
+        if h is None:
+            h = Harness(
+                slug=slug,
+                name=name or slug,
+                kind="arena-local" if "local" in slug else "custom",
+                description=(
+                    "Auto-created by /api/admin/import-harness-measurements. "
+                    "Edit description + config on the /harnesses page."
+                ),
+                status="active",
+                created_by_user_id=admin.id,
+            )
+            session.add(h)
+            session.commit()
+            session.refresh(h)
+        return h
+
+    def _upsert_correctness(slug: str, name: str | None) -> CorrectnessOracle:
+        o = session.exec(
+            select(CorrectnessOracle).where(CorrectnessOracle.slug == slug)
+        ).first()
+        if o is None:
+            o = CorrectnessOracle(
+                slug=slug,
+                name=name or slug,
+                kind="arena-local" if "local" in slug else "custom",
+                description=(
+                    "Auto-created by /api/admin/import-harness-measurements. "
+                    "Edit description + config on /correctness-oracles."
+                ),
+                status="active",
+                created_by_user_id=admin.id,
+            )
+            session.add(o)
+            session.commit()
+            session.refresh(o)
+        return o
+
+    harness = _upsert_perf_harness(
+        body.get("harness_slug") or "arena-local",
+        body.get("harness_name"),
+    )
+    correctness = _upsert_correctness(
+        body.get("correctness_oracle_slug") or "arena-local",
+        body.get("correctness_oracle_name"),
+    )
+
+    # Resolve every incoming slug to a problem.id. Reject unknown slugs
+    # upfront rather than silently dropping them mid-ingest.
+    slug_to_pid: dict[str, int] = {
+        p.title_slug: p.id
+        for p in session.exec(select(Problem)).all()
+    }
+    unknown = [m["title_slug"] for m in body["measurements"]
+               if m.get("title_slug") not in slug_to_pid]
+    if unknown:
+        raise HTTPException(400, {
+            "detail": "unknown problem slugs — seed them first via "
+                      "`python -m app.seed` or the parquet import",
+            "unknown_slugs": unknown[:20],
+            "total_unknown": len(unknown),
+        })
+
+    # The COMPETITION's problem count is the denominator for pass@1 (not
+    # the size of the measurement bundle). A model that ships a bundle
+    # covering 44 of the 99 competition problems, all Accepted, has
+    # pass@1 = 44/99 ≈ 44.4% — NOT 100%. Also lets us tag out-of-
+    # competition measurements so they don't inflate `total_solved`.
+    comp_pids: set[int] = {
+        cp.problem_id for cp in session.exec(
+            select(CompetitionProblem).where(
+                CompetitionProblem.competition_id == comp.id
+            )
+        ).all()
+    }
+    if not comp_pids:
+        raise HTTPException(400, {
+            "detail": f"competition '{comp_slug}' has no problems linked "
+                      f"— add them via /competitions before importing",
+        })
+
+    # Create the submission. Every field the SPA reads gets populated up
+    # front (status=judged, aggregates computed after we insert attempts).
+    # total_problems = COMPETITION size, NOT bundle size — so the pass@1
+    # denominator matches every other submission on the platform.
+    sub = Submission(
+        user_id=admin.id,
+        model_name=body["model_name"],
+        model_version=body["model_version"],
+        language=body["language"],
+        prompt_template=body.get("prompt_template") or "(external harness)",
+        model_params=body.get("model_params") or {},
+        status=SubmissionStatus.judged,
+        competition_id=comp.id,
+        n_samples_per_problem=1,
+        harness_id=harness.id,
+        correctness_oracle_id=correctness.id,
+        total_problems=len(comp_pids),
+    )
+    session.add(sub); session.commit(); session.refresh(sub)
+
+    # Per-attempt aggregates we'll roll up onto the Submission afterwards.
+    all_rt: list[float] = []
+    all_en: list[float] = []
+    n_solved_in_comp = 0    # counts only problems that are in the competition
+    n_bundle_solved = 0     # informational — includes out-of-competition
+    n_out_of_competition = 0
+    now = datetime.utcnow()
+    for m in body["measurements"]:
+        pid = slug_to_pid[m["title_slug"]]
+        in_comp = pid in comp_pids
+        accepted = bool(m.get("accepted", True))
+        rt = m.get("runtime_ms")
+        en = m.get("runtime_energy_j")
+        mem = m.get("memory_mb")
+        att = Attempt(
+            submission_id=sub.id,
+            problem_id=pid,
+            code=m.get("code") or "",
+            inference_trace="(external harness — no LLM trace)",
+            trace=None,
+            round_index=0,
+            n_runs=1,
+            n_accepted_runs=1 if accepted else 0,
+            final_status="Accepted" if accepted else "Wrong Answer",
+            avg_runtime_ms=rt,
+            best_runtime_ms=rt,
+            avg_memory_mb=mem,
+            best_memory_mb=mem,
+            avg_runtime_energy_j=en,
+            best_runtime_energy_j=en,
+            logged_at=now,
+        )
+        session.add(att); session.flush()          # populate att.id
+        # One Run per Attempt — that's how many the harness ran; if the
+        # operator wants to encode more per-case variance later they can
+        # extend this endpoint to accept a `runs` list per measurement.
+        run = Run(
+            attempt_id=att.id,
+            run_index=1,
+            status_msg="Accepted" if accepted else "Wrong Answer",
+            runtime_ms=rt,
+            memory_mb=mem,
+            runtime_energy_j=en,
+            total_correct=m.get("n_test_cases"),
+            total_testcases=m.get("n_test_cases"),
+            harness_id=harness.id,
+            correctness_oracle_id=correctness.id,
+        )
+        session.add(run)
+        if accepted:
+            n_bundle_solved += 1
+            if in_comp:
+                n_solved_in_comp += 1
+            # Aggregates over accepted attempts regardless of scope so
+            # avg_runtime / avg_energy reflect the model's actual measured
+            # perf, not a competition-filtered subset. If you want the
+            # competition-only slice for research, filter in analysis.
+            if rt is not None:
+                all_rt.append(rt)
+            if en is not None:
+                all_en.append(en)
+        if not in_comp:
+            n_out_of_competition += 1
+    session.commit()
+
+    # Submission-level rollup — pass@1 = in-competition accepted / competition
+    # size. pass@k and pass@full are identical here (single-sample, external
+    # harness). n_samples_per_problem=1 → pass_at_k denominator is the same.
+    denom = len(comp_pids)
+    sub.total_solved = n_solved_in_comp
+    sub.pass_at_1 = n_solved_in_comp / denom
+    sub.pass_at_k = sub.pass_at_1
+    sub.pass_at_full = sub.pass_at_1
+    sub.avg_runtime_ms = _mean_or_none(all_rt)
+    sub.best_runtime_ms = min(all_rt) if all_rt else None
+    sub.avg_runtime_energy_j = _mean_or_none(all_en)
+    sub.best_runtime_energy_j = min(all_en) if all_en else None
+    session.add(sub); session.commit(); session.refresh(sub)
+
+    return {
+        "submission_id": sub.id,
+        "harness_slug": harness.slug,
+        "correctness_oracle_slug": correctness.slug,
+        "competition_slug": comp.slug,
+        "competition_size": denom,
+        "n_measurements": len(body["measurements"]),
+        "n_solved_in_competition": n_solved_in_comp,
+        "n_solved_in_bundle": n_bundle_solved,
+        "n_out_of_competition_measurements": n_out_of_competition,
+        "avg_runtime_ms": sub.avg_runtime_ms,
+        "avg_runtime_energy_j": sub.avg_runtime_energy_j,
+        "pass_at_1": sub.pass_at_1,
+    }
 
 
 # ---------- LeetCode credential pool management ----------------------------

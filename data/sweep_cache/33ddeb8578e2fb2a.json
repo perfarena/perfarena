@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|decode-letter-sum-equation",
+  "code": "object Solution {\n  def isSolvable(words: Array[String], result: String): Boolean = {\n    val allWords = words :+ result\n    // Collect all unique characters\n    val chars = allWords.flatMap(_.toCharArray).distinct\n    if (chars.length > 10) return false // more than 10 unique chars, impossible\n\n    // Map each char to an index\n    val charIndex = chars.zipWithIndex.toMap\n\n    // Leading characters cannot be zero\n    val leadingChars = (words.map(_.head) :+ result.head).toSet\n\n    // Precompute the contribution of each character in the sum\n    // For each word, for each char, add 10^(pos) to that char's coefficient\n    // For words on left side, add; for result on right side, subtract\n    val coeffs = Array.fill(chars.length)(0)\n    for (w <- words) {\n      val len = w.length\n      for (i <- w.indices) {\n        val c = w(i)\n        coeffs(charIndex(c)) += math.pow(10, len - i - 1).toInt\n      }\n    }\n    val lenR = result.length\n    for (i <- result.indices) {\n      val c = result(i)\n      coeffs(charIndex(c)) -= math.pow(10, lenR - i - 1).toInt\n    }\n\n    val usedDigits = Array.fill(10)(false)\n    val assigned = Array.fill(chars.length)(-1)\n\n    def backtrack(pos: Int): Boolean = {\n      if (pos == chars.length) {\n        // Check if sum is zero\n        val sum = coeffs.zip(assigned).map { case (c, d) => c * d }.sum\n        sum == 0\n      } else {\n        val c = chars(pos)\n        val isLeading = leadingChars.contains(c)\n        for (d <- 0 to 9) {\n          if (!usedDigits(d) && !(d == 0 && isLeading)) {\n            usedDigits(d) = true\n            assigned(pos) = d\n            if (backtrack(pos + 1)) return true\n            usedDigits(d) = false\n            assigned(pos) = -1\n          }\n        }\n        false\n      }\n    }\n\n    backtrack(0)\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `decode-letter-sum-equation` in Scala.\n\nConsider an equation whose left side is described by `words` and whose right side is described by `result`.\n\nDecide whether the equation admits a valid assignment subject to the following rules:\n\n*   Each character maps to a single digit (0 - 9).\n*   Distinct characters must map to distinct digits.\n*   Every entry of `words[i]` and `result` decodes to a number **without** any leading zero.\n*   Adding up the numbers from the left side (`words`) yields the number on the right side (`result`).\n\nReturn `true` _when a valid assignment exists, otherwise return_ `false`.\n\n**Example 1:**\n\n**Input:** words = \\[ \"SEND \", \"MORE \"\\], result =  \"MONEY \"\n**Output:** true\n**Explanation:** Map 'S'-> 9, 'E'->5, 'N'->6, 'D'->7, 'M'->1, 'O'->0, 'R'->8, 'Y'->'2'\nThis gives:  \"SEND \" +  \"MORE \" =  \"MONEY \" ,  9567 + 1085 = 10652\n\n**Example 2:**\n\n**Input:** words = \\[ \"SIX \", \"SEVEN \", \"SEVEN \"\\], result =  \"TWENTY \"\n**Output:** true\n**Explanation:** Map 'S'-> 6, 'I'->5, 'X'->0, 'E'->8, 'V'->7, 'N'->2, 'T'->1, 'W'->'3', 'Y'->4\nThis gives:  \"SIX \" +  \"SEVEN \" +  \"SEVEN \" =  \"TWENTY \" ,  650 + 68782 + 68782 = 138214\n\n**Example 3:**\n\n**Input:** words = \\[ \"LEET \", \"CODE \"\\], result =  \"POINT \"\n**Output:** false\n**Explanation:** No digit assignment can satisfy the equation, so the answer is false.\nRecall that two unequal characters cannot share the same digit.\n\n**Constraints:**\n\n*   `2 <= words.length <= 5`\n*   `1 <= words[i].length, result.length <= 7`\n*   `words[i], result` contain only uppercase English letters.\n*   The number of different characters used in the expression is at most `10`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def isSolvable(words: Array[String], result: String): Boolean = {\n    val allWords = words :+ result\n    // Collect all unique characters\n    val chars = allWords.flatMap(_.toCharArray).distinct\n    if (chars.length > 10) return false // more than 10 unique chars, impossible\n\n    // Map each char to an index\n    val charIndex = chars.zipWithIndex.toMap\n\n    // Leading characters cannot be zero\n    val leadingChars = (words.map(_.head) :+ result.head).toSet\n\n    // Precompute the contribution of each character in the sum\n    // For each word, for each char, add 10^(pos) to that char's coefficient\n    // For words on left side, add; for result on right side, subtract\n    val coeffs = Array.fill(chars.length)(0)\n    for (w <- words) {\n      val len = w.length\n      for (i <- w.indices) {\n        val c = w(i)\n        coeffs(charIndex(c)) += math.pow(10, len - i - 1).toInt\n      }\n    }\n    val lenR = result.length\n    for (i <- result.indices) {\n      val c = result(i)\n      coeffs(charIndex(c)) -= math.pow(10, lenR - i - 1).toInt\n    }\n\n    val usedDigits = Array.fill(10)(false)\n    val assigned = Array.fill(chars.length)(-1)\n\n    def backtrack(pos: Int): Boolean = {\n      if (pos == chars.length) {\n        // Check if sum is zero\n        val sum = coeffs.zip(assigned).map { case (c, d) => c * d }.sum\n        sum == 0\n      } else {\n        val c = chars(pos)\n        val isLeading = leadingChars.contains(c)\n        for (d <- 0 to 9) {\n          if (!usedDigits(d) && !(d == 0 && isLeading)) {\n            usedDigits(d) = true\n            assigned(pos) = d\n            if (backtrack(pos + 1)) return true\n            usedDigits(d) = false\n            assigned(pos) = -1\n          }\n        }\n        false\n      }\n    }\n\n    backtrack(0)\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T00:16:45.077380+00:00",
+    "wall_clock_ms": 8321,
+    "provider_meta": {
+      "system_fingerprint": "fp_7c5d442c61",
+      "usage": {
+        "prompt_tokens": 608,
+        "completion_tokens": 497,
+        "total_tokens": 1105,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T00:16:45.077758+00:00"
+}

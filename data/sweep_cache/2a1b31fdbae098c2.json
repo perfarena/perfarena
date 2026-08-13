@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|subsets-reaching-peak-bitwise-or",
+  "code": "#include <stdlib.h>\n\nint countMaxOrSubsets(int* nums, int numsSize){\n    int maxOr = 0;\n    for (int i = 0; i < numsSize; i++) {\n        maxOr |= nums[i];\n    }\n    \n    int count = 0;\n    int total = 1 << numsSize;\n    for (int mask = 1; mask < total; mask++) {\n        int orVal = 0;\n        for (int i = 0; i < numsSize; i++) {\n            if (mask & (1 << i)) {\n                orVal |= nums[i];\n                if (orVal == maxOr) break; // early stop if maxOr reached\n            }\n        }\n        if (orVal == maxOr) count++;\n    }\n    return count;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `subsets-reaching-peak-bitwise-or` in C.\n\nGiven an integer array `nums`, determine the **largest** achievable **bitwise OR** across any subset of `nums` and return _the **tally of distinct non-empty subsets** whose bitwise OR hits that peak_.\n\nAn array `a` qualifies as a **subset** of an array `b` whenever `a` arises from `b` by erasing some (possibly none) of `b`'s entries. Two subsets count as **distinct** when they pick different index positions.\n\nThe bitwise OR over an array `a` equals `a[0] **OR** a[1] **OR** ... **OR** a[a.length - 1]` (**0-indexed**).\n\n**Example 1:**\n\n**Input:** nums = \\[3,1\\]\n**Output:** 2\n**Explanation:** The largest possible bitwise OR of a subset comes out to 3. Exactly 2 subsets reach a bitwise OR of 3:\n- \\[3\\]\n- \\[3,1\\]\n\n**Example 2:**\n\n**Input:** nums = \\[2,2,2\\]\n**Output:** 7\n**Explanation:** Every non-empty subset of \\[2,2,2\\] yields a bitwise OR of 2. Altogether 23 - 1 = 7 subsets exist.\n\n**Example 3:**\n\n**Input:** nums = \\[3,2,1,5\\]\n**Output:** 6\n**Explanation:** The largest possible bitwise OR of a subset comes out to 7. Exactly 6 subsets reach a bitwise OR of 7:\n- \\[3,5\\]\n- \\[3,1,5\\]\n- \\[3,2,5\\]\n- \\[3,2,1,5\\]\n- \\[2,5\\]\n- \\[2,1,5\\]\n\n**Constraints:**\n\n*   `1 <= nums.length <= 16`\n*   `1 <= nums[i] <= 105`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdlib.h>\n\nint countMaxOrSubsets(int* nums, int numsSize){\n    int maxOr = 0;\n    for (int i = 0; i < numsSize; i++) {\n        maxOr |= nums[i];\n    }\n    \n    int count = 0;\n    int total = 1 << numsSize;\n    for (int mask = 1; mask < total; mask++) {\n        int orVal = 0;\n        for (int i = 0; i < numsSize; i++) {\n            if (mask & (1 << i)) {\n                orVal |= nums[i];\n                if (orVal == maxOr) break; // early stop if maxOr reached\n            }\n        }\n        if (orVal == maxOr) count++;\n    }\n    return count;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T19:39:40.623294+00:00",
+    "wall_clock_ms": 2837,
+    "provider_meta": {
+      "system_fingerprint": "fp_75121d4089",
+      "usage": {
+        "prompt_tokens": 522,
+        "completion_tokens": 175,
+        "total_tokens": 697,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T19:39:40.625409+00:00"
+}

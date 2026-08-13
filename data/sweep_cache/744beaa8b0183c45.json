@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|next-greater-numerically-balanced-number",
+  "code": "object Solution {\n  def nextBeautifulNumber(n: Int): Int = {\n    // Precomputed numerically balanced numbers up to a certain range.\n    // These are all numerically balanced numbers with digits 1 to 7 (since digits >7 can't appear that many times)\n    // and length up to 7 digits (since n <= 10^6, but we go a bit beyond to be safe).\n    // We generate them by backtracking all possible digit counts that satisfy the condition.\n    \n    import scala.collection.mutable.ArrayBuffer\n    \n    val res = ArrayBuffer[Int]()\n    \n    def backtrack(digit: Int, counts: Array[Int], totalLen: Int): Unit = {\n      if (digit == 10) {\n        if (totalLen > 0) {\n          // Check if counts satisfy the numerically balanced condition:\n          // For each digit d, either count[d] == 0 or count[d] == d\n          var valid = true\n          for (d <- 1 to 9) {\n            if (counts(d) != 0 && counts(d) != d) {\n              valid = false\n            }\n          }\n          if (valid) {\n            // Construct the number from counts\n            val sb = new StringBuilder\n            for (d <- 1 to 9) {\n              for (_ <- 0 until counts(d)) {\n                sb.append(d)\n              }\n            }\n            val num = sb.toString.toInt\n            res += num\n          }\n        }\n        return\n      }\n      \n      // For digit 0, count must be 0 because digit 0 cannot appear (0 times) or else it violates the condition.\n      if (digit == 0) {\n        backtrack(digit + 1, counts, totalLen)\n      } else {\n        // For digit d, count can be 0 or d\n        // Try count = 0\n        counts(digit) = 0\n        backtrack(digit + 1, counts, totalLen)\n        // Try count = digit (if totalLen + digit <= 10 to avoid too long numbers)\n        if (totalLen + digit <= 10) {\n          counts(digit) = digit\n          backtrack(digit + 1, counts, totalLen + digit)\n          counts(digit) = 0\n        }\n      }\n    }\n    \n    backtrack(0, Array.fill(10)(0), 0)\n    val sorted = res.sorted\n    // Find the smallest numerically balanced number strictly greater than n\n    sorted.find(_ > n).getOrElse(-1)\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `next-greater-numerically-balanced-number` in Scala.\n\nAn integer `x` is **numerically balanced** if for every digit `d` in the number `x`, there are **exactly** `d` occurrences of that digit in `x`.\n\nGiven an integer `n`, return _the **smallest numerically balanced** number **strictly greater** than_ `n`_._\n\n**Example 1:**\n\n**Input:** n = 1\n**Output:** 22\n**Explanation:** \n22 is numerically balanced since:\n- The digit 2 occurs 2 times. \nIt is also the smallest numerically balanced number strictly greater than 1.\n\n**Example 2:**\n\n**Input:** n = 1000\n**Output:** 1333\n**Explanation:** \n1333 is numerically balanced since:\n- The digit 1 occurs 1 time.\n- The digit 3 occurs 3 times. \nIt is also the smallest numerically balanced number strictly greater than 1000.\nNote that 1022 cannot be the answer because 0 appeared more than 0 times.\n\n**Example 3:**\n\n**Input:** n = 3000\n**Output:** 3133\n**Explanation:** \n3133 is numerically balanced since:\n- The digit 1 occurs 1 time.\n- The digit 3 occurs 3 times.\nIt is also the smallest numerically balanced number strictly greater than 3000.\n\n**Constraints:**\n\n*   `0 <= n <= 106`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def nextBeautifulNumber(n: Int): Int = {\n    // Precomputed numerically balanced numbers up to a certain range.\n    // These are all numerically balanced numbers with digits 1 to 7 (since digits >7 can't appear that many times)\n    // and length up to 7 digits (since n <= 10^6, but we go a bit beyond to be safe).\n    // We generate them by backtracking all possible digit counts that satisfy the condition.\n    \n    import scala.collection.mutable.ArrayBuffer\n    \n    val res = ArrayBuffer[Int]()\n    \n    def backtrack(digit: Int, counts: Array[Int], totalLen: Int): Unit = {\n      if (digit == 10) {\n        if (totalLen > 0) {\n          // Check if counts satisfy the numerically balanced condition:\n          // For each digit d, either count[d] == 0 or count[d] == d\n          var valid = true\n          for (d <- 1 to 9) {\n            if (counts(d) != 0 && counts(d) != d) {\n              valid = false\n            }\n          }\n          if (valid) {\n            // Construct the number from counts\n            val sb = new StringBuilder\n            for (d <- 1 to 9) {\n              for (_ <- 0 until counts(d)) {\n                sb.append(d)\n              }\n            }\n            val num = sb.toString.toInt\n            res += num\n          }\n        }\n        return\n      }\n      \n      // For digit 0, count must be 0 because digit 0 cannot appear (0 times) or else it violates the condition.\n      if (digit == 0) {\n        backtrack(digit + 1, counts, totalLen)\n      } else {\n        // For digit d, count can be 0 or d\n        // Try count = 0\n        counts(digit) = 0\n        backtrack(digit + 1, counts, totalLen)\n        // Try count = digit (if totalLen + digit <= 10 to avoid too long numbers)\n        if (totalLen + digit <= 10) {\n          counts(digit) = digit\n          backtrack(digit + 1, counts, totalLen + digit)\n          counts(digit) = 0\n        }\n      }\n    }\n    \n    backtrack(0, Array.fill(10)(0), 0)\n    val sorted = res.sorted\n    // Find the smallest numerically balanced number strictly greater than n\n    sorted.find(_ > n).getOrElse(-1)\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-17T08:31:25.282031+00:00",
+    "wall_clock_ms": 10650,
+    "provider_meta": {
+      "system_fingerprint": "fp_94487cd5db",
+      "usage": {
+        "prompt_tokens": 398,
+        "completion_tokens": 547,
+        "total_tokens": 945,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-17T08:31:25.282172+00:00"
+}

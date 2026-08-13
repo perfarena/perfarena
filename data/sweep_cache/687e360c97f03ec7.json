@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system|c|regular-expression-matching",
+  "code": "#include <stdbool.h>\n#include <string.h>\n\nbool isMatch(char* s, char* p) {\n    int m = (int)strlen(s);\n    int n = (int)strlen(p);\n    bool dp[21][21] = {false};\n\n    dp[0][0] = true;\n\n    for (int j = 2; j <= n; j++) {\n        if (p[j - 1] == '*') {\n            dp[0][j] = dp[0][j - 2];\n        }\n    }\n\n    for (int i = 1; i <= m; i++) {\n        for (int j = 1; j <= n; j++) {\n            if (p[j - 1] == '*') {\n                dp[i][j] = dp[i][j - 2];\n                if (p[j - 2] == '.' || p[j - 2] == s[i - 1]) {\n                    dp[i][j] = dp[i][j] || dp[i - 1][j];\n                }\n            } else {\n                if (p[j - 1] == '.' || p[j - 1] == s[i - 1]) {\n                    dp[i][j] = dp[i - 1][j - 1];\n                }\n            }\n        }\n    }\n\n    return dp[m][n];\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `regular-expression-matching` in C.\n\nGiven an input string `s` and a pattern `p`, implement regular expression matching with support for `'.'` and `'*'` where:\n\n*   `'.'` Matches any single character.\u200b\u200b\u200b\u200b\n*   `'*'` Matches zero or more of the preceding element.\n\nThe matching should cover the **entire** input string (not partial).\n\n**Example 1:**\n\n**Input:** s =  \"aa \", p =  \"a \"\n**Output:** false\n**Explanation:**  \"a \" does not match the entire string  \"aa \".\n\n**Example 2:**\n\n**Input:** s =  \"aa \", p =  \"a\\* \"\n**Output:** true\n**Explanation:** '\\*' means zero or more of the preceding element, 'a'. Therefore, by repeating 'a' once, it becomes  \"aa \".\n\n**Example 3:**\n\n**Input:** s =  \"ab \", p =  \".\\* \"\n**Output:** true\n**Explanation:**  \".\\* \" means  \"zero or more (\\*) of any character (.) \".\n\n**Constraints:**\n\n*   `1 <= s.length <= 20`\n*   `1 <= p.length <= 20`\n*   `s` contains only lowercase English letters.\n*   `p` contains only lowercase English letters, `'.'`, and `'*'`.\n*   It is guaranteed for each appearance of the character `'*'`, there will be a previous valid character to match.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdbool.h>\n#include <string.h>\n\nbool isMatch(char* s, char* p) {\n    int m = (int)strlen(s);\n    int n = (int)strlen(p);\n    bool dp[21][21] = {false};\n\n    dp[0][0] = true;\n\n    for (int j = 2; j <= n; j++) {\n        if (p[j - 1] == '*') {\n            dp[0][j] = dp[0][j - 2];\n        }\n    }\n\n    for (int i = 1; i <= m; i++) {\n        for (int j = 1; j <= n; j++) {\n            if (p[j - 1] == '*') {\n                dp[i][j] = dp[i][j - 2];\n                if (p[j - 2] == '.' || p[j - 2] == s[i - 1]) {\n                    dp[i][j] = dp[i][j] || dp[i - 1][j];\n                }\n            } else {\n                if (p[j - 1] == '.' || p[j - 1] == s[i - 1]) {\n                    dp[i][j] = dp[i - 1][j - 1];\n                }\n            }\n        }\n    }\n\n    return dp[m][n];\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T16:10:58.629118+00:00",
+    "wall_clock_ms": 2394,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 400,
+        "completion_tokens": 294,
+        "total_tokens": 694,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-5.4-mini-2026-03-17"
+    }
+  },
+  "saved_at": "2026-06-14T16:10:58.629464+00:00"
+}

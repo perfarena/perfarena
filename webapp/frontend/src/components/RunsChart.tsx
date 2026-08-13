@@ -31,7 +31,7 @@ function MiniLineChart({ label, values, color, formatValue }: MiniLineChartProps
       <div className="col" style={{ gap: 4, minWidth: 220 }}>
         <div style={{ fontWeight: 600 }}>{label}</div>
         <div className="muted" style={{ fontSize: "0.8rem" }}>
-          no accepted runs to plot
+          There are no accepted runs to plot.
         </div>
       </div>
     );
@@ -137,9 +137,10 @@ export function RunsChart({ runs }: { runs: AttemptRunDetail[] }) {
   return (
     <div className="col" style={{ gap: 12, padding: "12px 14px" }}>
       <div className="muted" style={{ fontSize: "0.78rem" }}>
-        Spread of measurements across the {runs.length} repeated dispatches.
-        LeetCode's judge runs on shared infra — the same code typically swings
-        ±10–30% per shot. The dashed line is the mean over accepted runs.
+        This shows the spread of the measurements across the {runs.length} repeated
+        dispatches. LeetCode runs a submission on shared infrastructure. The same code
+        therefore varies by 10 to 30 percent for each dispatch. The dashed line is the
+        mean over the accepted runs.
       </div>
       <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
         <MiniLineChart
@@ -149,7 +150,7 @@ export function RunsChart({ runs }: { runs: AttemptRunDetail[] }) {
           formatValue={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`}
         />
         <MiniLineChart
-          label="Memory per run"
+          label="Peak mem per run"
           values={memories}
           color="var(--warn)"
           formatValue={(v) => `${v.toFixed(2)} MB`}

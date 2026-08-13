@@ -31,6 +31,7 @@ export type CompareCell = {
   runtime_ms: number | null;
   memory_mb: number | null;
   generation_energy_j: number | null;
+  runtime_energy_j: number | null;
 } | undefined;
 
 interface MetricSpec {
@@ -44,18 +45,18 @@ interface MetricSpec {
 const METRICS: MetricSpec[] = [
   {
     key: "runtime", label: "Runtime", unit: "ms",
-    unitTip: "Mean LeetCode-reported runtime of the best accepted attempt (ms). Lower ms = better. Bar width shows each model's RANK on this metric within the problem — the FASTEST model (lowest ms) fills the track; others scale down as (min / their_ms) × track_width. BIGGER bar = better.",
+    unitTip: "The mean runtime of the best accepted attempt, in ms. A lower value is better. The bar width shows the rank of each model on this metric within the problem. The fastest model, with the lowest ms, fills the track. The other models scale down by the minimum ms divided by their own ms, times the track width. A bigger bar is better.",
     raw: c => c.runtime_ms,
   },
   {
-    key: "memory", label: "Memory", unit: "MB",
-    unitTip: "Mean LeetCode-reported memory of the best accepted attempt (MB). Lower MB = better. Same scaling as runtime: the LEANEST model (lowest MB) fills the track; others scale by ratio. BIGGER bar = better.",
+    key: "memory", label: "Peak mem", unit: "MB",
+    unitTip: "The mean peak memory (maximum resident) of the best accepted attempt, in MB. This is peak memory on both oracles. It is never per-op. A lower value is better. The scaling matches the runtime metric. The leanest model, with the lowest MB, fills the track. The other models scale by the ratio. A bigger bar is better.",
     raw: c => c.memory_mb,
   },
   {
     key: "energy", label: "Energy", unit: "J",
-    unitTip: "Generation energy of the best attempt (Joules) — reported only when the submit client measured it. Lower J = better. Same scaling: the most efficient model fills the track. BIGGER bar = better.",
-    raw: c => c.generation_energy_j,
+    unitTip: "The best-attempt energy in Joules. It prefers runtime energy (the execution side). Arena-local and similar harnesses report the runtime energy. This is the axis that changes most across models that solve the same problem. It falls back to generation energy (the LLM side) when the runtime figure is empty. A lower value is better. The scaling is the same. The most efficient model fills the track.",
+    raw: c => c.runtime_energy_j ?? c.generation_energy_j,
   },
 ];
 
@@ -82,8 +83,14 @@ export function shouldShowEnergyColumn(
   rows: CompareProblemRow[], models: string[],
 ): boolean {
   if (models.length < 2) return false;
+  // Row qualifies if EVERY compared model has SOME energy value on it —
+  // runtime energy preferred (arena-local etc.), generation energy fallback.
   return rows.some(r =>
-    models.every(m => r.per_model[m]?.generation_energy_j != null),
+    models.every(m => {
+      const c = r.per_model[m];
+      if (!c) return false;
+      return c.runtime_energy_j != null || c.generation_energy_j != null;
+    }),
   );
 }
 
@@ -186,7 +193,7 @@ export default function CompareBars({
                       x={TRACK_X} y={PER_METRIC_H / 2 - 7}
                       width={d.w} height={14} rx={2}
                       fill={colour} opacity={opacity}>
-                  <title>{`${models[d.idx]} — ${rawTextFor(m, cells[d.idx])}`}</title>
+                  <title>{`${models[d.idx]}: ${rawTextFor(m, cells[d.idx])}`}</title>
                 </rect>
               );
             })}
@@ -203,7 +210,7 @@ export default function CompareBars({
                     <tspan fill="var(--fg-dim)"> / </tspan>
                   )}
                   <tspan fill={MODEL_COLOURS[idx % MODEL_COLOURS.length]}>
-                    <title>{`${mName} — ${rawTextFor(m, cells[idx])}`}</title>
+                    <title>{`${mName}: ${rawTextFor(m, cells[idx])}`}</title>
                     {rawTextFor(m, cells[idx])}
                   </tspan>
                 </Fragment>

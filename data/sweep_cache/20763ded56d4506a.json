@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|best-bitwise-and-assignment-into-bins",
+  "code": "object Solution {\n  def maximumANDSum(nums: Array[Int], numSlots: Int): Int = {\n    val n = nums.length\n    // Each slot can hold up to 2 numbers, so total capacity = 2 * numSlots >= n\n    // We represent the state as a bitmask with 2 bits per slot indicating how many numbers are placed in that slot.\n    // For example, for slot i (0-based), bits (2*i) and (2*i+1) represent count of numbers in that slot (0 to 2).\n    // We'll use DP with memoization: dp(i, mask) = max AND sum placing nums[i..] given current mask state.\n\n    import scala.collection.mutable\n\n    val maxMask = 1 << (2 * numSlots) // max mask value (not used directly, but for clarity)\n\n    val memo = mutable.Map.empty[(Int, Int), Int]\n\n    def getCount(mask: Int, slot: Int): Int = {\n      // Extract 2 bits for slot\n      (mask >> (2 * slot)) & 3\n    }\n\n    def setCount(mask: Int, slot: Int, count: Int): Int = {\n      // Clear 2 bits for slot and set new count\n      val cleared = mask & ~(3 << (2 * slot))\n      cleared | (count << (2 * slot))\n    }\n\n    def dfs(i: Int, mask: Int): Int = {\n      if (i == n) return 0\n      if (memo.contains((i, mask))) return memo((i, mask))\n\n      var best = 0\n      val num = nums(i)\n      for (slot <- 0 until numSlots) {\n        val c = getCount(mask, slot)\n        if (c < 2) {\n          val newMask = setCount(mask, slot, c + 1)\n          val valAnd = num & (slot + 1)\n          val candidate = valAnd + dfs(i + 1, newMask)\n          if (candidate > best) best = candidate\n        }\n      }\n      memo((i, mask)) = best\n      best\n    }\n\n    dfs(0, 0)\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `best-bitwise-and-assignment-into-bins` in Scala.\n\nYou receive an integer array `nums` having length `n` together with an integer `numSlots` satisfying `2 * numSlots >= n`. There exist `numSlots` bins labeled from `1` through `numSlots`.\n\nAll `n` integers must be distributed across the bins so that no bin holds more than two values. For a given distribution, the **AND sum** equals the total of the **bitwise** `AND` between each value and the label of the bin it occupies.\n\n*   For example, the **AND sum** of placing the numbers `[1, 3]` into slot `1` and `[4, 6]` into slot `2` is equal to `(1 AND 1) + (3 AND 1) + (4 AND 2) + (6 AND 2) = 1 + 1 + 0 + 2 = 4`.\n\nReturn _the maximum possible **AND sum** of_ `nums` _given_ `numSlots` _slots._\n\n**Example 1:**\n\n**Input:** nums = \\[1,2,3,4,5,6\\], numSlots = 3\n**Output:** 9\n**Explanation:** One possible placement is \\[1, 4\\] into slot 1, \\[2, 6\\] into slot 2, and \\[3, 5\\] into slot 3. \nThis gives the maximum AND sum of (1 AND 1) + (4 AND 1) + (2 AND 2) + (6 AND 2) + (3 AND 3) + (5 AND 3) = 1 + 0 + 2 + 2 + 3 + 1 = 9.\n\n**Example 2:**\n\n**Input:** nums = \\[1,3,10,4,7,1\\], numSlots = 9\n**Output:** 24\n**Explanation:** One possible placement is \\[1, 1\\] into slot 1, \\[3\\] into slot 3, \\[4\\] into slot 4, \\[7\\] into slot 7, and \\[10\\] into slot 9.\nThis gives the maximum AND sum of (1 AND 1) + (1 AND 1) + (3 AND 3) + (4 AND 4) + (7 AND 7) + (10 AND 9) = 1 + 1 + 3 + 4 + 7 + 8 = 24.\nNote that slots 2, 5, 6, and 8 are empty which is permitted.\n\n**Constraints:**\n\n*   `n == nums.length`\n*   `1 <= numSlots <= 9`\n*   `1 <= n <= 2 * numSlots`\n*   `1 <= nums[i] <= 15`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def maximumANDSum(nums: Array[Int], numSlots: Int): Int = {\n    val n = nums.length\n    // Each slot can hold up to 2 numbers, so total capacity = 2 * numSlots >= n\n    // We represent the state as a bitmask with 2 bits per slot indicating how many numbers are placed in that slot.\n    // For example, for slot i (0-based), bits (2*i) and (2*i+1) represent count of numbers in that slot (0 to 2).\n    // We'll use DP with memoization: dp(i, mask) = max AND sum placing nums[i..] given current mask state.\n\n    import scala.collection.mutable\n\n    val maxMask = 1 << (2 * numSlots) // max mask value (not used directly, but for clarity)\n\n    val memo = mutable.Map.empty[(Int, Int), Int]\n\n    def getCount(mask: Int, slot: Int): Int = {\n      // Extract 2 bits for slot\n      (mask >> (2 * slot)) & 3\n    }\n\n    def setCount(mask: Int, slot: Int, count: Int): Int = {\n      // Clear 2 bits for slot and set new count\n      val cleared = mask & ~(3 << (2 * slot))\n      cleared | (count << (2 * slot))\n    }\n\n    def dfs(i: Int, mask: Int): Int = {\n      if (i == n) return 0\n      if (memo.contains((i, mask))) return memo((i, mask))\n\n      var best = 0\n      val num = nums(i)\n      for (slot <- 0 until numSlots) {\n        val c = getCount(mask, slot)\n        if (c < 2) {\n          val newMask = setCount(mask, slot, c + 1)\n          val valAnd = num & (slot + 1)\n          val candidate = valAnd + dfs(i + 1, newMask)\n          if (candidate > best) best = candidate\n        }\n      }\n      memo((i, mask)) = best\n      best\n    }\n\n    dfs(0, 0)\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T17:59:12.403191+00:00",
+    "wall_clock_ms": 5578,
+    "provider_meta": {
+      "system_fingerprint": "fp_7b7cafbb56",
+      "usage": {
+        "prompt_tokens": 704,
+        "completion_tokens": 465,
+        "total_tokens": 1169,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T17:59:12.403558+00:00"
+}

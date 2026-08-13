@@ -10,13 +10,17 @@ export default function CompetitionDetailPage() {
   const { slug = "" } = useParams();
   const [d, setD] = useState<CompetitionDetail | null>(null);
   const [err, setErr] = useState("");
+  // Which harness's leaderboard slice is being viewed. null = "All"
+  // (server pools across every harness that has data).
+  const [harnessTab, setHarnessTab] = useState<string | null>(null);
 
   useEffect(() => {
-    api.competition(slug).then(setD).catch((e: unknown) => setErr(String(e)));
-  }, [slug]);
+    api.competition(slug, harnessTab)
+      .then(setD).catch((e: unknown) => setErr(String(e)));
+  }, [slug, harnessTab]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!d) return <div className="empty">Loading…</div>;
+  if (!d) return <div className="empty">Please wait.</div>;
 
   const byLevel = { Easy: 0, Medium: 0, Hard: 0 } as Record<string, number>;
   for (const p of d.problems) byLevel[p.level] = (byLevel[p.level] ?? 0) + 1;
@@ -49,21 +53,44 @@ export default function CompetitionDetailPage() {
       )}
 
       <h2 style={{ marginBottom: 4 }}>Top models</h2>
+      {d.harnesses_with_data.length > 0 && (
+        <div className="row" style={{ gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
+          <HarnessTab
+            active={harnessTab === null}
+            onClick={() => setHarnessTab(null)}
+            label="All harnesses"
+            hint="Combine submissions from every harness that has data for this competition."
+          />
+          {d.harnesses_with_data.map(h => (
+            <HarnessTab
+              key={h}
+              active={harnessTab === h}
+              onClick={() => setHarnessTab(h)}
+              label={h}
+              hint={`Show only the submissions that the ${h} harness measured. It is the same competition with a different measurement backend.`}
+            />
+          ))}
+        </div>
+      )}
       {d.top_models.length === 0 ? (
-        <div className="empty">No judged submissions for this competition yet.</div>
+        <div className="empty">
+          {harnessTab
+            ? `The ${harnessTab} harness has no submissions for this competition.`
+            : "No submissions for this competition have a result yet."}
+        </div>
       ) : (
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Version</th>
-              <th title="pass@1 across this competition's problems only — n_accepted / n_problems_in_competition. Independent of any other competition this model also competed in.">pass@1</th>
-              <th title="pass@k across this competition's problems — n_accepted / n_attempted. Differs from pass@1 when the model didn't attempt every problem in the set.">pass@k</th>
-              <th title="Problems solved out of total in this competition.">Solved</th>
-              <th title="Average LeetCode-reported runtime across the model's accepted attempts on this competition's problems only.">Avg runtime</th>
-              <th title="Average LeetCode-reported memory across accepted attempts.">Avg memory</th>
-              <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
-              <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
-              <th title="Total submissions this model has against this competition.">subs</th>
+              <th title="pass@1 across the problems of this competition only. It is n_accepted / n_problems_in_competition. It is independent of any other competition that this model entered.">pass@1</th>
+              <th title="pass@k across the problems of this competition. It is n_accepted / n_attempted. It differs from pass@1 when the model did not attempt every problem in the set.">pass@k</th>
+              <th title="The number of solved problems out of the total in this competition.">Solved</th>
+              <th title="The average runtime that LeetCode reports across the accepted attempts of the model, for the problems of this competition only.">Avg runtime</th>
+              <th title="The average peak memory (maximum resident) across accepted attempts. It is peak on both oracles. It is never a per-op value.">Peak mem</th>
+              <th title="The average runtime percentile across accepted attempts.">Runtime %ile</th>
+              <th title="The average memory percentile across accepted attempts.">Memory %ile</th>
+              <th title="The total number of submissions that this model has for this competition.">subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (
@@ -92,7 +119,7 @@ export default function CompetitionDetailPage() {
 
       <h2 style={{ marginBottom: 4 }}>Problems in this competition</h2>
       {d.problems.length === 0 ? (
-        <div className="empty">No problems linked yet.</div>
+        <div className="empty">No problems are linked yet.</div>
       ) : (
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
@@ -117,13 +144,33 @@ export default function CompetitionDetailPage() {
 
       {d.languages.length > 0 && (
         <div className="muted" style={{ fontSize: "0.9rem" }}>
-          Languages with submissions in this competition:{" "}
+          Languages that have submissions in this competition:{" "}
           {d.languages.map((l, i) => (
             <span key={l}>{i > 0 && ", "}<LanguageLink name={l} /></span>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function HarnessTab({
+  active, onClick, label, hint,
+}: { active: boolean; onClick: () => void; label: string; hint: string }) {
+  return (
+    <button
+      className={active ? undefined : "secondary"}
+      onClick={onClick}
+      title={hint}
+      style={{
+        padding: "4px 10px", fontSize: "0.85rem",
+        // Tab visually attached to the table below when active.
+        borderBottomLeftRadius: active ? 0 : undefined,
+        borderBottomRightRadius: active ? 0 : undefined,
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -187,8 +234,8 @@ function CompetitionShapeCharts({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Problem set composition</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          shape of {problems.length} problem{problems.length === 1 ? "" : "s"} in this competition
-          · bar height/length = count
+          the shape of {problems.length} problem{problems.length === 1 ? "" : "s"} in this competition
+          · bar height or length shows the count
         </span>
       </div>
 
@@ -253,11 +300,11 @@ function CompetitionShapeCharts({
             Tags
             <span className="muted" style={{ fontSize: "0.78rem", marginLeft: 6 }}>
               ({tagCounts.size} unique
-              {otherCount > 0 && `; top ${TAG_CAP} shown, ${tailTags.length} rolled into "other"`})
+              {otherCount > 0 && `; this chart shows the top ${TAG_CAP} and groups ${tailTags.length} into "other"`})
             </span>
           </div>
           {chartTags.length === 0 ? (
-            <div className="muted" style={{ fontStyle: "italic" }}>No tags on any problem.</div>
+            <div className="muted" style={{ fontStyle: "italic" }}>No problem has any tag.</div>
           ) : (
             <div className="col" style={{ gap: 3 }}>
               {chartTags.map(([tag, count]) => {

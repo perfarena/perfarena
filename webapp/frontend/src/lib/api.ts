@@ -115,7 +115,7 @@ export const api = {
   rankings: (params: {
     language?: string; level?: string; sort?: string;
     k?: number; prompt_id?: number; competition?: string;
-    harness?: string;
+    harness?: string; correctness_oracle?: string;
   } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => !!v) as [string, string][],
@@ -140,8 +140,11 @@ export const api = {
   competitions: (includeRetired = false) =>
     request<CompetitionPublic[]>(
       `/api/competitions${includeRetired ? "?include_retired=true" : ""}`),
-  competition: (slug: string) =>
-    request<CompetitionDetail>(`/api/competitions/${encodeURIComponent(slug)}`),
+  competition: (slug: string, harnessSlug?: string | null) => {
+    const qs = harnessSlug ? `?harness_slug=${encodeURIComponent(harnessSlug)}` : "";
+    return request<CompetitionDetail>(
+      `/api/competitions/${encodeURIComponent(slug)}${qs}`);
+  },
   addCompetition: (body: CompetitionIn) =>
     request<CompetitionPublic>(`/api/admin/competitions`, {
       method: "POST", body: JSON.stringify(body),
@@ -177,6 +180,34 @@ export const api = {
     }),
   deleteHarness: (id: number) =>
     request<null>(`/api/admin/harnesses/${id}`, { method: "DELETE" }),
+  /** Probe the harness's remote runner /healthz. Only meaningful for
+   *  arena-local / custom harnesses with a config.endpoint set. */
+  probeHarness: (id: number) =>
+    request<{ ok: boolean; message: string; not_applicable?: boolean }>(
+      `/api/admin/harnesses/${id}/probe`, { method: "POST" }),
+
+  // Correctness oracles ----------------------------------------------------
+  // The correctness half of the two-oracle model (see Harnesses above for
+  // the performance half). Every submission resolves to exactly one
+  // correctness oracle (submission override → competition default); this
+  // is what says "Accepted / Wrong Answer / Runtime Error" independently
+  // of who measured runtime + memory.
+  correctnessOracles: (includeRetired = false) =>
+    request<CorrectnessOraclePublic[]>(
+      `/api/correctness-oracles${includeRetired ? "?include_retired=true" : ""}`),
+  correctnessOracle: (slug: string) =>
+    request<CorrectnessOracleDetail>(
+      `/api/correctness-oracles/${encodeURIComponent(slug)}`),
+  addCorrectnessOracle: (body: CorrectnessOracleIn) =>
+    request<CorrectnessOraclePublic>(`/api/admin/correctness-oracles`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  editCorrectnessOracle: (id: number, body: CorrectnessOracleIn) =>
+    request<CorrectnessOraclePublic>(`/api/admin/correctness-oracles/${id}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }),
+  deleteCorrectnessOracle: (id: number) =>
+    request<null>(`/api/admin/correctness-oracles/${id}`, { method: "DELETE" }),
 
   // Blog --------------------------------------------------------------------
   blogPosts: () => request<BlogPostCard[]>(`/api/blog`),
@@ -444,6 +475,11 @@ export interface RankingEntry {
   best_runtime_energy_j: number | null;
   avg_runtime_energy_percentile: number | null;
   best_runtime_energy_percentile: number | null;
+  /** Measurement provenance: the machine + energy tool this entry was measured
+   *  on. Null for LeetCode-scored rows. Lets the leaderboard show which machine
+   *  each entry was measured on (energy is only comparable within one). */
+  machine_name: string | null;
+  energy_tool: string | null;
   time_human_avg: number | null;
   time_human_expert: number | null;
   mem_human_avg: number | null;
@@ -462,11 +498,17 @@ export interface RankingEntry {
   /** Competition this submission targeted. null on legacy rows. */
   competition_slug: string | null;
   competition_name: string | null;
-  /** Harness (perf oracle) whose numbers this row is scored on. Resolved per
-   *  submission (own override → competition default → null). Every legacy
-   *  row resolves to `leetcode` via the startup backfill. */
+  /** PERFORMANCE oracle (Harness) whose numbers this row is scored on.
+   *  Resolved per submission (own override → competition default → null).
+   *  Every legacy row resolves to `leetcode` via the startup backfill. */
   harness_slug: string | null;
   harness_name: string | null;
+  /** CORRECTNESS oracle whose Accepted / Wrong Answer / RE / TLE verdict
+   *  drives pass@1 for this row. Decoupled from the perf oracle so a
+   *  client can filter by "who said this was correct" independently of
+   *  "who measured how fast it was". */
+  correctness_oracle_slug: string | null;
+  correctness_oracle_name: string | null;
   /** Token / $ accounting. Total = sum across all attempts in this submission;
    *  median = per-attempt median so submissions covering different attempt
    *  counts compare on the same axis. Null when no attempt reported the
@@ -505,6 +547,13 @@ export interface SubmissionPublic {
   best_runtime_energy_j: number | null;
   avg_runtime_energy_percentile: number | null;
   best_runtime_energy_percentile: number | null;
+  /** Submission-level per-op rollup (looped curated methodology): energy /
+   *  time normalized to a single solve (µs / J — the cross-language-comparable
+   *  figures) plus the mean solve count behind each measurement (confidence).
+   *  Null on LeetCode-scored submissions. */
+  avg_time_us_per_op: number | null;
+  avg_energy_j_per_op: number | null;
+  avg_iterations: number | null;
   time_human_avg: number | null;
   time_human_expert: number | null;
   mem_human_avg: number | null;
@@ -552,10 +601,22 @@ export interface SubmissionPublic {
   /** Competition this submission targeted. null on legacy rows. */
   competition_slug: string | null;
   competition_name: string | null;
-  /** Harness (perf oracle) that scored this submission's runs. Resolved per
-   *  submission (own override → competition default → null). */
+  /** PERFORMANCE oracle (Harness) that scored this submission's runs.
+   *  Resolved per submission (own override → competition default → null). */
   harness_slug: string | null;
   harness_name: string | null;
+  /** CORRECTNESS oracle (Accepted / WA / RE / TLE verdict source) for this
+   *  submission. Same resolution as harness. */
+  correctness_oracle_slug: string | null;
+  correctness_oracle_name: string | null;
+  /** Measurement provenance: the single energy tool + machine this submission
+   *  was measured on. Energy / time numbers are only comparable within one
+   *  (energy_tool, machine) pair. Null on LeetCode-scored submissions
+   *  ("unknown machine"). run_uid correlates with external measurement logs. */
+  energy_tool: string | null;
+  machine_id: number | null;
+  machine_name: string | null;
+  run_uid: string | null;
   /** Timestamp of the most recent attempt on this submission. null when
    *  the submission has no attempts yet. The /submissions table sorts
    *  by this so a still-running sweep stays at the top of the list. */
@@ -653,6 +714,17 @@ export interface CompetitionPublic {
   n_problems: number;
   n_submissions: number;
   n_models: number;
+  /** Slugs of every harness that HAS runs recorded for this competition,
+   *  so the SPA can render a per-harness leaderboard tab per slug (and
+   *  only show tabs that have data). Competition itself no longer binds
+   *  to a harness — every submission carries its own explicitly. */
+  harnesses_with_data: string[];
+  /** Admin allow-list of harness slugs blessed for this competition.
+   *  POST /api/submissions rejects (400) any submission whose harness
+   *  isn't in this list. Distinct from harnesses_with_data (which is
+   *  the retrospective list of what has actually landed) — this is
+   *  the forward-looking policy the admin sets. */
+  compatible_harness_slugs: string[];
 }
 export interface CompetitionDetail extends CompetitionPublic {
   problems: ProblemPublic[];
@@ -683,6 +755,9 @@ export interface CompetitionIn {
   description?: string | null;
   kind?: string;
   status?: string;
+  /** Admin allow-list of harness slugs. Empty [] = no submissions
+   *  accepted until at least one harness is opted in. */
+  compatible_harness_slugs?: string[];
 }
 
 /** Light-weight pointer to a harness — slug + name only. Rendered inline on
@@ -733,6 +808,52 @@ export interface HarnessDetail extends HarnessPublic {
   }[];
 }
 export interface HarnessIn {
+  slug: string;
+  name: string;
+  description?: string | null;
+  kind?: string;
+  status?: string;
+  config?: Record<string, unknown> | null;
+}
+
+/** Correctness-oracle pointer (slug + name). Same role as HarnessRef on the
+ *  perf side — inline chips + links on ranking rows / submission cards. */
+export interface CorrectnessOracleRef {
+  slug: string;
+  name: string;
+}
+
+export interface CorrectnessOraclePublic {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  kind: string;                    // leetcode | unittest | humaneval | custom
+  status: string;                  // active | retired
+  created_at: string;
+  config: Record<string, unknown> | null;
+  n_competitions: number;
+  n_submissions: number;
+  n_runs: number;
+}
+export interface CorrectnessOracleDetail extends CorrectnessOraclePublic {
+  /** Competitions bound to this correctness oracle (their default judge). */
+  competitions: CompetitionRef[];
+  languages: string[];
+  /** Per-model leaderboard scoped to submissions judged by THIS oracle. */
+  top_models: {
+    model_name: string;
+    model_version: string;
+    best_pass_at_1: number;
+    pass_at_k: number | null;
+    n_submissions: number;
+    avg_runtime_ms: number | null;
+    avg_memory_mb: number | null;
+    avg_runtime_percentile: number | null;
+    avg_memory_percentile: number | null;
+  }[];
+}
+export interface CorrectnessOracleIn {
   slug: string;
   name: string;
   description?: string | null;
@@ -801,10 +922,15 @@ export interface CompareModelOnProblem {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
-  /** Generation energy of the best attempt (Joules). null for the LC-only
-   *  data path; surfaced so the comparison histogram can render an energy
-   *  bar when both models in scope report it. */
+  /** Generation energy of the best attempt (Joules) — LLM-side. null for
+   *  the LC-only data path; surfaced so the comparison histogram can
+   *  render an energy bar when models in scope report it. */
   generation_energy_j: number | null;
+  /** RUNTIME energy of the best attempt (Joules) — execution-side, the
+   *  third perf axis. Populated by execution-instrumented harnesses (e.g.
+   *  arena-local). This is the field the head-to-head plots by default
+   *  when present; generation_energy_j is the fallback. */
+  runtime_energy_j: number | null;
 }
 
 export interface CompareProblemRow {
@@ -860,6 +986,10 @@ export interface CompareByLevelRow {
   avg_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /** Runtime energy (Joules) — execution-side third perf axis. Populated
+   *  by execution-instrumented harnesses (arena-local etc.). Null on LC-
+   *  only data; the SPA hides the chart when every cell is null. */
+  avg_runtime_energy_j: number | null;
   // Generator-side cost & throughput per problem in scope
   avg_cost_usd: number | null;
   avg_response_tokens: number | null;
@@ -877,6 +1007,7 @@ export interface CompareByTagRow {
   pass_rate: number;                            // 0..1
   avg_runtime_ms: number | null;
   avg_memory_mb: number | null;
+  avg_runtime_energy_j: number | null;
 }
 
 export interface CompareResponse {
@@ -1131,6 +1262,13 @@ export interface RunPublic {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
+  /** Per-op metrics from the looped curated methodology: solves in the
+   *  measured window (confidence), and energy / time normalized to a single
+   *  solve (the cross-language-comparable numbers). Null on LeetCode-scored
+   *  runs and on legacy runs measured before the looped methodology. */
+  iterations: number | null;
+  energy_j_per_op: number | null;
+  time_us_per_op: number | null;
   total_correct: number | null;
   total_testcases: number | null;
   error_log?: RunErrorLog | null;
@@ -1258,6 +1396,11 @@ export interface AttemptResultPayload {
   best_memory_mb: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
+  /** Runtime energy of the solution (Joules) — execution-side. Populated
+   *  by execution-instrumented harnesses (arena-local etc.). Null on
+   *  LC-only attempts. */
+  avg_runtime_energy_j: number | null;
+  best_runtime_energy_j: number | null;
   submitted_at: string | null;
   runs: AttemptRunDetail[];
   inference_trace?: string | null;

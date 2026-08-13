@@ -26,9 +26,9 @@ export default function Register() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!captcha) { setErr("captcha not loaded"); return; }
-    if (password.length < 8) { setErr("password must be at least 8 chars"); return; }
-    if (password !== password2) { setErr("passwords don't match"); return; }
+    if (!captcha) { setErr("The captcha did not load."); return; }
+    if (password.length < 8) { setErr("The password must have 8 characters or more."); return; }
+    if (password !== password2) { setErr("The two passwords are different."); return; }
     try {
       await api.register({
         email, display_name: displayName,
@@ -50,11 +50,11 @@ export default function Register() {
     <div className="col" style={{ maxWidth: 540 }}>
       <div className="hero">
         <h1>Request access</h1>
-        <p>Approval is manual. You'll get an API key by email once we review your registration.</p>
+        <p>A person on the team approves each registration. When the team approves your registration, sign in with your email and password. Then you get your API key.</p>
       </div>
 
       {sent
-        ? <div className="card">Thanks. Your request is pending review.</div>
+        ? <div className="card">Thank you. The team will review your request.</div>
         : (
           <form className="card col" onSubmit={submit}>
             <label className="col" style={{ gap: 4 }}>
@@ -86,7 +86,7 @@ export default function Register() {
             <div className="col" style={{ gap: 6 }}>
               <span className="muted">Captcha</span>
               <div className="row" style={{ gap: 8 }}>
-                <div className="code" style={{ flex: 1 }}>{captcha?.prompt ?? "loading…"}</div>
+                <div className="code" style={{ flex: 1 }}>{captcha?.prompt ?? "Please wait…"}</div>
                 <input
                   required type="text" inputMode="numeric" autoComplete="off"
                   value={captchaAnswer} onChange={e => setCaptchaAnswer(e.target.value)}
@@ -101,11 +101,11 @@ export default function Register() {
         )}
 
       <div className="card col">
-        <h2>Already have an account?</h2>
+        <h2>Do you have an account?</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          <Link to="/login">Sign in</Link> with your email and password. Your API
-          key is managed from your profile page after sign-in — no need to copy
-          and paste it anymore.
+          <Link to="/login">Sign in</Link> with your email and password. You manage
+          your API key from your profile page after you sign in. You do not copy it
+          or paste it.
         </p>
       </div>
     </div>

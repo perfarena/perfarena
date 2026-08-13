@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|best-bitwise-and-assignment-into-bins",
+  "code": "class Solution {\n    public int maximumANDSum(int[] nums, int numSlots) {\n        int n = nums.length;\n        // Each slot can hold up to 2 numbers, so total capacity = 2 * numSlots\n        // We represent the state of slots using base-3 digits (0,1,2) for each slot\n        // state is an integer where each slot's count is a digit in base 3\n        // max state = 3^numSlots - 1\n        int maxState = (int)Math.pow(3, numSlots);\n        int[] dp = new int[maxState];\n        for (int i = 0; i < maxState; i++) dp[i] = -1;\n        dp[0] = 0;\n\n        for (int num : nums) {\n            int[] newDp = new int[maxState];\n            for (int i = 0; i < maxState; i++) newDp[i] = -1;\n\n            for (int state = 0; state < maxState; state++) {\n                if (dp[state] == -1) continue;\n\n                // Try to put current num into any slot that has less than 2 numbers\n                int curVal = dp[state];\n                for (int slot = 0; slot < numSlots; slot++) {\n                    int count = (state / (int)Math.pow(3, slot)) % 3;\n                    if (count < 2) {\n                        int newState = state + (int)Math.pow(3, slot);\n                        int andVal = num & (slot + 1);\n                        newDp[newState] = Math.max(newDp[newState], curVal + andVal);\n                    }\n                }\n            }\n            dp = newDp;\n        }\n\n        int ans = 0;\n        for (int val : dp) {\n            if (val > ans) ans = val;\n        }\n        return ans;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `best-bitwise-and-assignment-into-bins` in Java.\n\nYou receive an integer array `nums` having length `n` together with an integer `numSlots` satisfying `2 * numSlots >= n`. There exist `numSlots` bins labeled from `1` through `numSlots`.\n\nAll `n` integers must be distributed across the bins so that no bin holds more than two values. For a given distribution, the **AND sum** equals the total of the **bitwise** `AND` between each value and the label of the bin it occupies.\n\n*   For example, the **AND sum** of placing the numbers `[1, 3]` into slot `1` and `[4, 6]` into slot `2` is equal to `(1 AND 1) + (3 AND 1) + (4 AND 2) + (6 AND 2) = 1 + 1 + 0 + 2 = 4`.\n\nReturn _the maximum possible **AND sum** of_ `nums` _given_ `numSlots` _slots._\n\n**Example 1:**\n\n**Input:** nums = \\[1,2,3,4,5,6\\], numSlots = 3\n**Output:** 9\n**Explanation:** One possible placement is \\[1, 4\\] into slot 1, \\[2, 6\\] into slot 2, and \\[3, 5\\] into slot 3. \nThis gives the maximum AND sum of (1 AND 1) + (4 AND 1) + (2 AND 2) + (6 AND 2) + (3 AND 3) + (5 AND 3) = 1 + 0 + 2 + 2 + 3 + 1 = 9.\n\n**Example 2:**\n\n**Input:** nums = \\[1,3,10,4,7,1\\], numSlots = 9\n**Output:** 24\n**Explanation:** One possible placement is \\[1, 1\\] into slot 1, \\[3\\] into slot 3, \\[4\\] into slot 4, \\[7\\] into slot 7, and \\[10\\] into slot 9.\nThis gives the maximum AND sum of (1 AND 1) + (1 AND 1) + (3 AND 3) + (4 AND 4) + (7 AND 7) + (10 AND 9) = 1 + 1 + 3 + 4 + 7 + 8 = 24.\nNote that slots 2, 5, 6, and 8 are empty which is permitted.\n\n**Constraints:**\n\n*   `n == nums.length`\n*   `1 <= numSlots <= 9`\n*   `1 <= n <= 2 * numSlots`\n*   `1 <= nums[i] <= 15`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int maximumANDSum(int[] nums, int numSlots) {\n        int n = nums.length;\n        // Each slot can hold up to 2 numbers, so total capacity = 2 * numSlots\n        // We represent the state of slots using base-3 digits (0,1,2) for each slot\n        // state is an integer where each slot's count is a digit in base 3\n        // max state = 3^numSlots - 1\n        int maxState = (int)Math.pow(3, numSlots);\n        int[] dp = new int[maxState];\n        for (int i = 0; i < maxState; i++) dp[i] = -1;\n        dp[0] = 0;\n\n        for (int num : nums) {\n            int[] newDp = new int[maxState];\n            for (int i = 0; i < maxState; i++) newDp[i] = -1;\n\n            for (int state = 0; state < maxState; state++) {\n                if (dp[state] == -1) continue;\n\n                // Try to put current num into any slot that has less than 2 numbers\n                int curVal = dp[state];\n                for (int slot = 0; slot < numSlots; slot++) {\n                    int count = (state / (int)Math.pow(3, slot)) % 3;\n                    if (count < 2) {\n                        int newState = state + (int)Math.pow(3, slot);\n                        int andVal = num & (slot + 1);\n                        newDp[newState] = Math.max(newDp[newState], curVal + andVal);\n                    }\n                }\n            }\n            dp = newDp;\n        }\n\n        int ans = 0;\n        for (int val : dp) {\n            if (val > ans) ans = val;\n        }\n        return ans;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T17:49:08.178773+00:00",
+    "wall_clock_ms": 4192,
+    "provider_meta": {
+      "system_fingerprint": "fp_7cf4b7c3d0",
+      "usage": {
+        "prompt_tokens": 704,
+        "completion_tokens": 409,
+        "total_tokens": 1113,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T17:49:08.179202+00:00"
+}

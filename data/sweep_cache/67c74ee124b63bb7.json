@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|convert-date-to-iso-form",
+  "code": "class Solution {\n    public String reformatDate(String date) {\n        String[] parts = date.split(\" \");\n        String dayStr = parts[0];\n        String monthStr = parts[1];\n        String yearStr = parts[2];\n        \n        // Remove the suffix from day (st, nd, rd, th)\n        int day = Integer.parseInt(dayStr.substring(0, dayStr.length() - 2));\n        \n        // Map month string to month number\n        String[] months = {\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \n                           \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"};\n        int month = 0;\n        for (int i = 0; i < months.length; i++) {\n            if (months[i].equals(monthStr)) {\n                month = i + 1;\n                break;\n            }\n        }\n        \n        return String.format(\"%s-%02d-%02d\", yearStr, month, day);\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `convert-date-to-iso-form` in Java.\n\nGiven a `date` string formatted as `Day Month Year`, in which:\n\n*   `Day` belongs to the set `{ \"1st \", \"2nd \", \"3rd \", \"4th \", ..., \"30th \", \"31st \"}`.\n*   `Month` belongs to the set `{ \"Jan \", \"Feb \", \"Mar \", \"Apr \", \"May \", \"Jun \", \"Jul \", \"Aug \", \"Sep \", \"Oct \", \"Nov \", \"Dec \"}`.\n*   `Year` falls within `[1900, 2100]`.\n\nTransform the string into the layout `YYYY-MM-DD`, in which:\n\n*   `YYYY` is the 4 digit year.\n*   `MM` is the 2 digit month.\n*   `DD` is the 2 digit day.\n\n**Example 1:**\n\n**Input:** date =  \"20th Oct 2052 \"\n**Output:**  \"2052-10-20 \"\n\n**Example 2:**\n\n**Input:** date =  \"6th Jun 1933 \"\n**Output:**  \"1933-06-06 \"\n\n**Example 3:**\n\n**Input:** date =  \"26th May 1960 \"\n**Output:**  \"1960-05-26 \"\n\n**Constraints:**\n\n*   The given dates are guaranteed to be valid, so no error handling is necessary.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public String reformatDate(String date) {\n        String[] parts = date.split(\" \");\n        String dayStr = parts[0];\n        String monthStr = parts[1];\n        String yearStr = parts[2];\n        \n        // Remove the suffix from day (st, nd, rd, th)\n        int day = Integer.parseInt(dayStr.substring(0, dayStr.length() - 2));\n        \n        // Map month string to month number\n        String[] months = {\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \n                           \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"};\n        int month = 0;\n        for (int i = 0; i < months.length; i++) {\n            if (months[i].equals(monthStr)) {\n                month = i + 1;\n                break;\n            }\n        }\n        \n        return String.format(\"%s-%02d-%02d\", yearStr, month, day);\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T18:43:13.804766+00:00",
+    "wall_clock_ms": 3553,
+    "provider_meta": {
+      "system_fingerprint": "fp_7c5d442c61",
+      "usage": {
+        "prompt_tokens": 379,
+        "completion_tokens": 218,
+        "total_tokens": 597,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T18:43:13.805258+00:00"
+}

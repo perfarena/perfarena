@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|ruby|word-search-ii",
+  "code": "class Solution\n  def findWords(board, words)\n    # Build a trie to efficiently check prefixes and words\n    trie = {}\n    words.each do |w|\n      node = trie\n      w.each_char do |ch|\n        node[ch] ||= {}\n        node = node[ch]\n      end\n      node[:word] = w\n    end\n\n    m = board.size\n    n = board[0].size\n    result = []\n\n    # DFS search on board with backtracking\n    define_singleton_method(:dfs) do |i, j, node|\n      ch = board[i][j]\n      curr_node = node[ch]\n      return unless curr_node\n\n      # If word found, add to result and remove to avoid duplicates\n      if curr_node[:word]\n        result << curr_node[:word]\n        curr_node.delete(:word)\n      end\n\n      board[i][j] = '#'\n\n      [[i-1,j], [i+1,j], [i,j-1], [i,j+1]].each do |x,y|\n        if x.between?(0, m-1) && y.between?(0, n-1) && board[x][y] != '#' && curr_node[board[x][y]]\n          dfs(x, y, curr_node)\n        end\n      end\n\n      board[i][j] = ch\n\n      # If no further children, prune trie to save time\n      curr_node.delete_if { |k,_| k != :word } if curr_node.empty?\n    end\n\n    (0...m).each do |i|\n      (0...n).each do |j|\n        dfs(i, j, trie) if trie[board[i][j]]\n      end\n    end\n\n    result\n  end\nend",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `word-search-ii` in Ruby.\n\nGiven an `m x n` `board` of characters and a list of strings `words`, return _all words on the board_.\n\nEach word must be constructed from letters of sequentially adjacent cells, where **adjacent cells** are horizontally or vertically neighboring. The same letter cell may not be used more than once in a word.\n\n**Example 1:**\n\n**Input:** board = \\[\\[ \"o \", \"a \", \"a \", \"n \"\\],\\[ \"e \", \"t \", \"a \", \"e \"\\],\\[ \"i \", \"h \", \"k \", \"r \"\\],\\[ \"i \", \"f \", \"l \", \"v \"\\]\\], words = \\[ \"oath \", \"pea \", \"eat \", \"rain \"\\]\n**Output:** \\[ \"eat \", \"oath \"\\]\n\n**Example 2:**\n\n**Input:** board = \\[\\[ \"a \", \"b \"\\],\\[ \"c \", \"d \"\\]\\], words = \\[ \"abcb \"\\]\n**Output:** \\[\\]\n\n**Constraints:**\n\n*   `m == board.length`\n*   `n == board[i].length`\n*   `1 <= m, n <= 12`\n*   `board[i][j]` is a lowercase English letter.\n*   `1 <= words.length <= 3 * 104`\n*   `1 <= words[i].length <= 10`\n*   `words[i]` consists of lowercase English letters.\n*   All the strings of `words` are unique.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Ruby using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```ruby code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```ruby\nclass Solution\n  def findWords(board, words)\n    # Build a trie to efficiently check prefixes and words\n    trie = {}\n    words.each do |w|\n      node = trie\n      w.each_char do |ch|\n        node[ch] ||= {}\n        node = node[ch]\n      end\n      node[:word] = w\n    end\n\n    m = board.size\n    n = board[0].size\n    result = []\n\n    # DFS search on board with backtracking\n    define_singleton_method(:dfs) do |i, j, node|\n      ch = board[i][j]\n      curr_node = node[ch]\n      return unless curr_node\n\n      # If word found, add to result and remove to avoid duplicates\n      if curr_node[:word]\n        result << curr_node[:word]\n        curr_node.delete(:word)\n      end\n\n      board[i][j] = '#'\n\n      [[i-1,j], [i+1,j], [i,j-1], [i,j+1]].each do |x,y|\n        if x.between?(0, m-1) && y.between?(0, n-1) && board[x][y] != '#' && curr_node[board[x][y]]\n          dfs(x, y, curr_node)\n        end\n      end\n\n      board[i][j] = ch\n\n      # If no further children, prune trie to save time\n      curr_node.delete_if { |k,_| k != :word } if curr_node.empty?\n    end\n\n    (0...m).each do |i|\n      (0...n).each do |j|\n        dfs(i, j, trie) if trie[board[i][j]]\n      end\n    end\n\n    result\n  end\nend\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-09T01:08:41.232004+00:00",
+    "wall_clock_ms": 9116,
+    "provider_meta": {
+      "system_fingerprint": "fp_6d04ed3e47",
+      "usage": {
+        "prompt_tokens": 408,
+        "completion_tokens": 375,
+        "total_tokens": 783,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-09T01:08:41.232442+00:00"
+}

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, ProblemDetail } from "../lib/api";
 import LevelBadge from "../components/LevelBadge";
 import Markdown from "../components/Markdown";
-import { formatMemory, formatPercentile, formatRuntime } from "../lib/format";
+import { formatEnergy, formatMemory, formatPercentile, formatRuntime } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
 
 export default function ProblemDetailPage() {
@@ -16,7 +16,7 @@ export default function ProblemDetailPage() {
   }, [slug]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!p) return <div className="empty">Loading…</div>;
+  if (!p) return <div className="empty">Please wait…</div>;
 
   const passRate = p.n_attempts > 0 ? (p.n_accepted / p.n_attempts) * 100 : null;
 
@@ -34,7 +34,7 @@ export default function ProblemDetailPage() {
              * to the canonical problem so reviewers can compare the
              * rewrite against the source at one click. */
             <Link to={`/problems/${p.original_slug}`}
-                  title={`This is a rephrased variant of "${p.original_title}". Click to view the original problem.`}
+                  title={`This is a rephrased variant of "${p.original_title}". Click to see the original problem.`}
                   style={{
                     padding: "2px 10px", borderRadius: 999,
                     background: "var(--panel-2)",
@@ -50,17 +50,18 @@ export default function ProblemDetailPage() {
         <div className="muted"><code>{p.title_slug}</code> · {p.tags.join(", ")}</div>
         {p.original_function_name && p.function_name && (
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
-            Function name <code>{p.function_name}</code> is rewritten back to{" "}
-            <code>{p.original_function_name}</code> in submitted code before dispatch to LeetCode.
+            The system rewrites the function name <code>{p.function_name}</code>{" "}
+            back to <code>{p.original_function_name}</code> in the submitted
+            code before it dispatches the code to LeetCode.
           </div>
         )}
       </div>
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-        <Stat label="LeetCode tests" value={p.testcases?.toString() ?? "–"} />
+        <Stat label="LeetCode tests" value={p.testcases?.toString() ?? "n/a"} />
         <Stat label="Submissions" value={p.n_attempts.toString()} />
         <Stat label="Accepted" value={`${p.n_accepted} / ${p.n_attempts}`} />
-        <Stat label="Pass rate" value={passRate == null ? "–" : `${passRate.toFixed(1)}%`} />
+        <Stat label="Pass rate" value={passRate == null ? "n/a" : `${passRate.toFixed(1)}%`} />
       </div>
 
       <div className="card">
@@ -123,7 +124,7 @@ function StarterCode({ snippets }: { snippets: Record<string, string> }) {
         <p className="muted" style={{ marginTop: 4 }}>
           No starter snippet on file yet. Run
           {" "}<code>python -m app.fetch_code_snippets --sampled-only</code>{" "}
-          to populate per-language stubs.
+          to add the per-language stubs.
         </p>
       </div>
     );
@@ -150,11 +151,12 @@ function StarterCode({ snippets }: { snippets: Record<string, string> }) {
         </button>
       </div>
       <p className="muted" style={{ marginTop: 4 }}>
-        The exact class + method shape LeetCode's judge expects. A model that
-        ignores this and renames the method (or drops the <code>Solution</code>
-        wrapper) will fail every test case with "method not found" regardless
-        of how correct its algorithm is — so prompts that benchmark this
-        problem should embed the snippet for the target language.
+        This is the exact class and method shape that LeetCode expects. A
+        model that ignores this shape fails every test case with "method
+        not found". This failure also occurs if the model renames the method
+        or removes the <code>Solution</code> wrapper. The test case fails
+        although the algorithm is correct. Each prompt for this problem must
+        include the snippet for the target language.
       </p>
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8, marginBottom: 8 }}>
         {langs.map(l => (
@@ -177,24 +179,32 @@ function StarterCode({ snippets }: { snippets: Record<string, string> }) {
 
 function BestPerLanguage({ p }: { p: ProblemDetail }) {
   if (p.best_per_language.length === 0) return null;
+  // Energy column is only meaningful when at least one row in scope reports
+  // it (i.e. a submission scored by an execution-instrumented harness like
+  // arena-local). LeetCode-only problems leave every row null; the column
+  // stays hidden. Same show/hide pattern as SubmissionsTable / Rankings.
+  const showEnergy = p.best_per_language.some(
+    s => s.runtime_energy_j != null || s.avg_runtime_energy_j != null,
+  );
   return (
     <div>
       <h2>Best per language</h2>
       <p className="muted" style={{ marginTop: 4 }}>
-        Best judged solution in each language for this problem. Counts on the
-        right are total judged attempts (any status) / accepted attempts in
-        that language.
+        The best scored solution in each language for this problem. The counts
+        on the right show the total scored attempts (any status) and the
+        accepted attempts in that language.
       </p>
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
           <thead><tr>
             <th>Lang</th><th>Model</th><th>Submitter</th>
             <th>Status</th>
-            <th title="LeetCode-reported runtime (ms)">Runtime</th>
-            <th title="LeetCode-reported memory (MB)">Memory</th>
-            <th title="Runtime percentile in that language">RT %ile</th>
-            <th title="Memory percentile in that language">Mem %ile</th>
-            <th title="Accepted / total judged attempts in this language">A/T</th>
+            <th title="The runtime that LeetCode reports (ms).">Runtime</th>
+            <th title="The peak (max resident) memory (MB). Both oracles report the peak value, never a per-op value.">Peak mem</th>
+            {showEnergy && <th title="The runtime energy (Joules). Execution-instrumented harnesses report it, for example arena-local. A lower value means the solution uses less energy to run.">Energy</th>}
+            <th title="The runtime percentile in that language.">RT %ile</th>
+            <th title="The memory percentile in that language.">Mem %ile</th>
+            <th title="The accepted attempts and the total scored attempts in this language.">A/T</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -211,6 +221,9 @@ function BestPerLanguage({ p }: { p: ProblemDetail }) {
                 <td><span className={`badge ${s.status_msg === "Accepted" ? "badge-easy" : "badge-hard"}`}>{s.status_msg}</span></td>
                 <td className="metric">{formatRuntime(s.runtime_ms)}</td>
                 <td className="metric">{formatMemory(s.memory_mb)}</td>
+                {showEnergy && (
+                  <td className="metric">{formatEnergy(s.runtime_energy_j)}</td>
+                )}
                 <td className="metric">{formatPercentile(s.runtime_percentile)}</td>
                 <td className="metric">{formatPercentile(s.memory_percentile)}</td>
                 <td className="metric">
@@ -232,6 +245,10 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
   const visible = lang
     ? p.top_solutions.filter(s => s.language === lang)
     : p.top_solutions;
+  // Same show/hide rule as "Best per language" above.
+  const showEnergy = visible.some(
+    s => s.runtime_energy_j != null || s.avg_runtime_energy_j != null,
+  );
   return (
     <div>
       <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
@@ -244,26 +261,27 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
         )}
       </div>
       {visible.length === 0 ? (
-        <div className="empty">No judged solutions {lang ? `in ${lang}` : ""} for this problem yet.</div>
+        <div className="empty">No scored solutions {lang ? `in ${lang}` : ""} for this problem yet.</div>
       ) : (
         <>
           <div className="muted" style={{ fontSize: "0.82rem", marginBottom: 8, lineHeight: 1.45 }}>
             Each row reports the <b>best of 5 dispatch repeats</b> for that
-            attempt (headline columns), with the <b>mean across all 5</b> in
-            parentheses for context. LeetCode's per-run runtime is observably
-            noisy (~4 pp percentile spread within a single attempt in our
-            data; see <code>docs/leetcode-percentile-semantics.md</code>) —
-            best-of-N gives the most stable read on what the code can do.
+            attempt (headline columns). The <b>mean across all 5</b> is in
+            parentheses for context. The per-run runtime of LeetCode is noisy.
+            The data shows about a 4 pp percentile spread within one attempt
+            (read <code>docs/leetcode-percentile-semantics.md</code>).
+            The best of N gives the most stable measure of what the code can do.
           </div>
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
                 <th>Status</th>
-                <th title="Best LeetCode runtime across the 5 dispatch repeats (min ms); the mean is shown in parens. Lower is better.">Runtime (best · avg)</th>
-                <th title="Best LeetCode memory across the 5 dispatch repeats (min MB); the mean is shown in parens. Lower is better.">Memory (best · avg)</th>
-                <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats; the mean is shown in parens. Higher = faster than more of the LeetCode population AT THE TIME OF SUBMISSION (LC's percentile field is itself noisy; see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>
-                <th title="Highest LeetCode memory percentile across the 5 dispatch repeats; mean in parens.">Mem %ile (best · avg)</th>
+                <th title="The best LeetCode runtime across the 5 dispatch repeats (min ms). The mean is in parentheses. A lower value is better.">Runtime (best · avg)</th>
+                <th title="The best peak (max resident) memory across the 5 dispatch repeats (min MB). The mean is in parentheses. Both oracles report the peak value, never a per-op value. A lower value is better.">Peak mem (best · avg)</th>
+                {showEnergy && <th title="The runtime energy in Joules. The best value (least energy) is across the dispatch repeats. The mean is in parentheses. Execution-instrumented harnesses report it, for example arena-local. A lower value is better.">Energy (best · avg)</th>}
+                <th title="The highest LeetCode runtime percentile across the 5 dispatch repeats. The mean is in parentheses. A higher value means the solution is faster than more of the LeetCode population at the time of submission. The percentile field of LeetCode is also noisy (read docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>
+                <th title="The highest LeetCode memory percentile across the 5 dispatch repeats. The mean is in parentheses.">Mem %ile (best · avg)</th>
                 <th></th>
               </tr></thead>
               <tbody>
@@ -291,6 +309,14 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
                         <span className="muted" style={{ marginLeft: 4 }}>· {formatMemory(s.avg_memory_mb)}</span>
                       )}
                     </td>
+                    {showEnergy && (
+                      <td className="metric">
+                        {formatEnergy(s.runtime_energy_j)}
+                        {s.avg_runtime_energy_j != null && s.avg_runtime_energy_j !== s.runtime_energy_j && (
+                          <span className="muted" style={{ marginLeft: 4 }}>· {formatEnergy(s.avg_runtime_energy_j)}</span>
+                        )}
+                      </td>
+                    )}
                     <td className="metric">
                       {formatPercentile(s.runtime_percentile)}
                       {s.avg_runtime_percentile != null && s.avg_runtime_percentile !== s.runtime_percentile && (

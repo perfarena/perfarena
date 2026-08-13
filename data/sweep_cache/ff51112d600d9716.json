@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system|java|next-greater-numerically-balanced-number",
+  "code": "class Solution {\n    private final int[] candidates = {\n        1,\n        22,\n        122,\n        333,\n        1333,\n        4444,\n        14444,\n        22333,\n        55555,\n        122333,\n        155555,\n        224444,\n        666666,\n        1224444,\n        1666666,\n        2244444,\n        3334444,\n        7777777,\n        12255555,\n        17777777,\n        22444444,\n        33344444,\n        44455555,\n        88888888,\n        122666666,\n        177777777,\n        224444444,\n        333444444,\n        444555555,\n        555666666,\n        999999999\n    };\n\n    public int nextBeautifulNumber(int n) {\n        for (int x : candidates) {\n            if (x > n) return x;\n        }\n        return -1;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `next-greater-numerically-balanced-number` in Java.\n\nAn integer `x` is **numerically balanced** if for every digit `d` in the number `x`, there are **exactly** `d` occurrences of that digit in `x`.\n\nGiven an integer `n`, return _the **smallest numerically balanced** number **strictly greater** than_ `n`_._\n\n**Example 1:**\n\n**Input:** n = 1\n**Output:** 22\n**Explanation:** \n22 is numerically balanced since:\n- The digit 2 occurs 2 times. \nIt is also the smallest numerically balanced number strictly greater than 1.\n\n**Example 2:**\n\n**Input:** n = 1000\n**Output:** 1333\n**Explanation:** \n1333 is numerically balanced since:\n- The digit 1 occurs 1 time.\n- The digit 3 occurs 3 times. \nIt is also the smallest numerically balanced number strictly greater than 1000.\nNote that 1022 cannot be the answer because 0 appeared more than 0 times.\n\n**Example 3:**\n\n**Input:** n = 3000\n**Output:** 3133\n**Explanation:** \n3133 is numerically balanced since:\n- The digit 1 occurs 1 time.\n- The digit 3 occurs 3 times.\nIt is also the smallest numerically balanced number strictly greater than 3000.\n\n**Constraints:**\n\n*   `0 <= n <= 106`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    private final int[] candidates = {\n        1,\n        22,\n        122,\n        333,\n        1333,\n        4444,\n        14444,\n        22333,\n        55555,\n        122333,\n        155555,\n        224444,\n        666666,\n        1224444,\n        1666666,\n        2244444,\n        3334444,\n        7777777,\n        12255555,\n        17777777,\n        22444444,\n        33344444,\n        44455555,\n        88888888,\n        122666666,\n        177777777,\n        224444444,\n        333444444,\n        444555555,\n        555666666,\n        999999999\n    };\n\n    public int nextBeautifulNumber(int n) {\n        for (int x : candidates) {\n            if (x > n) return x;\n        }\n        return -1;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T16:46:32.871513+00:00",
+    "wall_clock_ms": 4283,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 397,
+        "completion_tokens": 234,
+        "total_tokens": 631,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-5.4-mini-2026-03-17"
+    }
+  },
+  "saved_at": "2026-06-14T16:46:32.871782+00:00"
+}

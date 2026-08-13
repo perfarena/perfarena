@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|python3|check-if-it-is-a-straight-line",
+  "code": "from typing import List\n\nclass Solution:\n    def checkStraightLine(self, coordinates: List[List[int]]) -> bool:\n        x0, y0 = coordinates[0]\n        x1, y1 = coordinates[1]\n        dx = x1 - x0\n        dy = y1 - y0\n        for x, y in coordinates[2:]:\n            if dy * (x - x0) != dx * (y - y0):\n                return False\n        return True",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `check-if-it-is-a-straight-line` in Python 3.\n\nYou are given an array `coordinates`, `coordinates[i] = [x, y]`, where `[x, y]` represents the coordinate of a point. Check if these points make a straight line in the XY plane.\n\n**Example 1:**\n\n**Input:** coordinates = \\[\\[1,2\\],\\[2,3\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[6,7\\]\\]\n**Output:** true\n\n**Example 2:**\n\n**Input:** coordinates = \\[\\[1,1\\],\\[2,2\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[7,7\\]\\]\n**Output:** false\n\n**Constraints:**\n\n*   `2 <= coordinates.length <= 1000`\n*   `coordinates[i].length == 2`\n*   `-10^4 <= coordinates[i][0], coordinates[i][1] <= 10^4`\n*   `coordinates` contains no duplicate point.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nfrom typing import List\n\nclass Solution:\n    def checkStraightLine(self, coordinates: List[List[int]]) -> bool:\n        x0, y0 = coordinates[0]\n        x1, y1 = coordinates[1]\n        dx = x1 - x0\n        dy = y1 - y0\n        for x, y in coordinates[2:]:\n            if dy * (x - x0) != dx * (y - y0):\n                return False\n        return True\n```",
+    "reasoning": "**Implementing straight line check**\n\nI'm considering a solution for checking if points are in a straight line. I can compute the slope using differences and avoid division with cross multiplication, comparing the initial two points with subsequent ones. For edge cases, like vertical lines, I can verify all x-coordinates are the same. The algorithm also needs to handle conditions like duplicated coordinates and constraints. I'll implement the main class following LeetCode standards and ensure to utilize Python 3 syntax.\n\n**Crafting the final code**\n\nI\u2019ll focus on returning True or False booleans in the solution. While micro-optimizations could be beneficial, they aren\u2019t necessary for this task. I'll include type hints and ensure the final code is clear and straightforward without any additional commentary. It's also important to remember that sometimes the problem may expect the use of functions like map, but I want to keep the solution simple. Let\u2019s put this together in one clear Python code block.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-04T15:09:12.586800+00:00",
+    "wall_clock_ms": 10005,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 317,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 436,
+        "output_tokens_details": {
+          "reasoning_tokens": 320
+        },
+        "total_tokens": 753,
+        "prompt_tokens": 317,
+        "completion_tokens": 436
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-04T15:09:12.586906+00:00"
+}

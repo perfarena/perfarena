@@ -15,14 +15,14 @@ export default function SnapshotDetailPage() {
   }, [id]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!s) return <div className="empty">Loading…</div>;
+  if (!s) return <div className="empty">Please wait.</div>;
 
   const t = s.report.totals;
   return (
     <div className="col">
       <div className="hero">
         <h1>{s.label}</h1>
-        <p>Captured {new Date(s.taken_at).toLocaleString()} · generated at {new Date(s.report.generated_at).toLocaleString()}</p>
+        <p>Taken at {new Date(s.taken_at).toLocaleString()} · report made at {new Date(s.report.generated_at).toLocaleString()}</p>
       </div>
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
@@ -38,7 +38,7 @@ export default function SnapshotDetailPage() {
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
-              <th title="Registered prompt template used at snapshot time. Pre-2026-05-28 snapshots may show 'ad-hoc' for all rows (field wasn't recorded yet).">Prompt</th>
+              <th title="The registered prompt template at the time of the snapshot. Snapshots before 2026-05-28 can show 'ad-hoc' for all rows. The system started to record this field on 2026-05-28.">Prompt</th>
               <th>pass@1</th><th>Solved</th><th>Runtime %ile</th><th>Memory %ile</th><th></th>
             </tr></thead>
             <tbody>

@@ -1,0 +1,38 @@
+{
+  "tuple_key": "gpt-5.5|experiment-system|ruby|check-if-it-is-a-straight-line",
+  "code": "# @param {Integer[][]} coordinates\n# @return {Boolean}\ndef check_straight_line(coordinates)\n  x1, y1 = coordinates[0]\n  x2, y2 = coordinates[1]\n\n  dx = x2 - x1\n  dy = y2 - y1\n\n  coordinates[2..].each do |x, y|\n    return false if (x - x1) * dy != (y - y1) * dx\n  end\n\n  true\nend",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `check-if-it-is-a-straight-line` in Ruby.\n\nYou are given an array `coordinates`, `coordinates[i] = [x, y]`, where `[x, y]` represents the coordinate of a point. Check if these points make a straight line in the XY plane.\n\n**Example 1:**\n\n**Input:** coordinates = \\[\\[1,2\\],\\[2,3\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[6,7\\]\\]\n**Output:** true\n\n**Example 2:**\n\n**Input:** coordinates = \\[\\[1,1\\],\\[2,2\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[7,7\\]\\]\n**Output:** false\n\n**Constraints:**\n\n*   `2 <= coordinates.length <= 1000`\n*   `coordinates[i].length == 2`\n*   `-10^4 <= coordinates[i][0], coordinates[i][1] <= 10^4`\n*   `coordinates` contains no duplicate point.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Ruby using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```ruby code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```ruby\n# @param {Integer[][]} coordinates\n# @return {Boolean}\ndef check_straight_line(coordinates)\n  x1, y1 = coordinates[0]\n  x2, y2 = coordinates[1]\n\n  dx = x2 - x1\n  dy = y2 - y1\n\n  coordinates[2..].each do |x, y|\n    return false if (x - x1) * dy != (y - y1) * dx\n  end\n\n  true\nend\n```",
+    "reasoning": null,
+    "model": "gpt-5.5",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-06-18T07:13:20.533651+00:00",
+    "wall_clock_ms": 20887,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 313,
+        "input_tokens_details": {
+          "cached_tokens": 0
+        },
+        "output_tokens": 380,
+        "output_tokens_details": {
+          "reasoning_tokens": 263
+        },
+        "total_tokens": 693,
+        "prompt_tokens": 313,
+        "completion_tokens": 380
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5.5-2026-04-23",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-06-18T07:13:20.533805+00:00"
+}

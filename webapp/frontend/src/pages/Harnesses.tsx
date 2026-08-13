@@ -33,26 +33,17 @@ export default function Harnesses() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this harness? Refuses if any competitions / submissions / runs still reference it.")) return;
+    if (!confirm("Delete this harness? The system refuses when a competition, a submission, or a run still refers to it.")) return;
     try { await api.deleteHarness(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
 
+  // Hero + heading are owned by the parent HarnessesHub so the two tabs
+  // (perf + correctness) share one page-level chrome and this panel can
+  // render bare content. When someone renders <Harnesses /> directly (no
+  // hub) they still get the list + form — just without the intro.
   return (
     <div className="col">
-      <div className="hero">
-        <h1>Harnesses</h1>
-        <p>
-          A harness is the performance oracle that judges a submission's
-          runs. Historically PerfArena scored everything against LeetCode's
-          online judge — that harness is still here as the default. New
-          harnesses (an in-house local runner, a HumanEval unittest harness,
-          any custom oracle) can be added below; each competition points at
-          exactly one harness by default, and every submission carries the
-          harness that actually scored it.
-        </p>
-      </div>
-
       <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <label className="row" style={{ gap: 6 }}>
           <input type="checkbox" checked={includeRetired}
@@ -98,6 +89,20 @@ function HarnessCard({
   onEdit: () => void; onDelete: () => void;
 }) {
   const isRetired = h.status === "retired";
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const hasRunnerConfig = !!((h.config ?? {}) as Record<string, unknown>).endpoint;
+  const canProbe = h.kind !== "leetcode" && hasRunnerConfig;
+
+  async function onProbe() {
+    setProbing(true); setProbeResult(null);
+    try {
+      const r = await api.probeHarness(h.id);
+      setProbeResult({ ok: r.ok, message: r.message });
+    } catch (e: unknown) {
+      setProbeResult({ ok: false, message: String(e) });
+    } finally { setProbing(false); }
+  }
   return (
     <div className="card col"
          style={isRetired ? { borderColor: "var(--medium)" } : undefined}>
@@ -134,6 +139,12 @@ function HarnessCard({
         <Link to={`/harnesses/${h.slug}`}>
           <button className="secondary">Open</button>
         </Link>
+        {canProbe && (
+          <button className="secondary" disabled={probing} onClick={onProbe}
+                  title="POST /api/admin/harnesses/{id}/probe → runner's /healthz">
+            {probing ? "Please wait…" : "Test connection"}
+          </button>
+        )}
         {isAdmin && (
           <>
             <button className="secondary" onClick={onEdit}>edit</button>
@@ -142,6 +153,14 @@ function HarnessCard({
           </>
         )}
       </div>
+      {probeResult && (
+        <div className="muted" style={{
+          fontSize: "0.82rem", whiteSpace: "pre-wrap",
+          color: probeResult.ok ? "var(--easy)" : "var(--bad)",
+        }}>
+          {probeResult.ok ? "✓ " : "✗ "}{probeResult.message}
+        </div>
+      )}
     </div>
   );
 }
@@ -224,20 +243,26 @@ function HarnessForm({
         </label>
       </div>
       <label className="col">
-        <span className="muted">Description (markdown) — how does this harness judge a solution? What does it measure? Where does the code run?</span>
+        <span className="muted">Description (markdown). How does this harness score a solution? What does it measure? Where does the code run?</span>
         <textarea rows={4} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
-                  placeholder="e.g. Runs each submission inside a firecracker VM on our local runner. Reports wall-clock ns via clock_monotonic and peak RSS via getrusage. See docs/harness/arena-local.md for the full pipeline." />
+                  placeholder="For example: This harness runs each submission in a firecracker VM on the local runner. It reports wall-clock ns with clock_monotonic and peak RSS with getrusage. Read docs/harness/arena-local.md for the full procedure." />
       </label>
       <label className="col">
-        <span className="muted">Config (JSON, optional) — endpoint URL, docker image tag, resource limits, whatever the harness needs to reproduce a run.</span>
-        <textarea rows={3} value={configText}
+        <span className="muted">Config (JSON, optional). Give the endpoint URL, the docker image tag, the resource limits, and any other data the harness needs to repeat a run.</span>
+        <textarea rows={5} value={configText}
                   onChange={e => setConfigText(e.target.value)}
-                  placeholder='{"endpoint": "https://runner.internal", "image": "perfarena/local:sha256-…", "timeout_s": 30}'
+                  placeholder={`arena-local schema (the fields the dispatcher reads):
+{
+  "endpoint":    "http://runner.internal:8787",  // required for remote dispatch
+  "auth_token":  "<shared-secret>",              // the harness sends this as Bearer on every request
+  "timeout_s":   300                             // per-attempt HTTP timeout
+}
+Read webapp/examples/harness_runner_server.py for the example server.`}
                   style={{ fontFamily: "var(--mono, monospace)" }} />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

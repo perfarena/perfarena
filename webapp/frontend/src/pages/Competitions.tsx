@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  api, CompetitionIn, CompetitionPublic, getApiKey, MePayload,
+  api, CompetitionIn, CompetitionPublic, HarnessPublic,
+  getApiKey, MePayload,
 } from "../lib/api";
 
 const KINDS = ["leetcode", "humaneval", "mbpp", "custom"];
@@ -31,7 +32,7 @@ export default function Competitions() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this competition? Existing submissions and problems are NOT touched.")) return;
+    if (!confirm("Delete this competition? The system keeps all existing submissions and problems.")) return;
     try { await api.deleteCompetition(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -41,11 +42,14 @@ export default function Competitions() {
       <div className="hero">
         <h1>Competitions</h1>
         <p>
-          PerfArena tracks one or more competitions in parallel — the original
-          curated 99 LeetCode problems, plus any sets admins add later
-          (HumanEval, MBPP, custom). A problem can belong to multiple
-          competitions; submissions reference problems by slug, so each
-          competition's leaderboard is a filter over the same submission data.
+          Each competition has a problem set and its own oracles. A
+          correctness oracle decides if a solution is correct. A
+          performance oracle measures how the solution runs. Each competition
+          keeps its own leaderboard. The seed set is the 99 LeetCode problems
+          (LC-99). Admins can add more sets later, for example HumanEval,
+          MBPP, or a custom set. A problem can belong to several competitions.
+          Submissions refer to problems by slug. Therefore each competition
+          leaderboard is a view of the same submission data.
         </p>
       </div>
 
@@ -126,6 +130,22 @@ function CompetitionCard({
         </div>
       )}
 
+      <div className="muted" style={{ fontSize: "0.82rem" }}>
+        Compatible harnesses:{" "}
+        {c.compatible_harness_slugs.length === 0 ? (
+          <span style={{ color: "var(--bad, #c33)" }}>
+            none. Submissions get a 400 error until you add at least one harness on the edit form
+          </span>
+        ) : (
+          c.compatible_harness_slugs.map((s, i) => (
+            <span key={s}>
+              {i > 0 && ", "}
+              <code>{s}</code>
+            </span>
+          ))
+        )}
+      </div>
+
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
         <Link to={`/competitions/${c.slug}`}>
           <button className="secondary">Open</button>
@@ -161,11 +181,33 @@ function CompetitionForm({
     slug: existing.slug, name: existing.name,
     description: existing.description, kind: existing.kind,
     status: existing.status,
+    compatible_harness_slugs: [...(existing.compatible_harness_slugs ?? [])],
   } : {
     slug: "", name: "", description: "", kind: "custom", status: "active",
+    // New competitions start with an EMPTY compat list — admin explicitly
+    // opts harnesses in. Matches server-side default. Until the admin
+    // adds at least one, POST /api/submissions returns 400 for any
+    // submission against this competition.
+    compatible_harness_slugs: [],
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // Fetch every registered harness (non-retired) so the multi-select can
+  // offer the full set. Filter retired so admins don't accidentally
+  // pin a stale entry — the list rarely changes so one fetch on mount
+  // is fine.
+  const [harnesses, setHarnesses] = useState<HarnessPublic[]>([]);
+  useEffect(() => {
+    api.harnesses(false).then(setHarnesses).catch(() => setHarnesses([]));
+  }, []);
+
+  function toggleCompat(slug: string) {
+    setF(prev => {
+      const cur = new Set(prev.compatible_harness_slugs ?? []);
+      if (cur.has(slug)) cur.delete(slug); else cur.add(slug);
+      return { ...prev, compatible_harness_slugs: Array.from(cur) };
+    });
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); setErr("");
@@ -209,14 +251,50 @@ function CompetitionForm({
           </select>
         </label>
       </div>
+      <div className="col" style={{ gap: 6 }}>
+        <span className="muted" style={{ fontSize: "0.9rem" }}>
+          <b>Compatible harnesses</b>: the list of harnesses that can
+          score submissions for this competition. The server rejects a
+          submission when its <code>harness_slug</code> is not in this
+          list. The server returns a 400 error and a clear message. Leave
+          the list empty to stop new submissions until the admin decides.
+        </span>
+        {harnesses.length === 0 ? (
+          <div className="muted" style={{ fontSize: "0.85rem" }}>
+            No harnesses are registered. Add one on <code>/harnesses</code>.
+          </div>
+        ) : (
+          <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+            {harnesses.map(h => {
+              const checked = (f.compatible_harness_slugs ?? []).includes(h.slug);
+              return (
+                <label key={h.slug}
+                       style={{
+                         display: "flex", alignItems: "center", gap: 6,
+                         padding: "4px 8px", borderRadius: 4,
+                         border: "1px solid var(--border, #ddd)",
+                         background: checked ? "var(--surface-3, rgba(0,120,255,0.08))" : "transparent",
+                         cursor: "pointer", fontSize: "0.88rem",
+                       }}
+                       title={`kind=${h.kind}${h.description ? ` · ${h.description.slice(0,80)}` : ""}`}>
+                  <input type="checkbox" checked={checked}
+                         onChange={() => toggleCompat(h.slug)} />
+                  <span>{h.name}</span>
+                  <code className="muted" style={{ fontSize: "0.78rem" }}>{h.slug}</code>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
       <label className="col">
         <span className="muted">Description (markdown)</span>
         <textarea rows={3} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
-                  placeholder="What this competition evaluates, where the problems come from, how the leaderboard is interpreted." />
+                  placeholder="Describe what this competition evaluates, where the problems come from, and how to read the leaderboard." />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Save in progress…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

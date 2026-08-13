@@ -83,10 +83,10 @@ export default function CostEstimator() {
       <div className="hero">
         <h1>Cost estimator</h1>
         <p>
-          Estimate the $ cost of populating a model across the platform.
-          Numbers come from observed token totals on already-completed
-          full sweeps — narrow the cohort with the filters below for a
-          tighter envelope.
+          Estimate the cost in dollars to populate a model across the platform.
+          The numbers come from the token totals that the platform measured on
+          completed full sweeps. Use the filters below to narrow the set of
+          comparable sweeps. A smaller set gives a tighter range.
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export default function CostEstimator() {
               Input ($ / 1M tokens)
             </label>
             <input id="in_rate" type="number" step="0.01" min="0"
-                   placeholder="e.g. 0.40"
+                   placeholder="for example 0.40"
                    value={rates.in_rate}
                    onChange={e => setRates(r => ({ ...r, in_rate: e.target.value }))}
                    style={{ width: 140 }} />
@@ -142,13 +142,13 @@ export default function CostEstimator() {
               Output ($ / 1M tokens)
             </label>
             <input id="out_rate" type="number" step="0.01" min="0"
-                   placeholder="e.g. 1.60"
+                   placeholder="for example 1.60"
                    value={rates.out_rate}
                    onChange={e => setRates(r => ({ ...r, out_rate: e.target.value }))}
                    style={{ width: 140 }} />
           </div>
           <div className="muted" style={{ fontSize: "0.85rem", alignSelf: "end" }}>
-            Defaults to OpenAI gpt-4.1-mini list price (0.40 / 1.60). Stored locally.
+            The default is the OpenAI gpt-4.1-mini list price (0.40 / 1.60). The browser stores these rates on your computer.
           </div>
         </div>
 
@@ -203,7 +203,7 @@ function computeEnvelope(
 function EnvelopePanel({
   stats, cost,
 }: { stats: CostEstimatorStats | null; cost: CostEnvelope }) {
-  if (!stats) return <div className="muted" style={{ marginTop: 16 }}>Loading…</div>;
+  if (!stats) return <div className="muted" style={{ marginTop: 16 }}>Please wait…</div>;
   const n = stats.input_tokens.n;
   return (
     <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
@@ -222,9 +222,9 @@ function EnvelopePanel({
                    unit="$" formatter={fmtDollar} highlight />
       </div>
       <div className="muted" style={{ fontSize: "0.85rem", marginTop: 10, lineHeight: 1.5 }}>
-        Computed from <b>{n}</b> already-completed full sweep{n === 1 ? "" : "s"} matching the filters.
-        {n === 0 && " No full sweep with token data exists yet for this combination — try fewer filters or wait for a sweep to finish."}
-        {n > 0 && n < 3 && " Small sample — treat the envelope as indicative until more sweeps land."}
+        The platform computed this range from <b>{n}</b> completed full sweep{n === 1 ? "" : "s"} that match the filters.
+        {n === 0 && " No full sweep with token data exists yet for this combination. Use fewer filters, or wait for a sweep to finish."}
+        {n > 0 && n < 3 && " The sample is small. Treat this range as approximate until more sweeps finish."}
       </div>
     </div>
   );
@@ -278,7 +278,7 @@ function SubmissionsTable({ rows }: { rows: CostEstimatorSubmissionRow[] }) {
   if (!rows.length) {
     return (
       <div className="card" style={{ padding: 16 }}>
-        <div className="muted">No submissions match the current filters.</div>
+        <div className="muted">No submission matches the current filters.</div>
       </div>
     );
   }
@@ -291,7 +291,7 @@ function SubmissionsTable({ rows }: { rows: CostEstimatorSubmissionRow[] }) {
           <th>Language</th>
           <th>Prompt</th>
           <th>Competition</th>
-          <th title="Unique problems hit / problems in scope. ≥ scope = full sweep.">Coverage</th>
+          <th title="Unique problems reached, divided by the problems in scope. A full sweep reaches the whole scope or more.">Coverage</th>
           <th>Input tokens</th>
           <th>Output tokens</th>
         </tr></thead>

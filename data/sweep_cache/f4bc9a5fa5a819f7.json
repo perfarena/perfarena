@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|ruby|zuma-game",
+  "code": "class Solution\n  def find_min_step(board, hand)\n    hand_count = Hash.new(0)\n    hand.each_char { |c| hand_count[c] += 1 }\n\n    @memo = {}\n\n    def remove_consecutive(board)\n      loop do\n        new_board = \"\"\n        i = 0\n        changed = false\n        while i < board.size\n          j = i\n          while j < board.size && board[j] == board[i]\n            j += 1\n          end\n          if j - i >= 3\n            changed = true\n          else\n            new_board << board[i...j]\n          end\n          i = j\n        end\n        break board unless changed\n        board = new_board\n      end\n      board\n    end\n\n    def dfs(board, hand_count, memo)\n      return 0 if board.empty?\n      key = [board, hand_count.sort].to_s\n      return memo[key] if memo.key?(key)\n\n      res = Float::INFINITY\n      i = 0\n      while i < board.size\n        j = i\n        while j < board.size && board[j] == board[i]\n          j += 1\n        end\n        needed = 3 - (j - i)\n        c = board[i]\n        if hand_count[c] >= needed\n          # Use needed balls from hand to remove this group\n          hand_count[c] -= needed\n          new_board = remove_consecutive(board[0...i] + board[j..-1])\n          steps = dfs(new_board, hand_count, memo)\n          if steps != -1\n            res = [res, steps + needed].min\n          end\n          hand_count[c] += needed\n        end\n        i = j\n      end\n\n      memo[key] = res == Float::INFINITY ? -1 : res\n      memo[key]\n    end\n\n    dfs(board, hand_count, @memo)\n  end\nend",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `zuma-game` in Ruby.\n\nYou are playing a variation of the game Zuma.\n\nIn this variation of Zuma, there is a **single row** of colored balls on a board, where each ball can be colored red `'R'`, yellow `'Y'`, blue `'B'`, green `'G'`, or white `'W'`. You also have several colored balls in your hand.\n\nYour goal is to **clear all** of the balls from the board. On each turn:\n\n*   Pick **any** ball from your hand and insert it in between two balls in the row or on either end of the row.\n*   If there is a group of **three or more consecutive balls** of the **same color**, remove the group of balls from the board.\n    *   If this removal causes more groups of three or more of the same color to form, then continue removing each group until there are none left.\n*   If there are no more balls on the board, then you win the game.\n*   Repeat this process until you either win or do not have any more balls in your hand.\n\nGiven a string `board`, representing the row of balls on the board, and a string `hand`, representing the balls in your hand, return _the **minimum** number of balls you have to insert to clear all the balls from the board. If you cannot clear all the balls from the board using the balls in your hand, return_ `-1`.\n\n**Example 1:**\n\n**Input:** board =  \"WRRBBW \", hand =  \"RB \"\n**Output:** -1\n**Explanation:** It is impossible to clear all the balls. The best you can do is:\n- Insert 'R' so the board becomes WRRRBBW. WRRRBBW -> WBBW.\n- Insert 'B' so the board becomes WBBBW. WBBBW -> WW.\nThere are still balls remaining on the board, and you are out of balls to insert.\n\n**Example 2:**\n\n**Input:** board =  \"WWRRBBWW \", hand =  \"WRBRW \"\n**Output:** 2\n**Explanation:** To make the board empty:\n- Insert 'R' so the board becomes WWRRRBBWW. WWRRRBBWW -> WWBBWW.\n- Insert 'B' so the board becomes WWBBBWW. WWBBBWW -> WWWW -> empty.\n2 balls from your hand were needed to clear the board.\n\n**Example 3:**\n\n**Input:** board =  \"G \", hand =  \"GGGGG \"\n**Output:** 2\n**Explanation:** To make the board empty:\n- Insert 'G' so the board becomes GG.\n- Insert 'G' so the board becomes GGG. GGG -> empty.\n2 balls from your hand were needed to clear the board.\n\n**Constraints:**\n\n*   `1 <= board.length <= 16`\n*   `1 <= hand.length <= 5`\n*   `board` and `hand` consist of the characters `'R'`, `'Y'`, `'B'`, `'G'`, and `'W'`.\n*   The initial row of balls on the board will **not** have any groups of three or more consecutive balls of the same color.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Ruby using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```ruby code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```ruby\nclass Solution\n  def find_min_step(board, hand)\n    hand_count = Hash.new(0)\n    hand.each_char { |c| hand_count[c] += 1 }\n\n    @memo = {}\n\n    def remove_consecutive(board)\n      loop do\n        new_board = \"\"\n        i = 0\n        changed = false\n        while i < board.size\n          j = i\n          while j < board.size && board[j] == board[i]\n            j += 1\n          end\n          if j - i >= 3\n            changed = true\n          else\n            new_board << board[i...j]\n          end\n          i = j\n        end\n        break board unless changed\n        board = new_board\n      end\n      board\n    end\n\n    def dfs(board, hand_count, memo)\n      return 0 if board.empty?\n      key = [board, hand_count.sort].to_s\n      return memo[key] if memo.key?(key)\n\n      res = Float::INFINITY\n      i = 0\n      while i < board.size\n        j = i\n        while j < board.size && board[j] == board[i]\n          j += 1\n        end\n        needed = 3 - (j - i)\n        c = board[i]\n        if hand_count[c] >= needed\n          # Use needed balls from hand to remove this group\n          hand_count[c] -= needed\n          new_board = remove_consecutive(board[0...i] + board[j..-1])\n          steps = dfs(new_board, hand_count, memo)\n          if steps != -1\n            res = [res, steps + needed].min\n          end\n          hand_count[c] += needed\n        end\n        i = j\n      end\n\n      memo[key] = res == Float::INFINITY ? -1 : res\n      memo[key]\n    end\n\n    dfs(board, hand_count, @memo)\n  end\nend\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-09T01:13:51.369930+00:00",
+    "wall_clock_ms": 8337,
+    "provider_meta": {
+      "system_fingerprint": "fp_ea81317eb9",
+      "usage": {
+        "prompt_tokens": 753,
+        "completion_tokens": 415,
+        "total_tokens": 1168,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-09T01:13:51.370202+00:00"
+}

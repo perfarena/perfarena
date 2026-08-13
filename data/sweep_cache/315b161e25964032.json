@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|php|find-array-given-subset-sums",
+  "code": "class Solution {\n\n    /**\n     * @param Integer $n\n     * @param Integer[] $sums\n     * @return Integer[]\n     */\n    function recoverArray($n, $sums) {\n        sort($sums);\n        return $this->recover($n, $sums);\n    }\n\n    private function recover($n, $sums) {\n        if ($n == 0) {\n            // no elements left, sums must be [0]\n            return [];\n        }\n\n        sort($sums);\n        $L = count($sums);\n        $x = $sums[$L-1] - $sums[$0]; // The difference between largest and smallest sum = element or -element\n\n        // We'll try x as the element first, if fail try -x.\n\n        // Try x\n        $res = $this->tryRecover($n, $sums, $x);\n        if ($res !== null) {\n            return $res;\n        }\n\n        // Try -x\n        $res = $this->tryRecover($n, $sums, -$x);\n        return $res;\n    }\n\n    private function tryRecover($n, $sums, $x) {\n        // We try to split sums into two groups:\n        // sums with element x included, and sums without x included.\n        // The sums with x included are sums_without_x plus x.\n\n        $L = count($sums);\n        $countMap = [];\n\n        // Create frequency map\n        foreach ($sums as $v) {\n            if (!isset($countMap[$v])) {\n                $countMap[$v] = 0;\n            }\n            $countMap[$v]++;\n        }\n\n        $sumsWithoutX = [];\n        $usedMap = [];\n\n        for ($i = 0; $i < $L; $i++) {\n            $cur = $sums[$i];\n            if ($countMap[$cur] == 0) continue;\n\n            $countMap[$cur]--;\n            $target = $cur + $x;\n            if (!isset($countMap[$target]) || $countMap[$target] == 0) {\n                // Pair not found, fail this choice of x\n                // Restore count before returning\n                $countMap[$cur]++;\n                return null;\n            }\n            $countMap[$target]--;\n            $sumsWithoutX[] = $cur;\n        }\n\n        $subAns = $this->recover($n - 1, $sumsWithoutX);\n        if ($subAns === null) return null;\n\n        $subAns[] = $x;\n        return $subAns;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `find-array-given-subset-sums` in PHP.\n\nYou are given an integer `n` representing the length of an unknown array that you are trying to recover. You are also given an array `sums` containing the values of all `2n` **subset sums** of the unknown array (in no particular order).\n\nReturn _the array_ `ans` _of length_ `n` _representing the unknown array. If **multiple** answers exist, return **any** of them_.\n\nAn array `sub` is a **subset** of an array `arr` if `sub` can be obtained from `arr` by deleting some (possibly zero or all) elements of `arr`. The sum of the elements in `sub` is one possible **subset sum** of `arr`. The sum of an empty array is considered to be `0`.\n\n**Note:** Test cases are generated such that there will **always** be at least one correct answer.\n\n**Example 1:**\n\n**Input:** n = 3, sums = \\[-3,-2,-1,0,0,1,2,3\\]\n**Output:** \\[1,2,-3\\]\n**Explanation:** \\[1,2,-3\\] is able to achieve the given subset sums:\n- \\[\\]: sum is 0\n- \\[1\\]: sum is 1\n- \\[2\\]: sum is 2\n- \\[1,2\\]: sum is 3\n- \\[-3\\]: sum is -3\n- \\[1,-3\\]: sum is -2\n- \\[2,-3\\]: sum is -1\n- \\[1,2,-3\\]: sum is 0\nNote that any permutation of \\[1,2,-3\\] and also any permutation of \\[-1,-2,3\\] will also be accepted.\n\n**Example 2:**\n\n**Input:** n = 2, sums = \\[0,0,0,0\\]\n**Output:** \\[0,0\\]\n**Explanation:** The only correct answer is \\[0,0\\].\n\n**Example 3:**\n\n**Input:** n = 4, sums = \\[0,0,5,5,4,-1,4,9,9,-1,4,3,4,8,3,8\\]\n**Output:** \\[0,-1,4,5\\]\n**Explanation:** \\[0,-1,4,5\\] is able to achieve the given subset sums.\n\n**Constraints:**\n\n*   `1 <= n <= 15`\n*   `sums.length == 2n`\n*   `-104 <= sums[i] <= 104`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in PHP using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```php code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```php\n<?php\nclass Solution {\n\n    /**\n     * @param Integer $n\n     * @param Integer[] $sums\n     * @return Integer[]\n     */\n    function recoverArray($n, $sums) {\n        sort($sums);\n        return $this->recover($n, $sums);\n    }\n\n    private function recover($n, $sums) {\n        if ($n == 0) {\n            // no elements left, sums must be [0]\n            return [];\n        }\n\n        sort($sums);\n        $L = count($sums);\n        $x = $sums[$L-1] - $sums[$0]; // The difference between largest and smallest sum = element or -element\n\n        // We'll try x as the element first, if fail try -x.\n\n        // Try x\n        $res = $this->tryRecover($n, $sums, $x);\n        if ($res !== null) {\n            return $res;\n        }\n\n        // Try -x\n        $res = $this->tryRecover($n, $sums, -$x);\n        return $res;\n    }\n\n    private function tryRecover($n, $sums, $x) {\n        // We try to split sums into two groups:\n        // sums with element x included, and sums without x included.\n        // The sums with x included are sums_without_x plus x.\n\n        $L = count($sums);\n        $countMap = [];\n\n        // Create frequency map\n        foreach ($sums as $v) {\n            if (!isset($countMap[$v])) {\n                $countMap[$v] = 0;\n            }\n            $countMap[$v]++;\n        }\n\n        $sumsWithoutX = [];\n        $usedMap = [];\n\n        for ($i = 0; $i < $L; $i++) {\n            $cur = $sums[$i];\n            if ($countMap[$cur] == 0) continue;\n\n            $countMap[$cur]--;\n            $target = $cur + $x;\n            if (!isset($countMap[$target]) || $countMap[$target] == 0) {\n                // Pair not found, fail this choice of x\n                // Restore count before returning\n                $countMap[$cur]++;\n                return null;\n            }\n            $countMap[$target]--;\n            $sumsWithoutX[] = $cur;\n        }\n\n        $subAns = $this->recover($n - 1, $sumsWithoutX);\n        if ($subAns === null) return null;\n\n        $subAns[] = $x;\n        return $subAns;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-08T16:30:33.066590+00:00",
+    "wall_clock_ms": 8218,
+    "provider_meta": {
+      "system_fingerprint": "fp_02e6e91199",
+      "usage": {
+        "prompt_tokens": 659,
+        "completion_tokens": 563,
+        "total_tokens": 1222,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-08T16:30:33.066848+00:00"
+}

@@ -37,10 +37,13 @@ export default function About() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>About PerfArena</h1>
         <p style={{ maxWidth: 720, fontSize: "1.05rem", lineHeight: 1.5 }}>
-          PerfArena is an open benchmark for large language models on competitive programming
-          problems. Every submission is verified end-to-end on LeetCode, so the leaderboard reflects
-          real correctness, runtime, and memory — not synthetic scores. The project is run out of{" "}
-          <b>NYU Abu Dhabi</b>; the codebase is released under the Apache 2.0 License.
+          PerfArena is a ranking of language models. It ranks them by the
+          performance of the code that they write. Each competition has a
+          problem set, a correctness oracle, and a performance oracle. The
+          team runs each model and checks each result. Anyone can do a run
+          again and get the same result. Anyone can examine the record of a
+          run. <b>NYU Abu Dhabi</b> runs this project. The code has the Apache
+          2.0 License.
         </p>
       </div>
 
@@ -55,17 +58,17 @@ export default function About() {
         <h2>Affiliations</h2>
         <p className="muted" style={{ lineHeight: 1.6 }}>
           <a href={SANADLAB_URL} target="_blank" rel="noreferrer"><b>SanadLab</b></a>{" "}
-          is a research group at NYU Abu Dhabi studying programming languages, program analysis,
-          and software engineering for the next generation of AI systems. Rui Rua and Karim Ali
-          are affiliated with SanadLab. João Paulo Fernandes is faculty at NYU Abu Dhabi.
+          is a research group at NYU Abu Dhabi. It studies programming languages, program analysis,
+          and software engineering for new AI systems. Rui Rua and Karim Ali
+          are members of SanadLab. João Paulo Fernandes is a faculty member at NYU Abu Dhabi.
         </p>
       </section>
 
       <section>
         <h2>Citing PerfArena</h2>
         <p className="muted">
-          If you use the leaderboard or the downloadable solutions dataset in your work, please cite
-          the project (citation BibTeX coming soon) and link back to this site.
+          Do you use the leaderboard or the solutions dataset in your work? Please cite this
+          project and add a link to this site. The BibTeX citation is not ready yet.
         </p>
       </section>
 

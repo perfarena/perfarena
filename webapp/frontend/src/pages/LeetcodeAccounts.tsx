@@ -69,7 +69,7 @@ export default function LeetcodeAccounts() {
   };
 
   const remove = async (n: string) => {
-    if (!confirm(`Remove account '${n}' from the pool? This can't be undone (you'll need the cookie to re-add it).`)) return;
+    if (!confirm(`Remove account '${n}' from the pool? This is permanent. You need the cookie to add the account again.`)) return;
     setErr(""); setBusy(true);
     try {
       await api.removeLeetcodeAccount(n);
@@ -92,10 +92,10 @@ export default function LeetcodeAccounts() {
       <div className="hero">
         <h1>LeetCode accounts</h1>
         <p>
-          The credential pool that dispatch uses to submit solutions to LeetCode. Each
-          account rotates after a 429 (24h cooldown by default). If the pool runs dry,
-          new dispatches synthesize "Auth failed" runs until at least one account is
-          available again.
+          This is the credential pool. Dispatch uses the pool to submit solutions to
+          LeetCode. Each account rotates after a 429 response, with a default cooldown
+          of 24 hours. When the pool is empty, each new dispatch creates an "Auth
+          failed" run. This continues until at least one account is available again.
         </p>
       </div>
 
@@ -117,12 +117,12 @@ export default function LeetcodeAccounts() {
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button onClick={refresh} disabled={busy} className="secondary">Refresh</button>
             <button onClick={probe} disabled={busy} className="secondary"
-                    title="Probes LC's userStatus once per account. Takes ~5s per account.">
+                    title="This probe checks the LeetCode userStatus of each account one time. It takes about 5 seconds for each account.">
               Probe LC {lastProbedAt && <span className="muted" style={{ fontSize: "0.8em" }}>(last {lastProbedAt})</span>}
             </button>
             {pool.exhausted > 0 && (
               <button onClick={() => clearExhaustion("*")} disabled={busy}
-                      title="Clears the exhaustion timer on every account at once.">
+                      title="Clear the exhaustion timer on every account at the same time.">
                 Clear all exhaustions
               </button>
             )}
@@ -137,13 +137,13 @@ export default function LeetcodeAccounts() {
             <th>Name</th>
             <th>State</th>
             <th>Exhausted until</th>
-            <th title="Populated by the Probe button.">LC sign-in</th>
+            <th title="The Probe button fills in this column.">LC sign-in</th>
             <th></th>
           </tr></thead>
           <tbody>
             {pool && pool.accounts.length === 0 && (
               <tr><td colSpan={5} className="empty" style={{ padding: 16 }}>
-                Pool is empty. Add an account using the form below.
+                The pool is empty. Add an account with the form below.
               </td></tr>
             )}
             {pool?.accounts.map(a => (
@@ -159,18 +159,18 @@ export default function LeetcodeAccounts() {
       <div className="card" style={{ padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>Add or refresh an account</h3>
         <p className="muted" style={{ lineHeight: 1.5, fontSize: "0.9rem" }}>
-          In a browser logged into leetcode.com, open DevTools →{" "}
-          <b>Application</b> → <b>Cookies</b> → <code>https://leetcode.com</code>.
-          Copy the value of <code>LEETCODE_SESSION</code> into the Session field
-          and the value of <code>csrftoken</code> into the CSRF field. Reusing an
-          existing name overwrites the stored credentials and clears that
-          account's exhaustion timer.
+          Sign in to leetcode.com in a browser. Open DevTools. Go to{" "}
+          <b>Application</b>, then <b>Cookies</b>, then <code>https://leetcode.com</code>.
+          Copy the value of <code>LEETCODE_SESSION</code> into the Session field.
+          Copy the value of <code>csrftoken</code> into the CSRF field. When you
+          reuse a name, the system overwrites the stored credentials and clears
+          the exhaustion timer of that account.
         </p>
         <form onSubmit={add} style={{ display: "grid", gap: 10 }}>
           <label>
             <div className="muted" style={{ fontSize: "0.8rem" }}>Name</div>
             <input type="text" required value={name} onChange={e => setName(e.target.value)}
-                   placeholder="e.g. primary, alt1, …"
+                   placeholder="for example primary, alt1"
                    style={{ width: 240 }}
                    autoComplete="off" />
           </label>
@@ -189,8 +189,8 @@ export default function LeetcodeAccounts() {
                         fontSize: "0.8rem",
                       }} />
             <div className="muted" style={{ fontSize: "0.75rem", marginTop: 2 }}>
-              Long JWT (~600–900 chars, two dots). Don't include the
-              "<code>LEETCODE_SESSION=</code>" prefix.
+              This is a long JWT with about 600 to 900 characters and two dots. Do
+              not include the "<code>LEETCODE_SESSION=</code>" prefix.
             </div>
           </label>
           <label>
@@ -207,7 +207,7 @@ export default function LeetcodeAccounts() {
                      fontSize: "0.85rem",
                    }} />
             <div className="muted" style={{ fontSize: "0.75rem", marginTop: 2 }}>
-              ~32–64 hex characters. Don't include the
+              This has 32 to 64 hexadecimal characters. Do not include the
               "<code>csrftoken=</code>" prefix.
             </div>
           </label>
@@ -221,8 +221,8 @@ export default function LeetcodeAccounts() {
       </div>
 
       <div className="muted" style={{ fontSize: "0.85rem", marginTop: 12, lineHeight: 1.5 }}>
-        <b>Tip.</b> Multiple accounts give the dispatcher room to rotate around 429s.
-        With one account, every 429 kills the sweep until the cooldown rolls over.
+        <b>Tip.</b> Several accounts let the dispatcher rotate around a 429 response.
+        With one account, every 429 response stops the sweep until the cooldown ends.
       </div>
     </div>
   );

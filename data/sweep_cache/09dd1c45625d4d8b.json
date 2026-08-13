@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|rust|copy-paste-character-target",
+  "code": "impl Solution {\n    pub fn min_steps(n: i32) -> i32 {\n        if n == 1 {\n            return 0;\n        }\n        let mut res = 0;\n        let mut num = n;\n        let mut divisor = 2;\n        while num > 1 {\n            while num % divisor == 0 {\n                res += divisor;\n                num /= divisor;\n            }\n            divisor += 1;\n        }\n        res\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `copy-paste-character-target` in Rust.\n\nA notepad screen begins with a lone character `'A'`. On every step you may apply one of the two actions described below:\n\n*   Copy All: Duplicate every character that is currently on the screen into the clipboard (you cannot copy a portion).\n*   Paste: Append the most recently copied characters to what is on the screen.\n\nGiven an integer `n`, return _the smallest number of actions needed to display the character_ `'A'` _exactly_ `n` _times on the screen_.\n\n**Example 1:**\n\n**Input:** n = 3\n**Output:** 3\n**Explanation:** At the start, the screen shows a single 'A'.\nDuring step 1, perform Copy All.\nDuring step 2, perform Paste to reach 'AA'.\nDuring step 3, perform Paste to reach 'AAA'.\n\n**Example 2:**\n\n**Input:** n = 1\n**Output:** 0\n\n**Constraints:**\n\n*   `1 <= n <= 1000`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Rust using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```rust code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```rust\nimpl Solution {\n    pub fn min_steps(n: i32) -> i32 {\n        if n == 1 {\n            return 0;\n        }\n        let mut res = 0;\n        let mut num = n;\n        let mut divisor = 2;\n        while num > 1 {\n            while num % divisor == 0 {\n                res += divisor;\n                num /= divisor;\n            }\n            divisor += 1;\n        }\n        res\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T21:43:34.123612+00:00",
+    "wall_clock_ms": 2281,
+    "provider_meta": {
+      "system_fingerprint": "fp_7b7cafbb56",
+      "usage": {
+        "prompt_tokens": 302,
+        "completion_tokens": 100,
+        "total_tokens": 402,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T21:43:34.123741+00:00"
+}

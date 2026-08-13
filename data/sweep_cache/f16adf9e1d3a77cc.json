@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|does-robot-finish-at-start-point",
+  "code": "#include <stdbool.h>\n\nbool judgeCircle(char * moves){\n    int x = 0, y = 0;\n    for (int i = 0; moves[i] != '\\0'; i++) {\n        switch (moves[i]) {\n            case 'U': y++; break;\n            case 'D': y--; break;\n            case 'L': x--; break;\n            case 'R': x++; break;\n        }\n    }\n    return x == 0 && y == 0;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `does-robot-finish-at-start-point` in C.\n\nA robot begins at the point `(0, 0)`, the origin, sitting on a 2D plane. After running through a list of its moves, decide whether this robot **finishes at** `(0, 0)`.\n\nYou receive a string `moves` describing the move sequence of the robot, where `moves[i]` describes the `ith` move. Permitted moves are `'R'` (right), `'L'` (left), `'U'` (up), and `'D'` (down).\n\nReturn `true` _if the robot returns to the origin after it finishes all of its moves, or_ `false` _otherwise_.\n\n**Note**: Which way the robot is \"facing \" does not matter. `'R'` will always send the robot one step to the right, `'L'` will always send it left, etc. Also, assume each move covers the same step length.\n\n**Example 1:**\n\n**Input:** moves =  \"UD \"\n**Output:** true\n**Explanation**: The robot moves up once, and then down once. All moves have the same magnitude, so it ended up at the origin where it started. Therefore, we return true.\n\n**Example 2:**\n\n**Input:** moves =  \"LL \"\n**Output:** false\n**Explanation**: The robot moves left twice. It ends up two  \"moves \" to the left of the origin. We return false because it is not at the origin at the end of its moves.\n\n**Constraints:**\n\n*   `1 <= moves.length <= 2 * 104`\n*   `moves` only contains the characters `'U'`, `'D'`, `'L'` and `'R'`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdbool.h>\n\nbool judgeCircle(char * moves){\n    int x = 0, y = 0;\n    for (int i = 0; moves[i] != '\\0'; i++) {\n        switch (moves[i]) {\n            case 'U': y++; break;\n            case 'D': y--; break;\n            case 'L': x--; break;\n            case 'R': x++; break;\n        }\n    }\n    return x == 0 && y == 0;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T21:26:26.130543+00:00",
+    "wall_clock_ms": 2125,
+    "provider_meta": {
+      "system_fingerprint": "fp_184442298b",
+      "usage": {
+        "prompt_tokens": 456,
+        "completion_tokens": 107,
+        "total_tokens": 563,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T21:26:26.130903+00:00"
+}

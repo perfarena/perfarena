@@ -410,7 +410,6 @@ def main() -> int:
 
     def _build_client() -> tuple[LeetCodeClient | None, str | None]:
         """Build a client from the next available account. Returns
-<<<<<<< HEAD
         (client, account_name) or (None, None) if the pool is dry.
 
         Honours `LEETCODE_FORCE_ACCOUNT` env var — the dispatcher sets
@@ -419,8 +418,6 @@ def main() -> int:
         account is missing/exhausted/has bad cookies, fall through to
         the default `pick_account()` ordering rather than failing the
         whole submission."""
-=======
-        (client, account_name) or (None, None) if the pool is dry."""
         def parse_cookie_header(cookie_header: str | None) -> dict[str, str]:
             jar: dict[str, str] = {}
             for piece in (cookie_header or "").split(";"):
@@ -429,7 +426,6 @@ def main() -> int:
                     jar[k.strip()] = v.strip()
             return jar
 
->>>>>>> 882f453203b4236d51a887082780c2418b4ea30c
         if pick_account is None:
             # Standalone fallback: read .env directly (legacy single-account).
             session = os.getenv("LEETCODE_SESSION")

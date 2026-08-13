@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|c|split-array-into-k-buckets-of-equal-total",
+  "code": "#include <stdbool.h>\n#include <stdlib.h>\n\nbool backtrack(int* nums, int numsSize, int k, int target, int start, int currSum, int* used, int usedCount) {\n    if (k == 0) return true;\n    if (currSum == target) {\n        // Start to fill next bucket\n        return backtrack(nums, numsSize, k - 1, target, 0, 0, used, usedCount);\n    }\n    for (int i = start; i < numsSize; i++) {\n        if (!used[i] && currSum + nums[i] <= target) {\n            used[i] = 1;\n            if (backtrack(nums, numsSize, k, target, i + 1, currSum + nums[i], used, usedCount + 1)) {\n                return true;\n            }\n            used[i] = 0;\n            // Optimization: if currSum is 0 and nums[i] didn't work, no need to try others at this level\n            if (currSum == 0) return false;\n        }\n    }\n    return false;\n}\n\nbool canPartitionKSubsets(int* nums, int numsSize, int k){\n    int sum = 0;\n    for (int i = 0; i < numsSize; i++) sum += nums[i];\n    if (sum % k != 0) return false;\n    int target = sum / k;\n    \n    // Sort nums descending to optimize pruning\n    // Simple insertion sort descending\n    for (int i = 1; i < numsSize; i++) {\n        int key = nums[i];\n        int j = i - 1;\n        while (j >= 0 && nums[j] < key) {\n            nums[j + 1] = nums[j];\n            j--;\n        }\n        nums[j + 1] = key;\n    }\n    \n    // If largest number > target, no solution\n    if (nums[0] > target) return false;\n    \n    int used[16] = {0};\n    return backtrack(nums, numsSize, k, target, 0, 0, used, 0);\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `split-array-into-k-buckets-of-equal-total` in C.\n\nGiven the integer array `nums` together with an integer `k`, return `true` whenever the array can be split into `k` non-empty groups whose sums all coincide.\n\n**Example 1:**\n\n**Input:** nums = \\[4,3,2,3,5,2,1\\], k = 4\n**Output:** true\n**Explanation:** A valid split into 4 groups is (5), (1, 4), (2,3), (2,3) each summing to the same value.\n\n**Example 2:**\n\n**Input:** nums = \\[1,2,3,4\\], k = 3\n**Output:** false\n\n**Constraints:**\n\n*   `1 <= k <= nums.length <= 16`\n*   `1 <= nums[i] <= 104`\n*   The frequency of each element is in the range `[1, 4]`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdbool.h>\n#include <stdlib.h>\n\nbool backtrack(int* nums, int numsSize, int k, int target, int start, int currSum, int* used, int usedCount) {\n    if (k == 0) return true;\n    if (currSum == target) {\n        // Start to fill next bucket\n        return backtrack(nums, numsSize, k - 1, target, 0, 0, used, usedCount);\n    }\n    for (int i = start; i < numsSize; i++) {\n        if (!used[i] && currSum + nums[i] <= target) {\n            used[i] = 1;\n            if (backtrack(nums, numsSize, k, target, i + 1, currSum + nums[i], used, usedCount + 1)) {\n                return true;\n            }\n            used[i] = 0;\n            // Optimization: if currSum is 0 and nums[i] didn't work, no need to try others at this level\n            if (currSum == 0) return false;\n        }\n    }\n    return false;\n}\n\nbool canPartitionKSubsets(int* nums, int numsSize, int k){\n    int sum = 0;\n    for (int i = 0; i < numsSize; i++) sum += nums[i];\n    if (sum % k != 0) return false;\n    int target = sum / k;\n    \n    // Sort nums descending to optimize pruning\n    // Simple insertion sort descending\n    for (int i = 1; i < numsSize; i++) {\n        int key = nums[i];\n        int j = i - 1;\n        while (j >= 0 && nums[j] < key) {\n            nums[j + 1] = nums[j];\n            j--;\n        }\n        nums[j + 1] = key;\n    }\n    \n    // If largest number > target, no solution\n    if (nums[0] > target) return false;\n    \n    int used[16] = {0};\n    return backtrack(nums, numsSize, k, target, 0, 0, used, 0);\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T16:11:48.042741+00:00",
+    "wall_clock_ms": 8261,
+    "provider_meta": {
+      "system_fingerprint": "fp_c2f481d1ac",
+      "usage": {
+        "prompt_tokens": 291,
+        "completion_tokens": 460,
+        "total_tokens": 751,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T16:11:48.042951+00:00"
+}

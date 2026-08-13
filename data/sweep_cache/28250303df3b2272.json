@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|python3|partition-array-to-minimize-biggest-chunk",
+  "code": "class Solution:\n    def splitArray(self, nums: list[int], k: int) -> int:\n        def can_split(max_sum):\n            current_sum = 0\n            pieces = 1\n            for num in nums:\n                if current_sum + num > max_sum:\n                    pieces += 1\n                    current_sum = num\n                    if pieces > k:\n                        return False\n                else:\n                    current_sum += num\n            return True\n        \n        left, right = max(nums), sum(nums)\n        while left < right:\n            mid = (left + right) // 2\n            if can_split(mid):\n                right = mid\n            else:\n                left = mid + 1\n        return left",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `partition-array-to-minimize-biggest-chunk` in Python 3.\n\nGiven an integer array `nums` together with an integer `k`, partition `nums` into `k` non-empty contiguous pieces so that the largest piece sum is **minimized**.\n\nReturn _the minimized largest sum of the split_.\n\nA **subarray** is a contiguous part of the array.\n\n**Example 1:**\n\n**Input:** nums = \\[7,2,5,10,8\\], k = 2\n**Output:** 18\n**Explanation:** There are four ways to split nums into two subarrays.\nThe best way is to split it into \\[7,2,5\\] and \\[10,8\\], where the largest sum among the two subarrays is only 18.\n\n**Example 2:**\n\n**Input:** nums = \\[1,2,3,4,5\\], k = 2\n**Output:** 9\n**Explanation:** There are four ways to split nums into two subarrays.\nThe best way is to split it into \\[1,2,3\\] and \\[4,5\\], where the largest sum among the two subarrays is only 9.\n\n**Constraints:**\n\n*   `1 <= nums.length <= 1000`\n*   `0 <= nums[i] <= 106`\n*   `1 <= k <= min(50, nums.length)`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nclass Solution:\n    def splitArray(self, nums: list[int], k: int) -> int:\n        def can_split(max_sum):\n            current_sum = 0\n            pieces = 1\n            for num in nums:\n                if current_sum + num > max_sum:\n                    pieces += 1\n                    current_sum = num\n                    if pieces > k:\n                        return False\n                else:\n                    current_sum += num\n            return True\n        \n        left, right = max(nums), sum(nums)\n        while left < right:\n            mid = (left + right) // 2\n            if can_split(mid):\n                right = mid\n            else:\n                left = mid + 1\n        return left\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T06:56:13.630016+00:00",
+    "wall_clock_ms": 3808,
+    "provider_meta": {
+      "system_fingerprint": "fp_ba5304658c",
+      "usage": {
+        "prompt_tokens": 384,
+        "completion_tokens": 151,
+        "total_tokens": 535,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T06:56:13.630357+00:00"
+}

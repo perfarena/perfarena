@@ -34,7 +34,8 @@ from sqlmodel import Session, select
 
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
-    Harness, Problem, PromptTemplate, RegisteredModel, Run, Submission, User,
+    CorrectnessOracle, Harness, Problem, PromptTemplate, RegisteredModel,
+    Run, Submission, User,
 )
 from . import leetcode_accounts as _lc_accounts
 
@@ -49,9 +50,12 @@ EXPORTABLE: list[tuple[str, type]] = [
     ("problems",             Problem),
     ("prompt_templates",     PromptTemplate),
     ("registered_models",    RegisteredModel),
-    # Harnesses come BEFORE competitions/submissions/runs because those all
-    # carry a harness_id FK that has to remap through the id_maps below.
+    # Harnesses (perf oracle) come BEFORE competitions/submissions/runs
+    # because those all carry a harness_id FK that has to remap through
+    # id_maps below. Correctness oracles sit right next to them for the
+    # symmetric reason — Competition/Submission/Run FK into both.
     ("harnesses",            Harness),
+    ("correctness_oracles",  CorrectnessOracle),
     ("competitions",         Competition),
     ("competition_problems", CompetitionProblem),
     ("baselines",            Baseline),
@@ -271,6 +275,7 @@ _NATURAL_KEYS: dict[str, Callable[[dict], tuple]] = {
     "registered_models":  lambda r: (r.get("name"), r.get("version")),
     "competitions":       lambda r: (r.get("slug"),),
     "harnesses":          lambda r: (r.get("slug"),),
+    "correctness_oracles": lambda r: (r.get("slug"),),
     "blog_posts":         lambda r: (r.get("slug"),),
     "baselines":          lambda r: (r.get("problem_id"), r.get("language")),
     # composite-PK join — natural key IS the PK.
@@ -312,15 +317,17 @@ def import_bundle(session: Session, bundle: dict) -> dict:
     id_maps: dict[str, dict[int, int]] = {
         "users": {}, "problems": {}, "prompt_templates": {},
         "registered_models": {}, "competitions": {}, "harnesses": {},
+        "correctness_oracles": {},
         "blog_posts": {}, "submissions": {}, "attempts": {},
         "runs": {}, "baselines": {},
     }
 
     # 1) Natural-key tables — insert in declared order so child FKs resolve.
-    # `harnesses` before `competitions` because Competition.harness_id
-    # references a harness id we may have just remapped.
+    # `harnesses` and `correctness_oracles` before `competitions` because
+    # Competition FKs into both and we want the remaps ready.
     natural_first = ["users", "problems", "prompt_templates",
-                     "registered_models", "harnesses", "competitions",
+                     "registered_models", "harnesses",
+                     "correctness_oracles", "competitions",
                      "blog_posts", "baselines"]
     for tname in natural_first:
         rows = incoming.get(tname) or []
@@ -349,14 +356,19 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 # Drop the incoming id — let SQLite assign a fresh one so
                 # local ids stay collision-free across replicas.
                 old_id = payload.pop("id", None)
-                # FK remaps for natural-key tables. Competition.harness_id
-                # points at a Harness we just inserted (or matched); look it
-                # up in the id_maps and translate to the local id so the
-                # binding lands correctly. NULL passes through untouched.
+                # FK remaps for natural-key tables. Competition FKs into
+                # BOTH oracles (performance + correctness); translate each
+                # through its own id_maps entry so bindings land at the
+                # local ids on the target instance. NULLs pass through.
                 if tname == "competitions":
                     hid = payload.get("harness_id")
                     if hid is not None:
                         payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
+                    coid = payload.get("correctness_oracle_id")
+                    if coid is not None:
+                        payload["correctness_oracle_id"] = (
+                            id_maps["correctness_oracles"].get(int(coid), coid)
+                        )
                 obj = model(**payload)
                 session.add(obj)
                 session.flush()                              # populate obj.id
@@ -398,6 +410,11 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             hid = payload.get("harness_id")
             if hid is not None:
                 payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
+            coid = payload.get("correctness_oracle_id")
+            if coid is not None:
+                payload["correctness_oracle_id"] = (
+                    id_maps["correctness_oracles"].get(int(coid), coid)
+                )
             obj = Submission(**payload)
             session.add(obj)
             session.flush()
@@ -454,6 +471,11 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             hid = payload.get("harness_id")
             if hid is not None:
                 payload["harness_id"] = id_maps["harnesses"].get(int(hid), hid)
+            coid = payload.get("correctness_oracle_id")
+            if coid is not None:
+                payload["correctness_oracle_id"] = (
+                    id_maps["correctness_oracles"].get(int(coid), coid)
+                )
             obj = Run(**payload)
             session.add(obj)
             report["runs"]["inserted"] += 1

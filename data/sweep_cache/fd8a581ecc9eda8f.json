@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|fewest-flips-to-break-island-connectivity",
+  "code": "object Solution {\n  def minDays(grid: Array[Array[Int]]): Int = {\n    val m = grid.length\n    val n = grid(0).length\n\n    // Directions for 4-neighbor traversal\n    val directions = Array((1,0), (-1,0), (0,1), (0,-1))\n\n    // Count islands in the grid\n    def countIslands(): Int = {\n      val visited = Array.fill(m, n)(false)\n      def dfs(r: Int, c: Int): Unit = {\n        visited(r)(c) = true\n        for ((dr, dc) <- directions) {\n          val nr = r + dr\n          val nc = c + dc\n          if (nr >= 0 && nr < m && nc >= 0 && nc < n && !visited(nr)(nc) && grid(nr)(nc) == 1) {\n            dfs(nr, nc)\n          }\n        }\n      }\n\n      var islands = 0\n      for (i <- 0 until m; j <- 0 until n) {\n        if (grid(i)(j) == 1 && !visited(i)(j)) {\n          islands += 1\n          if (islands > 1) return islands // early stop if more than 1 island\n          dfs(i, j)\n        }\n      }\n      islands\n    }\n\n    // Check if grid is connected (exactly one island)\n    def isConnected(): Boolean = countIslands() == 1\n\n    // If already disconnected (0 or >1 islands), return 0\n    if (!isConnected()) return 0\n\n    // Try removing one land cell and check if disconnected\n    for (i <- 0 until m; j <- 0 until n if grid(i)(j) == 1) {\n      grid(i)(j) = 0\n      if (!isConnected()) {\n        grid(i)(j) = 1\n        return 1\n      }\n      grid(i)(j) = 1\n    }\n\n    // Otherwise, answer is 2 (problem constraints guarantee max 2)\n    2\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `fewest-flips-to-break-island-connectivity` in Scala.\n\nYou receive an `m x n` binary grid `grid` such that `1` stands for land and `0` stands for water. We define an **island** as a maximal **4-directionally** (horizontal or vertical) connected group of `1`'s.\n\nThe grid qualifies as **connected** when it has **exactly one island**; otherwise it qualifies as **disconnected**.\n\nThroughout a single day, you may turn **any** chosen land cell `(1)` into a water cell `(0)`.\n\nReturn _the minimum number of days to disconnect the grid_.\n\n**Example 1:**\n\n**Input:** grid = \\[\\[0,1,1,0\\],\\[0,1,1,0\\],\\[0,0,0,0\\]\\]\n\n**Output:** 2\n**Explanation:** We need at least 2 days to get a disconnected grid.\nChange land grid\\[1\\]\\[1\\] and grid\\[0\\]\\[2\\] to water and get 2 disconnected island.\n\n**Example 2:**\n\n**Input:** grid = \\[\\[1,1\\]\\]\n**Output:** 2\n**Explanation:** Grid of full water is also disconnected (\\[\\[1,1\\]\\] -> \\[\\[0,0\\]\\]), 0 islands.\n\n**Constraints:**\n\n*   `m == grid.length`\n*   `n == grid[i].length`\n*   `1 <= m, n <= 30`\n*   `grid[i][j]` is either `0` or `1`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def minDays(grid: Array[Array[Int]]): Int = {\n    val m = grid.length\n    val n = grid(0).length\n\n    // Directions for 4-neighbor traversal\n    val directions = Array((1,0), (-1,0), (0,1), (0,-1))\n\n    // Count islands in the grid\n    def countIslands(): Int = {\n      val visited = Array.fill(m, n)(false)\n      def dfs(r: Int, c: Int): Unit = {\n        visited(r)(c) = true\n        for ((dr, dc) <- directions) {\n          val nr = r + dr\n          val nc = c + dc\n          if (nr >= 0 && nr < m && nc >= 0 && nc < n && !visited(nr)(nc) && grid(nr)(nc) == 1) {\n            dfs(nr, nc)\n          }\n        }\n      }\n\n      var islands = 0\n      for (i <- 0 until m; j <- 0 until n) {\n        if (grid(i)(j) == 1 && !visited(i)(j)) {\n          islands += 1\n          if (islands > 1) return islands // early stop if more than 1 island\n          dfs(i, j)\n        }\n      }\n      islands\n    }\n\n    // Check if grid is connected (exactly one island)\n    def isConnected(): Boolean = countIslands() == 1\n\n    // If already disconnected (0 or >1 islands), return 0\n    if (!isConnected()) return 0\n\n    // Try removing one land cell and check if disconnected\n    for (i <- 0 until m; j <- 0 until n if grid(i)(j) == 1) {\n      grid(i)(j) = 0\n      if (!isConnected()) {\n        grid(i)(j) = 1\n        return 1\n      }\n      grid(i)(j) = 1\n    }\n\n    // Otherwise, answer is 2 (problem constraints guarantee max 2)\n    2\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-16T12:00:16.401174+00:00",
+    "wall_clock_ms": 7175,
+    "provider_meta": {
+      "system_fingerprint": "fp_936387d905",
+      "usage": {
+        "prompt_tokens": 428,
+        "completion_tokens": 454,
+        "total_tokens": 882,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-16T12:00:16.401439+00:00"
+}

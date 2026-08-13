@@ -1131,7 +1131,13 @@ def main() -> None:
                          "(default) uses --ollama-url; openai uses "
                          "--openai-base-url + --openai-api-key. One sweep "
                          "invocation runs against exactly one provider.")
-    ap.add_argument("--ollama-url", default=os.environ.get("OLLAMA_URL", "http://localhost:11434"))
+    ap.add_argument("--ollama-url",
+                    default=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+                    type=lambda s: s.rstrip("/"),
+                    help="Ollama endpoint. Trailing slashes are stripped — "
+                         "some tunnels (ngrok in particular) route the "
+                         "resulting `//api/generate` to an empty response, "
+                         "silently breaking the sweep with connection blips.")
     ap.add_argument("--openai-base-url",
                     default=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                     help="OpenAI-compatible /v1 endpoint. Override for Azure, "
@@ -1169,6 +1175,31 @@ def main() -> None:
                          "competition's problem count, not 'every Problem in "
                          "the DB'. Override to e.g. leetcode-99-rewritten "
                          "for the contamination-defeating variants.")
+    ap.add_argument("--harness", required=True, metavar="SLUG",
+                    help="REQUIRED. Harness (perf oracle) slug that will "
+                         "score every submission this sweep creates. "
+                         "Competition and harness are decoupled — the "
+                         "competition owns the problem set, the harness "
+                         "owns how solutions are measured. Common values: "
+                         "`leetcode` (LC's online judge), `arena-local` "
+                         "(the local HTTP runner). Auto-append also "
+                         "filters on this so a cell scored under one "
+                         "harness never mixes with the same cell scored "
+                         "under another.")
+    ap.add_argument("--correctness-oracle", default=None, metavar="SLUG",
+                    help="Optional correctness oracle slug. When set, the "
+                         "dispatcher calls this oracle's /validate BEFORE "
+                         "the perf harness's /measure and skips /measure "
+                         "on any non-Accepted verdict — cheap gate that "
+                         "avoids paying the full measurement cost on Wrong "
+                         "Answer / Compile Error / Runtime Error. When "
+                         "unset, correctness comes from the perf harness's "
+                         "own response (LC does both; arena-local's "
+                         "clbg_handler runs `make validate` inside `make "
+                         "measure`, so leaving this unset is safe for "
+                         "CLBG). Note: `leetcode` is not a valid choice "
+                         "for CLBG problems — LC's judge doesn't know "
+                         "them; use `arena-local` there instead.")
     ap.add_argument("--problem-order", default="interleave",
                     choices=("interleave", "alpha", "as-is"),
                     help="how to order problem slugs across the sweep "
@@ -1236,6 +1267,27 @@ def main() -> None:
     ap.add_argument("--output", type=Path,
                     default=Path("data/sweep_log.json"),
                     help="resumable progress log; rerunning skips completed tuples.")
+    ap.add_argument("--no-resume", action="store_true",
+                    help="Ignore any prior entries in --output (sweep_log.json) "
+                         "for the current run's skip decisions. Every tuple "
+                         "in the matrix re-enters todo regardless of past "
+                         "outcomes. Use with --no-auto-append when you want "
+                         "a truly-clean baseline (e.g. re-running --rounds 3 "
+                         "over problems a --rounds 1 sweep already marked "
+                         "complete with a non-Accepted verdict). The log "
+                         "itself is NOT erased — new entries append as "
+                         "usual, so a subsequent run without the flag can "
+                         "resume from this one.")
+    ap.add_argument("--no-auto-append", action="store_true",
+                    help="Always create a FRESH submission per (model, "
+                         "prompt, language) cell — don't try to auto-attach "
+                         "to an existing one from a previous run. Useful "
+                         "when you want a clean baseline for a new "
+                         "experiment (e.g. re-running --rounds 3 against "
+                         "the same slugs a --rounds 1 sweep already "
+                         "covered) or when the previous submission's "
+                         "budget is exhausted and you don't want to purge "
+                         "its rows.")
     ap.add_argument("--retry-failed", action="store_true",
                     help="also re-attempt previously-failed tuples (default: skip them).")
     ap.add_argument("--no-reconcile-progress", dest="reconcile_progress",
@@ -1301,6 +1353,15 @@ def main() -> None:
     all_tuples = [(m, p, l, s)
                   for s in slugs for l in languages for p in prompts for m in models]
     progress = _load_progress(args.output)
+    if args.no_resume and progress:
+        # Operator opted out of resume semantics for THIS run. Clear the
+        # in-memory copy so `_should_skip` sees no history and every tuple
+        # re-enters todo. The on-disk log is preserved untouched — new
+        # entries append during the sweep, and a subsequent run without
+        # the flag can pick them up.
+        print(f"  --no-resume: ignoring {len(progress)} prior entry/entries "
+              f"in {args.output} for this run's skip decisions")
+        progress = {}
     # Reconcile the resume log with server state BEFORE the skip filter, so
     # entries pointing at deleted submissions/attempts come back into todo
     # instead of being silently skipped. Persist the pruned log so a future
@@ -1424,53 +1485,74 @@ def main() -> None:
     # to re-submit something we already have.
     cell_subs: dict[str, int] = {}                # (model, prompt, language) → sub_id
     cell_covered: dict[str, set[str]] = {}         # (model, prompt, language) → set of slugs already attempted there
-    cells_seen = set()
-    for model, prompt, language, _slug in todo:
-        cell = _cell_key(model, prompt["name"], language)
-        if cell in cells_seen:
-            continue
-        cells_seen.add(cell)
-        existing = find_existing_submission(
-            base, args.api_key, model, args.model_version, language,
-            prompt_id=prompt["id"],
-            include_hints=bool(args.hints),
-            optimization_target=args.target,
-            n_rounds=1,
-            # Scope auto-append to THIS sweep's competition — otherwise
-            # `--competition leetcode-99-rewritten` would attach to the
-            # earlier `leetcode-99-perf` submission for the same cell and
-            # the backend would 400 every attempt for "problem slugs not
-            # in submission's competition".
-            competition_slug=args.competition,
-        )
-        if existing is None:
-            continue
-        sid = existing["id"]
-        cell_subs[cell] = sid
-        # Snapshot which problems are TRULY covered in the existing
-        # submission. "Covered" means the attempt has a real LeetCode
-        # verdict — at least one Run row AND no dispatch_warning. Auth-
-        # failed and dispatch-failed attempts have n_runs=0 + a
-        # dispatch_warning; counting them as covered would silently skip
-        # the retry the operator just asked for by re-running the sweep.
-        atts = http_json("GET", f"{base}/api/submissions/{sid}/attempts",
-                         token=args.api_key)
-        covered: set[str] = set()
-        n_failed = 0
-        for a in atts:
-            has_runs = (a.get("n_runs") or 0) > 0
-            has_warning = bool(a.get("dispatch_warning"))
-            if has_runs and not has_warning:
-                covered.add(a["problem_slug"])
-            else:
-                # Auth-failed, dispatch-failed, or still-pending. Excluded
-                # from `covered` so the sweep re-attempts them.
-                n_failed += 1
-        cell_covered[cell] = covered
-        tail = (f" ({n_failed} prior attempt(s) flagged auth/dispatch-failed "
-                f"will be retried)" if n_failed else "")
-        print(f"  auto-append: cell {cell!r} → submission #{sid} "
-              f"({len(covered)} problems with real verdicts; will skip those){tail}")
+    if args.no_auto_append:
+        # Operator explicitly asked to bypass auto-attach — leave cell_subs
+        # empty so the main loop's `sub_id is None` branch creates a fresh
+        # submission per cell on the first attempt.
+        print("  auto-append: DISABLED (--no-auto-append) — every cell will "
+              "create a fresh submission this run")
+    else:
+        cells_seen = set()
+        for model, prompt, language, _slug in todo:
+            cell = _cell_key(model, prompt["name"], language)
+            if cell in cells_seen:
+                continue
+            cells_seen.add(cell)
+            existing = find_existing_submission(
+                base, args.api_key, model, args.model_version, language,
+                prompt_id=prompt["id"],
+                include_hints=bool(args.hints),
+                optimization_target=args.target,
+                # Match the CURRENT sweep's round budget — hardcoding
+                # n_rounds=1 here would let a --rounds 3 sweep auto-attach
+                # to a legacy single-shot submission, then trip on the
+                # server's k×n_rounds budget cap the moment round 1 fires.
+                # Different n_rounds = different experimental cell; create
+                # a fresh submission for this run rather than re-using an
+                # incompatible one.
+                n_rounds=args.rounds,
+                # Scope auto-append to THIS sweep's competition — otherwise
+                # `--competition leetcode-99-rewritten` would attach to the
+                # earlier `leetcode-99-perf` submission for the same cell
+                # and the backend would 400 every attempt for "problem
+                # slugs not in submission's competition".
+                competition_slug=args.competition,
+                # Also scope by harness — otherwise a --harness arena-local
+                # sweep would auto-append to a prior leetcode-harness
+                # submission for the same cell and the arena-local runs
+                # would mix in one Submission row with LC verdicts. Legacy
+                # rows (no harness_slug on /me/submissions) match any
+                # requested harness to preserve back-compat.
+                harness_slug=args.harness,
+            )
+            if existing is None:
+                continue
+            sid = existing["id"]
+            cell_subs[cell] = sid
+            # Snapshot which problems are TRULY covered in the existing
+            # submission. "Covered" means the attempt has a real LeetCode
+            # verdict — at least one Run row AND no dispatch_warning.
+            # Auth-failed and dispatch-failed attempts have n_runs=0 + a
+            # dispatch_warning; counting them as covered would silently
+            # skip the retry the operator just asked for by re-running.
+            atts = http_json("GET", f"{base}/api/submissions/{sid}/attempts",
+                             token=args.api_key)
+            covered: set[str] = set()
+            n_failed = 0
+            for a in atts:
+                has_runs = (a.get("n_runs") or 0) > 0
+                has_warning = bool(a.get("dispatch_warning"))
+                if has_runs and not has_warning:
+                    covered.add(a["problem_slug"])
+                else:
+                    # Auth-failed, dispatch-failed, or still-pending.
+                    # Excluded from `covered` so the sweep re-attempts.
+                    n_failed += 1
+            cell_covered[cell] = covered
+            tail = (f" ({n_failed} prior attempt(s) flagged auth/dispatch-failed "
+                    f"will be retried)" if n_failed else "")
+            print(f"  auto-append: cell {cell!r} → submission #{sid} "
+                  f"({len(covered)} problems with real verdicts; will skip those){tail}")
 
     # ---- Start the prefetcher (generates code in the background while main
     # is sleeping / dispatching / polling). With --prefetch 0 the same class
@@ -1721,12 +1803,28 @@ def main() -> None:
                             "n_rounds": args.rounds,
                             "include_hints": bool(args.hints),
                             "optimization_target": args.target,
+                            # matrix_sweep's round loop ALWAYS breaks on the
+                            # first Accepted (see the Accepted check further
+                            # down in this file), so n_rounds is a MAXIMUM,
+                            # never a fixed count. Stamp the flag so later
+                            # analysis of /submissions/{id} can filter these
+                            # correctness-driven runs apart from experiments
+                            # that need every round to execute regardless.
+                            "stop_on_accept": args.rounds > 1,
                             # Scope the submission to the chosen competition so
                             # total_problems / pass@k use that competition's
                             # size as the denominator (not "every Problem row
                             # in the DB", which would now report 45/198 for
                             # the canonical 99 because of the rewritten 99).
                             "competition_slug": args.competition,
+                            # Required — Competition is decoupled from
+                            # Harness; every submission carries its own.
+                            "harness_slug": args.harness,
+                            # Optional correctness oracle override. When
+                            # set, dispatcher calls its /validate before
+                            # /measure. When null, correctness comes
+                            # from the perf harness's response.
+                            "correctness_oracle_slug": args.correctness_oracle,
                             "attempts": [attempt],
                         },
                     )

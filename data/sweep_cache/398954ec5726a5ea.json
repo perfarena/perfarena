@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|python3|count-product-trees-from-array",
+  "code": "class Solution:\n    def numFactoredBinaryTrees(self, arr: list[int]) -> int:\n        MOD = 10**9 + 7\n        arr.sort()\n        dp = {}\n        arr_set = set(arr)\n        \n        for x in arr:\n            dp[x] = 1  # single node tree\n        \n        for i, x in enumerate(arr):\n            for j in range(i):\n                y = arr[j]\n                if x % y == 0:\n                    z = x // y\n                    if z in dp:\n                        dp[x] = (dp[x] + dp[y] * dp[z]) % MOD\n        \n        return sum(dp.values()) % MOD",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `count-product-trees-from-array` in Python 3.\n\nSuppose `arr` is an array of unique integers, each entry `arr[i]` strictly above `1`.\n\nWe assemble a binary tree from these integers, allowing every value to appear as often as desired. For each interior node, its value must equal the product of its two children's values.\n\nReturn _the count of binary trees that can be assembled_. Because the count can be enormous, give the result **modulo** `109 + 7`.\n\n**Example 1:**\n\n**Input:** arr = \\[2,4\\]\n**Output:** 3\n**Explanation:** The trees available are: `[2], [4], [4, 2, 2]`\n\n**Example 2:**\n\n**Input:** arr = \\[2,4,5,10\\]\n**Output:** 7\n**Explanation:** The trees available are: `[2], [4], [5], [10], [4, 2, 2], [10, 2, 5], [10, 5, 2]`.\n\n**Constraints:**\n\n*   `1 <= arr.length <= 1000`\n*   `2 <= arr[i] <= 109`\n*   All the values of `arr` are **unique**.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nclass Solution:\n    def numFactoredBinaryTrees(self, arr: list[int]) -> int:\n        MOD = 10**9 + 7\n        arr.sort()\n        dp = {}\n        arr_set = set(arr)\n        \n        for x in arr:\n            dp[x] = 1  # single node tree\n        \n        for i, x in enumerate(arr):\n            for j in range(i):\n                y = arr[j]\n                if x % y == 0:\n                    z = x // y\n                    if z in dp:\n                        dp[x] = (dp[x] + dp[y] * dp[z]) % MOD\n        \n        return sum(dp.values()) % MOD\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-14T23:41:20.693645+00:00",
+    "wall_clock_ms": 2604,
+    "provider_meta": {
+      "system_fingerprint": "fp_2b3a599790",
+      "usage": {
+        "prompt_tokens": 356,
+        "completion_tokens": 143,
+        "total_tokens": 499,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-14T23:41:20.693900+00:00"
+}

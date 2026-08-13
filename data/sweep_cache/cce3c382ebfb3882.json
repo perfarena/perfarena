@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|php|arithmetic-slices-ii-subsequence",
+  "code": "class Solution {\n    /**\n     * @param Integer[] $nums\n     * @return Integer\n     */\n    function numberOfArithmeticSlices($nums) {\n        $n = count($nums);\n        if ($n < 3) return 0;\n\n        // dp[i] will be an associative array mapping difference => count of arithmetic subsequences ending at i with that difference\n        $dp = array_fill(0, $n, []);\n        $res = 0;\n\n        for ($i = 0; $i < $n; ++$i) {\n            $dp[$i] = [];\n            for ($j = 0; $j < $i; ++$j) {\n                // Use 64-bit int for difference to avoid overflow\n                $diff = (int)($nums[$i]) - (int)($nums[$j]);\n                // count of subsequences ending at j with difference diff\n                $countAtJ = isset($dp[$j][$diff]) ? $dp[$j][$diff] : 0;\n                // Update count at i with (countAtJ + 1) new subsequences:\n                // +1 is for the new pair (nums[j], nums[i]) that could potentially be extended\n                $dp[$i][$diff] = ($dp[$i][$diff] ?? 0) + $countAtJ + 1;\n                // We only add those subsequences with length >= 3 to the result, i.e.\n                // subsequences extended from j (countAtJ subsequences) contribute to result,\n                // the new pair itself (the +1) does not form length >= 3 subsequence\n                $res += $countAtJ;\n            }\n        }\n\n        return $res;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `arithmetic-slices-ii-subsequence` in PHP.\n\nGiven an integer array `nums`, return _the number of all the **arithmetic subsequences** of_ `nums`.\n\nA sequence of numbers is called arithmetic if it consists of **at least three elements** and if the difference between any two consecutive elements is the same.\n\n*   For example, `[1, 3, 5, 7, 9]`, `[7, 7, 7, 7]`, and `[3, -1, -5, -9]` are arithmetic sequences.\n*   For example, `[1, 1, 2, 5, 7]` is not an arithmetic sequence.\n\nA **subsequence** of an array is a sequence that can be formed by removing some elements (possibly none) of the array.\n\n*   For example, `[2,5,10]` is a subsequence of `[1,2,1,**2**,4,1,**5**,**10**]`.\n\nThe test cases are generated so that the answer fits in **32-bit** integer.\n\n**Example 1:**\n\n**Input:** nums = \\[2,4,6,8,10\\]\n**Output:** 7\n**Explanation:** All arithmetic subsequence slices are:\n\\[2,4,6\\]\n\\[4,6,8\\]\n\\[6,8,10\\]\n\\[2,4,6,8\\]\n\\[4,6,8,10\\]\n\\[2,4,6,8,10\\]\n\\[2,6,10\\]\n\n**Example 2:**\n\n**Input:** nums = \\[7,7,7,7,7\\]\n**Output:** 16\n**Explanation:** Any subsequence of this array is arithmetic.\n\n**Constraints:**\n\n*   `1 <= nums.length <= 1000`\n*   `-231 <= nums[i] <= 231 - 1`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in PHP using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```php code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```php\n<?php\nclass Solution {\n    /**\n     * @param Integer[] $nums\n     * @return Integer\n     */\n    function numberOfArithmeticSlices($nums) {\n        $n = count($nums);\n        if ($n < 3) return 0;\n\n        // dp[i] will be an associative array mapping difference => count of arithmetic subsequences ending at i with that difference\n        $dp = array_fill(0, $n, []);\n        $res = 0;\n\n        for ($i = 0; $i < $n; ++$i) {\n            $dp[$i] = [];\n            for ($j = 0; $j < $i; ++$j) {\n                // Use 64-bit int for difference to avoid overflow\n                $diff = (int)($nums[$i]) - (int)($nums[$j]);\n                // count of subsequences ending at j with difference diff\n                $countAtJ = isset($dp[$j][$diff]) ? $dp[$j][$diff] : 0;\n                // Update count at i with (countAtJ + 1) new subsequences:\n                // +1 is for the new pair (nums[j], nums[i]) that could potentially be extended\n                $dp[$i][$diff] = ($dp[$i][$diff] ?? 0) + $countAtJ + 1;\n                // We only add those subsequences with length >= 3 to the result, i.e.\n                // subsequences extended from j (countAtJ subsequences) contribute to result,\n                // the new pair itself (the +1) does not form length >= 3 subsequence\n                $res += $countAtJ;\n            }\n        }\n\n        return $res;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-08T10:56:12.584426+00:00",
+    "wall_clock_ms": 6485,
+    "provider_meta": {
+      "system_fingerprint": "fp_37911cff69",
+      "usage": {
+        "prompt_tokens": 493,
+        "completion_tokens": 373,
+        "total_tokens": 866,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-08T10:56:12.584729+00:00"
+}

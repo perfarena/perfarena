@@ -22,11 +22,11 @@ export default function MyByLanguage() {
   }, []);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!data) return <div className="empty">Loading…</div>;
+  if (!data) return <div className="empty">Please wait…</div>;
   if (data.length === 0) return (
     <div className="col">
       <div className="hero"><h1>My work, by language</h1></div>
-      <div className="empty">You don't have any submissions yet. <Link to="/submit">Start one</Link>.</div>
+      <div className="empty">You have no submissions yet. <Link to="/submit">Start one</Link>.</div>
     </div>
   );
 
@@ -53,10 +53,10 @@ export default function MyByLanguage() {
     <div className="col">
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>My work, by language</h1>
-        <p>One row per problem with the best status across all your
-          {" "}submissions in the selected language. Click a problem to open
-          {" "}it; click <i>details</i> to open the submission that contributed
-          {" "}the best attempt.</p>
+        <p>This table shows one row for each problem. Each row shows the best
+          {" "}status across all your submissions in the selected language. Click
+          {" "}a problem to open it. Click <i>details</i> to open the submission
+          {" "}that gave the best attempt.</p>
       </div>
 
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
@@ -90,15 +90,15 @@ export default function MyByLanguage() {
       </div>
 
       {visible.length === 0 ? (
-        <div className="empty">No problems in this bucket.</div>
+        <div className="empty">No problem matches this filter.</div>
       ) : (
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
               <th>Problem</th><th>Level</th><th>Status</th>
-              <th title="How many of your attempts on this problem (across all your submissions in this language)">Tries</th>
-              <th title="Best accepted attempt's avg runtime (or — if no accepted attempt)">Best avg runtime</th>
-              <th title="Best accepted attempt's avg memory">Best avg memory</th>
+              <th title="The count of your attempts on this problem across all your submissions in this language.">Tries</th>
+              <th title="The average runtime of the best accepted attempt, or a placeholder if no attempt is accepted.">Best avg runtime</th>
+              <th title="The peak (maximum resident) memory of the best accepted attempt. Both oracles report the peak memory, not a per-op value.">Peak mem</th>
               <th>From</th>
             </tr></thead>
             <tbody>
@@ -132,14 +132,14 @@ export default function MyByLanguage() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Your submissions in {cur.language}</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Each row is one batch you submitted in this language. The table above
-          shows the best problem-level status across all of them.
+          Each row is one batch that you submitted in this language. The table above
+          shows the best status for each problem across all these batches.
         </p>
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
               <th>When</th><th>Model</th>
-              <th title="Registered prompt template used; 'ad-hoc' for inline prompts.">Prompt</th>
+              <th title="The registered prompt template that this batch used. The value 'ad-hoc' marks an inline prompt.">Prompt</th>
               <th>Status</th><th>k</th>
               <th>pass@1</th><th>solved</th><th>attempts</th><th></th>
             </tr></thead>

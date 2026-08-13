@@ -15,7 +15,7 @@ export default function ModelDetailPage() {
   }, [name]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!m) return <div className="empty">Loading…</div>;
+  if (!m) return <div className="empty">Please wait.</div>;
 
   return (
     <div className="col">
@@ -48,20 +48,20 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
     <div>
       <h2>By language</h2>
       <p className="muted" style={{ marginTop: 4 }}>
-        How this model does in each language it has been submitted in. "Best"
-        is taken across that model's submissions in the given language.
+        This table shows how the model does in each language. "Best" is the top
+        value across the submissions of the model in that language.
       </p>
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
           <thead><tr>
             <th>Lang</th><th>Submissions</th>
             <th>Best pass@1</th>
-            <th title="Lowest avg runtime across this model's submissions in the language">Best avg runtime</th>
-            <th title="Lowest avg memory across this model's submissions in the language">Best avg memory</th>
-            <th title="Highest avg runtime percentile reached">RT %ile</th>
-            <th title="Highest avg memory percentile reached">Mem %ile</th>
+            <th title="The lowest average runtime across the submissions of the model in the language">Best avg runtime</th>
+            <th title="The lowest mean peak memory across the submissions of the model in the language. Memory is always the peak value (the maximum resident memory) on both oracles.">Best peak mem</th>
+            <th title="The highest average runtime percentile that the model reached">RT %ile</th>
+            <th title="The highest average memory percentile that the model reached">Mem %ile</th>
             <th>Fully accepted</th>
-            <th title="Any of this model's submissions in the language is currently on the leaderboard">On leaderboard</th>
+            <th title="One or more of the submissions of the model in the language are on the leaderboard now">On leaderboard</th>
           </tr></thead>
           <tbody>
             {rows.map(r => (

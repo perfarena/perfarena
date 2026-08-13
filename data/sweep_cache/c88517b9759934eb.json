@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|smallest-positive-seed-keeping-running-sum-positive",
+  "code": "object Solution {\n  def minStartValue(nums: Array[Int]): Int = {\n    var runningSum = 0\n    var minSum = 0\n    for (num <- nums) {\n      runningSum += num\n      if (runningSum < minSum) minSum = runningSum\n    }\n    1 - minSum\n  }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `smallest-positive-seed-keeping-running-sum-positive` in Scala.\n\nProvided an integer array `nums`, you begin with some initial **positive** value _startValue_.\n\nAt each step, compute the running total of _startValue_ together with the entries of `nums` (scanned left to right).\n\nReturn the smallest **positive** _startValue_ that keeps the running total at least 1 throughout.\n\n**Example 1:**\n\n**Input:** nums = \\[-3,2,-3,4,2\\]\n**Output:** 5\n**Explanation:** If you choose startValue = 4, in the third iteration your step by step sum is less than 1.\n**step by step sum**\n**startValue = 4 | startValue = 5 | nums**\n  (4 **\\-3** ) = 1  | (5 **\\-3** ) = 2    |  -3\n  (1 **+2** ) = 3  | (2 **+2** ) = 4    |   2\n  (3 **\\-3** ) = 0  | (4 **\\-3** ) = 1    |  -3\n  (0 **+4** ) = 4  | (1 **+4** ) = 5    |   4\n  (4 **+2** ) = 6  | (5 **+2** ) = 7    |   2\n\n**Example 2:**\n\n**Input:** nums = \\[1,2\\]\n**Output:** 1\n**Explanation:** Minimum start value should be positive. \n\n**Example 3:**\n\n**Input:** nums = \\[1,-2,-3\\]\n**Output:** 5\n\n**Constraints:**\n\n*   `1 <= nums.length <= 100`\n*   `-100 <= nums[i] <= 100`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n  def minStartValue(nums: Array[Int]): Int = {\n    var runningSum = 0\n    var minSum = 0\n    for (num <- nums) {\n      runningSum += num\n      if (runningSum < minSum) minSum = runningSum\n    }\n    1 - minSum\n  }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T06:32:55.824317+00:00",
+    "wall_clock_ms": 95066,
+    "provider_meta": {
+      "system_fingerprint": "fp_bc757e2f91",
+      "usage": {
+        "prompt_tokens": 482,
+        "completion_tokens": 77,
+        "total_tokens": 559,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T06:32:55.824774+00:00"
+}

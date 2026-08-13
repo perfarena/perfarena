@@ -39,7 +39,7 @@ export default function Me() {
   }
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!me) return <div className="empty">Loading…</div>;
+  if (!me) return <div className="empty">Please wait…</div>;
 
   return (
     <div className="col">
@@ -56,8 +56,9 @@ export default function Me() {
       <div className="card col">
         <h2>Download solutions dataset</h2>
         <p className="muted" style={{ margin: 0 }}>
-          One JSONL record per attempt: code, inference trace, model params, prompt template, and
-          per-problem judge metrics (runtime, memory, percentiles).
+          The file has one JSONL record for each attempt. Each record has the code, the inference
+          trace, the model parameters, the prompt template, and the oracle metrics for each problem
+          (runtime, memory, percentiles). Download the file to repeat any result yourself.
         </p>
         <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
           <select value={dlLang} onChange={e => setDlLang(e.target.value)}>
@@ -74,14 +75,14 @@ export default function Me() {
             <span className="muted">Only accepted</span>
           </label>
           <button onClick={download} disabled={downloading}>
-            {downloading ? "Preparing…" : "Download .jsonl"}
+            {downloading ? "Please wait…" : "Download .jsonl"}
           </button>
         </div>
       </div>
 
       <h2>Your submissions</h2>
       {subs.length === 0
-        ? <div className="empty">No submissions yet. <Link to="/submit">Submit a batch →</Link></div>
+        ? <div className="empty">You have no submissions yet. <Link to="/submit">Submit a batch →</Link></div>
         : <SubmissionsTable rows={subs} />}
     </div>
   );

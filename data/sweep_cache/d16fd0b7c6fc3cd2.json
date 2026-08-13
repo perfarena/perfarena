@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|scala|longest-simultaneous-uptime-for-machines",
+  "code": "object Solution {\n    def maxRunTime(n: Int, batteries: Array[Int]): Long = {\n        val totalPower = batteries.map(_.toLong).sum\n        var left: Long = 0\n        var right: Long = totalPower / n\n\n        def canRun(t: Long): Boolean = {\n            var sum: Long = 0\n            var i = 0\n            while (i < batteries.length && sum < n * t) {\n                sum += Math.min(batteries(i), t)\n                i += 1\n            }\n            sum >= n * t\n        }\n\n        while (left < right) {\n            val mid = (left + right + 1) / 2\n            if (canRun(mid)) left = mid\n            else right = mid - 1\n        }\n        left\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `longest-simultaneous-uptime-for-machines` in Scala.\n\nThere are `n` machines. You are given the integer `n` together with a **0-indexed** integer array `batteries` such that the `ith` cell can **power** a machine for `batteries[i]` minutes. The goal is to keep **all** `n` machines **simultaneously** operating using the supplied power cells.\n\nAt the start, you may place **at most one cell** inside each machine. Following this, at any whole-number moment, you are free to pull a cell from a machine and substitute another cell **any number of times**. The substitute may be a brand-new cell or one taken out of another machine. Treat removal and insertion as instantaneous.\n\nNote that the batteries cannot be recharged.\n\nReturn _the **maximum** number of minutes you can run all the_ `n` _computers simultaneously._\n\n**Example 1:**\n\n**Input:** n = 2, batteries = \\[3,3,3\\]\n**Output:** 4\n**Explanation:** \nInitially, insert battery 0 into the first computer and battery 1 into the second computer.\nAfter two minutes, remove battery 1 from the second computer and insert battery 2 instead. Note that battery 1 can still run for one minute.\nAt the end of the third minute, battery 0 is drained, and you need to remove it from the first computer and insert battery 1 instead.\nBy the end of the fourth minute, battery 1 is also drained, and the first computer is no longer running.\nWe can run the two computers simultaneously for at most 4 minutes, so we return 4.\n\n**Example 2:**\n\n**Input:** n = 2, batteries = \\[1,1,1,1\\]\n**Output:** 2\n**Explanation:** \nInitially, insert battery 0 into the first computer and battery 2 into the second computer. \nAfter one minute, battery 0 and battery 2 are drained so you need to remove them and insert battery 1 into the first computer and battery 3 into the second computer. \nAfter another minute, battery 1 and battery 3 are also drained so the first and second computers are no longer running.\nWe can run the two computers simultaneously for at most 2 minutes, so we return 2.\n\n**Constraints:**\n\n*   `1 <= n <= batteries.length <= 105`\n*   `1 <= batteries[i] <= 109`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Scala using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```scala code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```scala\nobject Solution {\n    def maxRunTime(n: Int, batteries: Array[Int]): Long = {\n        val totalPower = batteries.map(_.toLong).sum\n        var left: Long = 0\n        var right: Long = totalPower / n\n\n        def canRun(t: Long): Boolean = {\n            var sum: Long = 0\n            var i = 0\n            while (i < batteries.length && sum < n * t) {\n                sum += Math.min(batteries(i), t)\n                i += 1\n            }\n            sum >= n * t\n        }\n\n        while (left < right) {\n            val mid = (left + right + 1) / 2\n            if (canRun(mid)) left = mid\n            else right = mid - 1\n        }\n        left\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.2
+    },
+    "created_at": "2026-06-15T05:02:30.165745+00:00",
+    "wall_clock_ms": 4862,
+    "provider_meta": {
+      "system_fingerprint": "fp_9d9ce9c03f",
+      "usage": {
+        "prompt_tokens": 609,
+        "completion_tokens": 180,
+        "total_tokens": 789,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14"
+    }
+  },
+  "saved_at": "2026-06-15T05:02:30.165954+00:00"
+}

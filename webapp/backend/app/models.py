@@ -85,6 +85,14 @@ class Submission(SQLModel, table=True):
     model_params: dict = Field(sa_column=Column(JSON))
     status: SubmissionStatus = SubmissionStatus.received
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Energy-measurement provenance (new looped methodology). A single
+    # submission MUST be measured with ONE tool on ONE machine — enforced at
+    # dispatch time (see dispatch.py). energy_tool / machine_id are NULL on
+    # LeetCode-oracle submissions (no local machine = "unknown"). run_uid is a
+    # unique identifier for this submission's measurement run.
+    energy_tool: str | None = Field(default=None, index=True)   # codecarbon | rapl | powermetrics | None
+    run_uid: str | None = Field(default=None, index=True)
+    machine_id: int | None = Field(default=None, foreign_key="machine.id", index=True)
     # Competition this submission is scoped to. total_problems uses THIS
     # competition's problem count (not "every Problem row in the system").
     # NULL on legacy rows; the leaderboard math defaults to the canonical
@@ -108,6 +116,15 @@ class Submission(SQLModel, table=True):
     n_rounds: int = Field(default=1, ge=1)
     include_hints: bool = Field(default=False)
     optimization_target: str | None = Field(default=None)   # 'latency'|'memory'|None
+    # Retry-until-accepted workflow flag. When true, the client driver stops
+    # spawning additional rounds for a problem the moment an attempt lands
+    # `Accepted` — n_rounds is a MAXIMUM, not a fixed count. When false /
+    # null (legacy default), the driver walks all n_rounds regardless so
+    # every problem produces the same number of attempts. Server-side we
+    # don't enforce anything; this is a durable record of intent so later
+    # analysis can tell "retry to correctness" runs apart from "always run
+    # N rounds" experiments.
+    stop_on_accept: bool = Field(default=False)
 
     pass_at_1: float | None = None        # unbiased estimator over k samples
     pass_at_k: float | None = None        # k = n_samples_per_problem
@@ -127,6 +144,12 @@ class Submission(SQLModel, table=True):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
+    # Submission-level per-op rollup (B3): average solves/measurement across the
+    # chosen attempts. The per-op TIME and ENERGY are already available as
+    # avg_runtime_ms / avg_runtime_energy_j (those columns ARE the per-op
+    # values under the looped methodology); avg_iterations adds the solve
+    # count behind each measurement (confidence). NULL on LeetCode-scored subs.
+    avg_iterations: float | None = None
 
     # Coefficients vs. the LeetCode-population baselines, averaged across the
     # submission. Convention: higher = better. Value = baseline / model.
@@ -166,11 +189,34 @@ class Submission(SQLModel, table=True):
     # transparency log, and audit trails stay intact.
     deleted_at: datetime | None = Field(default=None, index=True)
 
-    # Judging harness / perf oracle for this submission. NULL means "inherit
-    # from the competition's default"; setting it overrides at the submission
-    # level (e.g. re-scoring an old LC submission under a local harness). The
-    # startup seed backfills legacy rows to the built-in "leetcode" harness.
+    # PERFORMANCE oracle for this submission. NULL means "inherit from the
+    # competition's default"; setting it overrides at the submission level
+    # (e.g. re-scoring an old LC submission under a local perf harness). The
+    # startup seed backfills legacy rows to the built-in "leetcode" perf
+    # oracle.
     harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
+    # CORRECTNESS oracle for this submission. Same layering as harness_id
+    # (submission override → competition default → NULL). Legacy rows get
+    # backfilled to the seeded "leetcode" correctness oracle at startup.
+    correctness_oracle_id: int | None = Field(
+        default=None, foreign_key="correctnessoracle.id", index=True,
+    )
+
+
+class Machine(SQLModel, table=True):
+    """A physical/virtual machine on which submissions are measured. Each
+    Submission references the machine it ran on (NULL = unknown, e.g. LeetCode-
+    oracle submissions). Energy numbers are only comparable within one machine +
+    one energy tool, so the machine is part of a measurement's provenance."""
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    hostname: str | None = None
+    cpu_model: str | None = None
+    cores: int | None = None
+    energy_source: str | None = None      # rapl | codecarbon | powermetrics | none
+    os: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Attempt(SQLModel, table=True):
@@ -267,6 +313,9 @@ class Attempt(SQLModel, table=True):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
+    # Mean iterations (solves) per accepted run — the per-op measurement's
+    # confidence (B3). NULL on LeetCode-scored attempts.
+    avg_iterations: float | None = None
 
 
 class Baseline(SQLModel, table=True):
@@ -324,6 +373,11 @@ class Run(SQLModel, table=True):
     # the same way runtime_ms rolls into avg_runtime_ms.
     runtime_energy_j: float | None = None
     runtime_energy_percentile: float | None = None
+    # Per-op metrics (looped shared-input methodology): iterations completed in
+    # the measured window, and energy / time normalized per single solve.
+    iterations: int | None = None
+    energy_j_per_op: float | None = None
+    time_us_per_op: float | None = None
     total_correct: int | None = None
     total_testcases: int | None = None
     raw_response: dict | None = Field(default=None, sa_column=Column(JSON))
@@ -336,12 +390,21 @@ class Run(SQLModel, table=True):
     leetcode_full_response: dict | None = Field(
         default=None, sa_column=Column(JSON),
     )
-    # Harness that ACTUALLY produced this run's verdict + performance numbers.
-    # NULL means "the submission's harness" (which itself falls back to the
-    # competition's harness); non-null captures the case where a submission
-    # gets re-run under a different oracle. The startup seed backfills legacy
-    # rows to the built-in "leetcode" harness (id=1).
+    # PERFORMANCE oracle that ACTUALLY produced this run's runtime / memory
+    # / percentile numbers. NULL means "inherit from the submission" (which
+    # itself falls back to the competition). The startup seed backfills
+    # legacy rows to the built-in "leetcode" perf oracle (id=1).
     harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
+    # CORRECTNESS oracle that ACTUALLY produced this run's verdict +
+    # error_log. Often the same registry entry as harness_id when the
+    # source is a bundled judge (LeetCode does both), but decoupling lets
+    # a single Run record when e.g. correctness came from a local unit-test
+    # runner and perf came from an in-house energy-probing harness. Startup
+    # backfill points every legacy row at the seeded "leetcode" correctness
+    # oracle.
+    correctness_oracle_id: int | None = Field(
+        default=None, foreign_key="correctnessoracle.id", index=True,
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -398,26 +461,49 @@ class Competition(SQLModel, table=True):
     status: str = Field(default="active", index=True)  # active | retired
     created_at: datetime = Field(default_factory=datetime.utcnow)
     created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
-    # Default judging harness / perf oracle used to score submissions in this
-    # competition. NULL on legacy rows; the startup seed backfills these to
-    # the built-in "leetcode" harness (id=1) so pre-abstraction data keeps
-    # its implied provenance.
+    # Default PERFORMANCE oracle (see Harness below) — produces the
+    # runtime_ms / memory_mb / percentile / runtime_energy_j numbers on
+    # runs from this competition. NULL on legacy rows; the startup seed
+    # backfills to the built-in "leetcode" performance oracle so pre-
+    # abstraction data keeps its implied provenance.
     harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
+    # Default CORRECTNESS oracle — produces the Accepted / Wrong Answer /
+    # Runtime Error / TLE verdict + error_log. Historically bundled with
+    # the perf oracle (LeetCode does both), but decoupling lets us pair a
+    # local unit-test runner (correctness) with an in-house RAPL-instrumented
+    # harness (performance) — or vice versa. NULL on legacy rows; startup
+    # seed backfills to the built-in "leetcode" correctness oracle.
+    correctness_oracle_id: int | None = Field(
+        default=None, foreign_key="correctnessoracle.id", index=True,
+    )
+    # Admin allow-list of harness slugs blessed for this competition.
+    # POST /api/submissions returns 400 if payload.harness_slug isn't in
+    # this list — see _validate_compat_slugs + the submit handler in
+    # main.py. Stored as JSON (list[str]) so a rename remains stable
+    # and DB rows stay human-readable. Default empty = "no submissions
+    # accepted yet"; the admin populates via the /competitions edit
+    # form on the SPA.
+    compatible_harness_slugs: list[str] | None = Field(
+        default_factory=list, sa_column=Column(JSON),
+    )
 
 
 class Harness(SQLModel, table=True):
-    """A benchmark harness / performance oracle that evaluates solutions.
+    """A PERFORMANCE oracle — the component that measures HOW WELL a
+    solution runs (runtime, memory, percentiles, runtime energy).
 
-    Historically the platform was hard-wired to LeetCode's online judge: every
-    Run's runtime/memory/percentile came from LC's /check/ payload. This table
-    makes that assumption explicit and lets us plug in additional oracles
-    (e.g. an in-house harness that runs code locally with power / cycle-count
-    probes) without conflating their outputs.
+    Kept named `Harness` for schema stability; conceptually it's the
+    performance-oracle half of the two-oracle model. Correctness verdicts
+    (Accepted / Wrong Answer / RE / TLE / CE) live on `CorrectnessOracle`
+    below. LeetCode's online judge conveniently does BOTH — the seeded
+    "leetcode" rows in `harness` and `correctnessoracle` cover legacy data.
 
-    Binding is layered: Competition.harness_id sets the default oracle for
-    every submission in that contest; Submission.harness_id can override it
-    (e.g. re-judge an existing set under a new harness); Run.harness_id
-    records the oracle that actually produced the numbers on that run.
+    Binding is layered: Competition.harness_id sets the default performance
+    oracle for every submission in that contest; Submission.harness_id can
+    override it (re-judge an existing set under a new perf harness);
+    Run.harness_id records the oracle that actually produced this run's
+    numbers. Same layering applies to `correctness_oracle_id` on those
+    three tables.
     """
     id: int | None = Field(default=None, primary_key=True)
     slug: str = Field(index=True, unique=True)     # stable id used in URLs / configs
@@ -429,6 +515,39 @@ class Harness(SQLModel, table=True):
     description: str | None = None                 # markdown blurb
     # Free-form JSON — endpoint URLs, timeouts, docker image tag, credential
     # references, whatever the specific harness needs to be reproducible.
+    config: dict | None = Field(default=None, sa_column=Column(JSON))
+    status: str = Field(default="active", index=True)  # active | retired
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class CorrectnessOracle(SQLModel, table=True):
+    """A CORRECTNESS oracle — the component that answers "did this solution
+    solve the problem?". Produces the verdict (Accepted / Wrong Answer /
+    Runtime Error / Time Limit Exceeded / Compile Error / …) and the
+    error_log the client can feed back into a next-round prompt.
+
+    Decoupled from `Harness` (the performance oracle) so the two can be
+    mixed and matched: e.g. LeetCode's judge for correctness paired with
+    an in-house RAPL-instrumented harness for performance, or a local
+    unit-test runner for correctness paired with LeetCode's perf numbers.
+    Same layered binding as Harness (Competition default → Submission
+    override → Run captures what actually judged the row).
+
+    Shape mirrors `Harness` intentionally so the same operator UX applies
+    — one registry, two tabs, no cognitive overhead.
+    """
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)     # stable id used in URLs / configs
+    name: str
+    # leetcode         — LeetCode's Accepted / WA / RE / TLE / CE verdicts
+    # unittest         — a local pytest / gtest / cargo-test runner
+    # humaneval        — the HumanEval canonical test suite
+    # custom           — anything else
+    kind: str = Field(default="custom", index=True)
+    description: str | None = None                 # markdown blurb
+    # Free-form JSON — test-suite path, docker image tag, endpoint URL,
+    # timeouts, whatever this specific oracle needs to reproduce a verdict.
     config: dict | None = Field(default=None, sa_column=Column(JSON))
     status: str = Field(default="active", index=True)  # active | retired
     created_at: datetime = Field(default_factory=datetime.utcnow)

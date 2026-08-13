@@ -26,8 +26,9 @@ import LeetcodeAccounts from "./pages/LeetcodeAccounts";
 import Catalog from "./pages/Catalog";
 import Competitions from "./pages/Competitions";
 import CompetitionDetail from "./pages/CompetitionDetail";
-import Harnesses from "./pages/Harnesses";
+import HarnessesHub from "./pages/HarnessesHub";
 import HarnessDetail from "./pages/HarnessDetail";
+import CorrectnessOracleDetail from "./pages/CorrectnessOracleDetail";
 import Prompts from "./pages/Prompts";
 import Blog from "./pages/Blog";
 import BlogPost from "./pages/BlogPost";
@@ -60,8 +61,14 @@ export default function App() {
         <Route path="prompts/:id" element={<Prompts />} />
         <Route path="competitions" element={<Competitions />} />
         <Route path="competitions/:slug" element={<CompetitionDetail />} />
-        <Route path="harnesses" element={<Harnesses />} />
+        <Route path="harnesses" element={<HarnessesHub />} />
         <Route path="harnesses/:slug" element={<HarnessDetail />} />
+        {/* Standalone correctness-oracles list is now a hub tab; keep the
+            legacy path as a redirect so old bookmarks land correctly. Detail
+            pages stay separate so `/correctness-oracles/:slug` remains a
+            deep-linkable canonical URL. */}
+        <Route path="correctness-oracles" element={<Navigate to="/harnesses?tab=correctness" replace />} />
+        <Route path="correctness-oracles/:slug" element={<CorrectnessOracleDetail />} />
         <Route path="problems" element={<Problems />} />
         <Route path="problems/:slug" element={<ProblemDetail />} />
         <Route path="submissions" element={<Submissions />} />

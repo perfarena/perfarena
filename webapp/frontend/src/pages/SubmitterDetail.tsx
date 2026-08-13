@@ -13,14 +13,14 @@ export default function SubmitterDetailPage() {
   }, [slug]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!s) return <div className="empty">Loading…</div>;
+  if (!s) return <div className="empty">Please wait.</div>;
 
   return (
     <div className="col">
       <div className="hero">
         <h1>{s.display_name}</h1>
         <p>
-          {s.org ? <>organization · </> : <>solo competitor · </>}
+          {s.org ? <>organization · </> : <>single competitor · </>}
           {s.n_submissions} submissions across {s.n_models} model(s) ·
           languages: {s.languages.join(", ") || "–"}
         </p>

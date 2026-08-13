@@ -52,8 +52,20 @@ const METRICS: MetricSpec[] = [
     higherIsBetter: false,
   },
   {
-    key: "avg_memory_mb", label: "Avg memory by tag", unit: "MB",
+    key: "avg_memory_mb", label: "Peak mem by tag", unit: "MB",
     fmt: v => `${v.toFixed(1)} MB`,
+    higherIsBetter: false,
+  },
+  {
+    key: "avg_runtime_energy_j", label: "Avg runtime energy by tag", unit: "J",
+    // Scales to mJ/µJ/nJ so arena-local micro-joule readings don't clip.
+    fmt: v => {
+      const abs = Math.abs(v);
+      if (abs >= 1)     return `${v.toFixed(2)} J`;
+      if (abs >= 1e-3)  return `${(v * 1e3).toFixed(2)} mJ`;
+      if (abs >= 1e-6)  return `${(v * 1e6).toFixed(2)} µJ`;
+      return `${(v * 1e9).toFixed(2)} nJ`;
+    },
     higherIsBetter: false,
   },
 ];
@@ -92,10 +104,10 @@ export default function CompareByTag({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Performance by problem category</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          one radar chart per metric · each spoke is a LeetCode tag ·
-          polygon colour = model · spoke length is normalised per chart
-          so a model that dominates one chart's "worst case" still reads
-          as dominant relative to its peers
+          There is one radar chart for each metric. Each spoke is a LeetCode
+          tag. The polygon colour shows the model. The system normalises the
+          spoke length for each chart. A model that dominates the worst case
+          of one chart still reads as dominant next to its peers.
         </span>
       </div>
 
@@ -121,19 +133,31 @@ export default function CompareByTag({
         gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
         gap: 16,
       }}>
-        {METRICS.map(spec => (
-          <RadarChart key={spec.key as string}
-                      spec={spec} models={models} tags={tags}
-                      byCell={byCell} />
-        ))}
+        {METRICS.map(spec => {
+          // Skip a chart entirely when no cell in scope has data for its
+          // metric — prevents empty "memory" radars for arena-local imports
+          // and empty "runtime energy" radars for LC-only submissions.
+          const hasAny = models.some(model =>
+            tags.some(tag => {
+              const cell = byCell.get(`${model}|${tag}`);
+              return cell != null && (cell as unknown as Record<string, number | null>)[spec.key as string] != null;
+            }),
+          );
+          if (!hasAny) return null;
+          return (
+            <RadarChart key={spec.key as string}
+                        spec={spec} models={models} tags={tags}
+                        byCell={byCell} />
+          );
+        })}
       </div>
 
       {tagAttempts.size > tags.length && (
         <div className="muted" style={{ marginTop: 10, fontSize: "0.75rem" }}>
-          Showing the top {tags.length} tags by attempt count.{" "}
-          {tagAttempts.size - tags.length} less-common tag
-          {tagAttempts.size - tags.length === 1 ? "" : "s"} hidden to keep
-          the spokes readable.
+          This chart shows the top {tags.length} tags by attempt count.{" "}
+          The chart hides {tagAttempts.size - tags.length} less-common tag
+          {tagAttempts.size - tags.length === 1 ? "" : "s"} to keep the
+          spokes readable.
         </div>
       )}
     </div>
@@ -204,8 +228,8 @@ function RadarChart({
         <div style={{ fontWeight: 600 }}>{spec.label}</div>
         <span className="muted" style={{ fontSize: "0.75rem" }}>
           ({spec.higherIsBetter
-            ? "larger polygon = better"
-            : "larger polygon = better (radius is inverted from " + spec.unit + ")"})
+            ? "a larger polygon is better"
+            : "a larger polygon is better. This chart inverts the radius from " + spec.unit})
         </span>
       </div>
       <svg width={W} height={H}
@@ -283,7 +307,7 @@ function RadarChart({
                 <circle key={p.tag}
                         cx={p.x} cy={p.y} r={3}
                         fill={colour}>
-                  <title>{`${model} · ${p.tag} — ${spec.fmt(p.v)}`}</title>
+                  <title>{`${model} · ${p.tag}: ${spec.fmt(p.v)}`}</title>
                 </circle>
               ))}
             </g>

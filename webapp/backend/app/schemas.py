@@ -221,6 +221,15 @@ class SubmissionIn(BaseModel):
         pattern="^(latency|memory)$",
         description="Per-attempt optimization steer; one of latency|memory or null",
     )
+    stop_on_accept: bool = Field(
+        default=False,
+        description=(
+            "Retry-until-accepted workflow. When true, the client's round "
+            "loop stops appending attempts for a problem the moment one "
+            "lands `Accepted` — n_rounds is a MAXIMUM, not a fixed count. "
+            "When false (default), all n_rounds rounds run regardless."
+        ),
+    )
     # Which competition this submission targets. The server uses the
     # competition's problem count for total_problems / pass@k denominators,
     # and rejects any attempt whose title_slug isn't in that competition's
@@ -230,6 +239,36 @@ class SubmissionIn(BaseModel):
         default="leetcode-99-perf",
         description="Competition slug — defaults to leetcode-99-perf. "
                     "Pass-at-k denominator is the size of this competition.",
+    )
+    # REQUIRED. Competition and harness are fully decoupled: the
+    # competition owns a problem set + rules, the harness owns *how
+    # solutions are measured*. Every submission picks its own harness
+    # explicitly. The old "inherit from competition" fallback is gone.
+    #
+    # A single competition can therefore be run under N different
+    # harnesses side-by-side (LC's judge for one bundle, arena-local
+    # for another, a custom in-house rig for a third) — the
+    # leaderboard groups by (competition × harness).
+    harness_slug: str = Field(
+        min_length=1,
+        description="Harness that will measure this submission's runs. "
+                    "REQUIRED — the competition no longer supplies a "
+                    "default. Use the harness's slug from /api/harnesses.",
+    )
+    # Optional correctness oracle. When set (and the target oracle has
+    # kind=arena-local/custom + config.endpoint), the dispatcher calls
+    # its POST /validate BEFORE the perf harness's /measure and skips
+    # /measure on any non-Accepted verdict. Independent of the perf
+    # harness. When null, the perf harness's own status_msg is the
+    # correctness signal (LC gives both; arena-local's clbg_handler
+    # runs `make validate` inside `make measure`).
+    correctness_oracle_slug: str | None = Field(
+        default=None,
+        description="Optional correctness oracle. When set, the dispatcher "
+                    "calls this oracle's /validate before /measure and "
+                    "skips /measure when the correctness verdict is not "
+                    "Accepted. When null, correctness comes from the "
+                    "perf harness's own response.",
     )
     attempts: list[AttemptIn] = Field(default_factory=list)
 
@@ -289,6 +328,13 @@ class SubmissionPublic(BaseModel):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
+    # Submission-level per-op rollup (B3): avg_runtime_ms IS per-op time and
+    # avg_runtime_energy_j IS per-op energy under the looped methodology; these
+    # expose them explicitly (µs / J) plus the solve count behind each
+    # measurement. NULL on LeetCode-scored submissions.
+    avg_time_us_per_op: float | None = None
+    avg_energy_j_per_op: float | None = None
+    avg_iterations: float | None = None
     time_human_avg: float | None
     time_human_expert: float | None
     mem_human_avg: float | None
@@ -307,6 +353,10 @@ class SubmissionPublic(BaseModel):
     n_rounds: int = 1
     include_hints: bool = False
     optimization_target: str | None = None
+    # Retry-until-accepted workflow flag — n_rounds acts as a MAXIMUM when
+    # true; the client stops once a problem lands Accepted. False (default)
+    # means every problem walks all n_rounds regardless.
+    stop_on_accept: bool = False
     # Cost + token totals across all attempts (k samples included).
     # total_cost_usd is the LIVE value: when the model has pricing rows
     # set on /models AND attempts have stored prompt+response tokens, we
@@ -337,13 +387,28 @@ class SubmissionPublic(BaseModel):
     # backfill script wasn't run.
     competition_slug: str | None = None
     competition_name: str | None = None
-    # Harness that produced this submission's runs. Falls back to the
-    # competition's default harness when the submission itself has no
-    # override. None on submissions that predate the harness abstraction
-    # AND belong to a competition without one — practically empty after
-    # the startup backfill seeds every legacy row to `leetcode`.
+    # PERFORMANCE oracle for this submission (runtime / memory / percentile
+    # / energy). Resolved: submission override → competition default → NULL.
+    # Practically always populated after the startup backfill.
     harness_slug: str | None = None
     harness_name: str | None = None
+    # CORRECTNESS oracle for this submission (Accepted / WA / RE / TLE
+    # verdicts). Same resolution + backfill rules as harness. Decoupled
+    # so a client can tell "which judge said this was correct" apart from
+    # "which harness measured how fast it was".
+    correctness_oracle_slug: str | None = None
+    correctness_oracle_name: str | None = None
+    # Measurement provenance (Parts 2+3): the single energy tool + machine
+    # this submission was measured on. Energy/time numbers are only
+    # comparable within one (energy_tool, machine) pair. NULL on
+    # LeetCode-scored submissions — those ran on LeetCode's judges, so the
+    # machine is "unknown" and no execution energy was tooled.
+    energy_tool: str | None = None
+    machine_id: int | None = None
+    machine_name: str | None = None
+    # Opaque unique identifier for this submission's measurement run, for
+    # correlating with external measurement logs.
+    run_uid: str | None = None
     # Last attempt's `logged_at` for this submission — when something
     # actually moved on the row. The /submissions table sorts by this
     # rather than `created_at` so a long-running sweep stays at the
@@ -372,6 +437,11 @@ class RankingEntry(BaseModel):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
+    # Measurement provenance (B4): the machine + energy tool this entry was
+    # measured on. NULL for LeetCode-scored rows. Lets the leaderboard show /
+    # filter "which machine", since energy is only comparable within one.
+    machine_name: str | None = None
+    energy_tool: str | None = None
     time_human_avg: float | None
     time_human_expert: float | None
     mem_human_avg: float | None
@@ -390,11 +460,17 @@ class RankingEntry(BaseModel):
     # Competition this submission targets — None on legacy rows.
     competition_slug: str | None = None
     competition_name: str | None = None
-    # Harness (perf oracle) whose numbers this row is scored on. Resolved
-    # per submission: explicit override → competition default → NULL. The
-    # UI renders a pill linking to /harnesses/{slug}.
+    # PERFORMANCE oracle (Harness) whose numbers this row is scored on.
+    # Resolved per submission: explicit override → competition default →
+    # NULL. UI renders a pill linking to /harnesses/{slug}.
     harness_slug: str | None = None
     harness_name: str | None = None
+    # CORRECTNESS oracle that produced the Accepted / WA / RE / TLE
+    # verdict driving pass@1 for this row. Decoupled from the perf oracle
+    # above so a client can filter by "judged correct by X" independently
+    # of "measured perf by Y".
+    correctness_oracle_slug: str | None = None
+    correctness_oracle_name: str | None = None
     # Token + cost accounting — surfaced as sortable columns on the SPA
     # rankings table. `total_*` is the sum across every attempt in this
     # submission; `median_*_per_attempt` is the per-attempt median so two
@@ -435,6 +511,13 @@ class RunPublic(BaseModel):
     # stays null on every LC-scored run.
     runtime_energy_j: float | None = None
     runtime_energy_percentile: float | None = None
+    # Per-op metrics from the looped curated methodology: iterations solved
+    # in the measured window, and energy / time normalized to a single solve
+    # (the cross-language-comparable numbers). Null on LeetCode-scored runs
+    # and on legacy runs measured before the looped methodology.
+    iterations: int | None = None
+    energy_j_per_op: float | None = None
+    time_us_per_op: float | None = None
     total_correct: int | None
     total_testcases: int | None
     error_log: "RunErrorLog | None" = None
@@ -495,6 +578,13 @@ class CompareModelOnProblem(BaseModel):
     # data path; included so the comparison histogram can render an energy
     # bar when at least one model in scope reports it.
     generation_energy_j: float | None = None
+    # RUNTIME energy — the third perf axis, populated by execution-instrumented
+    # harnesses (e.g. arena-local). This is the field the head-to-head
+    # comparison plots BY DEFAULT when present — it's what actually varies
+    # across models solving the same problem. generation_energy_j above is
+    # LLM-side (energy spent producing the code); runtime_energy_j is
+    # execution-side (energy spent running it).
+    runtime_energy_j: float | None = None
 
 
 class CompareProblemRow(BaseModel):
@@ -564,6 +654,10 @@ class CompareByLevelRow(BaseModel):
     avg_memory_mb: float | None
     avg_runtime_percentile: float | None
     avg_memory_percentile: float | None
+    # Runtime energy — third perf axis, execution-side. Populated when the
+    # scoring harness measures it (arena-local etc.). None on LC-only data
+    # paths; the SPA hides the chart entirely when no cell has a value.
+    avg_runtime_energy_j: float | None = None
     # Generator-side cost & throughput per PROBLEM in scope. Includes
     # every attempt the model made for that problem (failed attempts
     # cost the same as accepted ones to generate). None when no attempt
@@ -590,6 +684,8 @@ class CompareByTagRow(BaseModel):
     pass_rate: float                          # n_accepted / n_attempted (0 if 0)
     avg_runtime_ms: float | None              # mean over each problem's best-accepted
     avg_memory_mb: float | None
+    # Runtime energy — third perf axis (arena-local etc.).
+    avg_runtime_energy_j: float | None = None
 
 
 class CompareResponse(BaseModel):
@@ -811,6 +907,22 @@ class CompetitionPublic(BaseModel):
     n_problems: int = 0
     n_submissions: int = 0
     n_models: int = 0
+    # Which harnesses have runs recorded for this competition. Populated
+    # from the actual Submission → Harness join so the SPA can offer
+    # exactly the leaderboard tabs that have data (rather than the full
+    # harness registry). Empty list = no submissions yet.
+    #
+    # NOTE: Competition itself has no `harness_slug` field anymore —
+    # competition and harness are decoupled; every submission carries
+    # its own harness explicitly.
+    harnesses_with_data: list[str] = []
+    # Admin-blessed allow-list — the harnesses considered valid for this
+    # competition. POST /api/submissions rejects (400) any submission
+    # whose harness_slug isn't in this list. Empty list means "no
+    # submissions currently accepted"; edit on the SPA admin form to
+    # add. Distinct from harnesses_with_data (which reflects what
+    # actually landed) — this is the FORWARD-LOOKING allow-list.
+    compatible_harness_slugs: list[str] = []
 
 
 class CompetitionDetail(CompetitionPublic):
@@ -828,6 +940,17 @@ class CompetitionIn(BaseModel):
     description: str | None = None
     kind: str = "custom"
     status: str = "active"
+    # NOTE: no harness_slug / correctness_oracle_slug fields. Competition
+    # is a problem-set + rules bundle only; every submission picks its
+    # own harness at POST time. See SubmissionIn.harness_slug.
+    #
+    # `compatible_harness_slugs` is the ADMIN allow-list — which harnesses
+    # the operator has blessed as valid for this competition. Empty
+    # list = no submissions accepted yet (POST /api/submissions returns
+    # 400 with a "not compatible" note). Unknown slugs in the list are
+    # rejected up-front so a typo surfaces at the admin form rather
+    # than at first-submit time.
+    compatible_harness_slugs: list[str] = Field(default_factory=list)
 
 
 class CompetitionProblemsIn(BaseModel):
@@ -879,6 +1002,49 @@ class HarnessIn(BaseModel):
     description: str | None = None
     kind: str = "custom"                        # leetcode | arena-local | custom | …
     status: str = "active"                      # active | retired
+    config: dict | None = None
+
+
+class CorrectnessOracleRef(BaseModel):
+    """Slug + name pointer for the correctness half of the two-oracle model.
+    Same role as HarnessRef for the performance oracle. Rendered inline on
+    ranking rows / submission cards so a client can link to
+    /correctness-oracles/{slug} without fetching the full record."""
+    slug: str
+    name: str
+
+
+class CorrectnessOraclePublic(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: str | None
+    kind: str
+    status: str
+    created_at: datetime
+    config: dict | None = None
+    # Activity rollup — same shape as HarnessPublic so the SPA can render
+    # a matching card on /correctness-oracles.
+    n_competitions: int = 0
+    n_submissions: int = 0
+    n_runs: int = 0
+
+
+class CorrectnessOracleDetail(CorrectnessOraclePublic):
+    """Slug-keyed detail view: identity + competitions bound to this
+    correctness oracle + top-5 models judged by it. Companion to
+    HarnessDetail on the performance side."""
+    competitions: list[CompetitionRef] = []
+    languages: list[str] = []
+    top_models: list[dict] = []
+
+
+class CorrectnessOracleIn(BaseModel):
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str | None = None
+    kind: str = "custom"                        # leetcode | unittest | humaneval | custom
+    status: str = "active"
     config: dict | None = None
 
 
@@ -1040,6 +1206,11 @@ class AttemptResult(BaseModel):
     best_memory_mb: float | None
     avg_runtime_percentile: float | None
     avg_memory_percentile: float | None
+    # Runtime energy of this attempt's solution (Joules). Populated by
+    # execution-instrumented harnesses (arena-local etc.). Null on LC-only
+    # attempts.
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
     submitted_at: datetime | None
     runs: list[AttemptRunDetail]
     # Same shape submission_detail returns on its traces[] — so the

@@ -7,11 +7,16 @@ Runs an N-round refinement loop on one problem (or a small set):
   Round 1..N-1: the prior round's LeetCode-judge result is folded back into
     the prompt so the model can fix failures or optimize for the target metric.
 
-Three orthogonal experiment knobs, all set at the submission level:
+Four orthogonal experiment knobs, all set at the submission level:
 
   --n-rounds N           Total rounds in the chain (default 3; 1 = single-shot)
   --hints                Include LeetCode's editor hints in the prompt
   --target latency|memory   Steer the model toward a specific perf metric
+  --stop-on-accept       Retry-until-accepted workflow: n_rounds becomes a
+                         MAXIMUM. Stop appending rounds for a problem the
+                         moment one lands Accepted. Also stamped on the
+                         Submission row so later analysis can distinguish
+                         correctness-driven retries from fixed-N sweeps.
 
 Talks to the platform's normal endpoints — no special backend code path. The
 unified prompt template `experiment-system` (seeded by app.main on startup)
@@ -75,10 +80,10 @@ def build_round_instruction(round_idx: int, total: int) -> str:
             f"establish a baseline."
         )
     return (
-        f"This is round {round_idx + 1} of {total}. You have the LeetCode "
-        f"judge's verdict on every previous round below — use it to improve. "
-        f"Improvement priorities, in order:\n"
-        f"  1. If the most recent attempt was NOT Accepted, fix the root cause.\n"
+        f"This is round {round_idx + 1} of {total}. You have your PREVIOUS "
+        f"attempt's code and the LeetCode judge's verdict on it below — use "
+        f"them to improve. Improvement priorities, in order:\n"
+        f"  1. If the previous attempt was NOT Accepted, fix the root cause.\n"
         f"  2. If it was Accepted but slow, reduce runtime.\n"
         f"  3. If it was Accepted but memory-heavy, eliminate allocations.\n"
         f"  4. If it was already fast and lean, try a fundamentally different "
@@ -143,15 +148,24 @@ def format_round_feedback(round_idx: int, code: str, judge: dict,
 
 def build_rounds_history(history: list[dict], target: str | None,
                          language_fence: str) -> str:
+    """Render the model-facing feedback block for the next round.
+
+    Deliberately shows ONLY the immediately-previous round's code + verdict.
+    Older rounds are dropped even when they exist — carrying them all forward
+    grew the context linearly with `--rounds N`, saturated the input budget
+    on larger LLMs, and (empirically) confused smaller ones by mixing
+    contradictory hints from stale attempts. The judge feedback the model
+    needs to correct THIS round is what round N-1 produced; everything
+    older has already been folded into N-1's own attempt."""
     if not history:
         return ""
-    blocks = [
-        format_round_feedback(h["round_index"], h["code"], h["judge"],
-                              target, language_fence)
-        for h in history
-    ]
-    header = "PREVIOUS ROUNDS — LEETCODE JUDGE FEEDBACK"
-    return header + "\n\n" + "\n\n".join(blocks)
+    last = history[-1]
+    header = "PREVIOUS ATTEMPT — LEETCODE JUDGE FEEDBACK"
+    body = format_round_feedback(
+        last["round_index"], last["code"], last["judge"],
+        target, language_fence,
+    )
+    return header + "\n\n" + body
 
 
 # ---------- judge-result distiller ------------------------------------------
@@ -326,9 +340,15 @@ def run_chain(args, base: str, prompt: dict, problem: dict,
                     "n_rounds": args.n_rounds,
                     "include_hints": bool(args.hints),
                     "optimization_target": args.target,
+                    "stop_on_accept": bool(args.stop_on_accept),
                     # Scope to the chosen competition so pass@k denominators
                     # match the competition's size rather than the full DB.
                     "competition_slug": args.competition,
+                    # Harness is REQUIRED by the API (competition supplies no
+                    # default). Optional correctness oracle only sent when set.
+                    "harness_slug": args.harness,
+                    **({"correctness_oracle_slug": args.correctness_oracle}
+                       if args.correctness_oracle else {}),
                     "attempts": [attempt_body],
                 },
             )
@@ -368,6 +388,22 @@ def run_chain(args, base: str, prompt: dict, problem: dict,
         if judge.get("accepted"):
             tail = f" · rt={judge.get('runtime_ms')}ms · mem={judge.get('memory_mb')}MB"
         print(f"  round {round_idx} → {judge['status']}{tail}")
+
+        # Retry-until-accepted workflow: once a round lands Accepted, further
+        # rounds would only spend tokens on a problem the model already
+        # solved. `n_rounds` is a MAXIMUM here, not a fixed count. The
+        # submission-level `stop_on_accept` flag is stamped upstream so
+        # /submissions/… analyses can still tell "retry-to-correctness"
+        # runs apart from "always run N rounds" experiments — and callers
+        # who genuinely want every round to execute (e.g. sweeps that
+        # measure improvement latency across rounds) simply leave the flag
+        # unset and this branch never fires.
+        if args.stop_on_accept and judge.get("accepted"):
+            remaining = args.n_rounds - (round_idx + 1)
+            if remaining > 0:
+                print(f"  stop_on_accept=True · skipping remaining "
+                      f"{remaining} round{'s' if remaining != 1 else ''}")
+            break
 
     return {
         "submission_id": submission_id,
@@ -419,12 +455,31 @@ def main() -> None:
     ap.add_argument("--competition", default="leetcode-99-perf", metavar="SLUG",
                     help="competition the submission targets (default: "
                          "leetcode-99-perf). --slug must belong to it.")
+    # Competition and harness are decoupled: the competition owns the problem
+    # set, the harness owns HOW solutions are measured. Every submission must
+    # name its harness explicitly (the API requires harness_slug). Default to
+    # the local runner since that's the common iterative-refine use; pass a
+    # LeetCode harness slug to score against LC instead.
+    ap.add_argument("--harness", default="arena-local", metavar="SLUG",
+                    help="harness that measures this submission (slug from "
+                         "/api/harnesses). Default 'arena-local' = the local "
+                         "runner. REQUIRED by the API — competition supplies "
+                         "no default.")
+    ap.add_argument("--correctness-oracle", default=None, metavar="SLUG",
+                    help="optional correctness oracle (arena-local/custom) "
+                         "called before the perf harness /measure. Omit to let "
+                         "the perf harness's own verdict stand.")
     ap.add_argument("--slug", default="two-sum",
                     help="problem slug to refine (one chain)")
     ap.add_argument("--provider", default="ollama", choices=sorted(PROVIDERS),
                     help="LLM backend. ollama (default) uses --ollama-url; "
                          "openai uses --openai-base-url + --openai-api-key.")
-    ap.add_argument("--ollama-url", default=os.environ.get("OLLAMA_URL", "http://localhost:11434"))
+    ap.add_argument("--ollama-url",
+                    default=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+                    type=lambda s: s.rstrip("/"),
+                    help="Ollama endpoint. Trailing slashes are stripped — "
+                         "tunnels like ngrok route the resulting "
+                         "`//api/generate` to an empty response.")
     ap.add_argument("--openai-base-url",
                     default=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
                     help="OpenAI-compatible /v1 endpoint.")
@@ -446,6 +501,15 @@ def main() -> None:
                     help="include LeetCode's editor hints in the prompt")
     ap.add_argument("--target", choices=("latency", "memory"), default=None,
                     help="steer the model to optimize for runtime or memory")
+    ap.add_argument("--stop-on-accept", action="store_true",
+                    help="retry-until-accepted workflow: n_rounds becomes a "
+                         "MAXIMUM. Stop appending rounds for a problem the "
+                         "moment one lands Accepted — subsequent rounds "
+                         "would only spend tokens re-solving something the "
+                         "model already got right. The flag is also stamped "
+                         "on the Submission row so later analysis can tell "
+                         "correctness-driven retries apart from fixed-N "
+                         "sweeps that need every round to run.")
     ap.add_argument("--prompt-name", default="experiment-system",
                     help="registry prompt to use (default: the unified "
                          "iterative_refine template seeded by app.main)")

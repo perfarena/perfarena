@@ -20,7 +20,7 @@ const SORT_OPTIONS: Array<{
   { key: "pass_at_1",                  label: "pass@1",          direction: "desc" },
   { key: "pass_at_k",                  label: "pass@k",          direction: "desc" },
   { key: "avg_runtime_ms",             label: "avg runtime",     direction: "asc"  },
-  { key: "avg_memory_mb",              label: "avg memory",      direction: "asc"  },
+  { key: "avg_memory_mb",              label: "peak mem",        direction: "asc"  },
   { key: "avg_runtime_percentile",     label: "runtime %ile",    direction: "desc" },
   { key: "avg_memory_percentile",      label: "memory %ile",     direction: "desc" },
   { key: "total_cost_usd",             label: "total cost ($)",  direction: "asc"  },
@@ -62,7 +62,7 @@ export default function LanguageDetail() {
   }, [d, sortKey]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!d) return <div className="empty">Loading…</div>;
+  if (!d) return <div className="empty">Please wait.</div>;
 
   const { info, stats } = d;
   const top_models = sortedTop;
@@ -96,7 +96,7 @@ export default function LanguageDetail() {
           <KV label="SO admired (2024)" value={info.so_admired_pct_2024 == null ? "–" : `${info.so_admired_pct_2024.toFixed(0)}%`} />
           <KV label="TIOBE 2025 rank" value={info.tiobe_rank_2025 == null ? "–" : `#${info.tiobe_rank_2025}`} />
           <div className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
-            Approximate figures from public developer surveys (Stack Overflow 2024, TIOBE 2025).
+            These figures are approximate. They come from public developer surveys (Stack Overflow 2024 and TIOBE 2025).
           </div>
         </div>
 
@@ -124,8 +124,8 @@ export default function LanguageDetail() {
           <Stat label="best pass@1" value={formatPassAt1(stats.best.pass_at_1)} />
           <Stat label="lowest avg runtime" value={formatRuntime(stats.best.avg_runtime_ms)} />
           <Stat label="lowest best runtime" value={formatRuntime(stats.best.best_runtime_ms)} />
-          <Stat label="lowest avg memory" value={formatMemory(stats.best.avg_memory_mb)} />
-          <Stat label="lowest best memory" value={formatMemory(stats.best.best_memory_mb)} />
+          <Stat label="lowest peak mem" value={formatMemory(stats.best.avg_memory_mb)} />
+          <Stat label="lowest best peak mem" value={formatMemory(stats.best.best_memory_mb)} />
           <Stat label="best runtime %ile" value={formatPercentile(stats.best.avg_runtime_percentile)} />
           <Stat label="best memory %ile" value={formatPercentile(stats.best.avg_memory_percentile)} />
         </div>
@@ -147,19 +147,19 @@ export default function LanguageDetail() {
           </label>
         </div>
         {top_models.length === 0 ? (
-          <div className="empty">No judged submissions in this language yet.</div>
+          <div className="empty">This language has no submissions with results yet.</div>
         ) : (
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th>
-                <th title="Registered prompt template used. Click to compare prompts.">Prompt</th>
+                <th title="The registered prompt template that the submission used. Click to compare the prompts.">Prompt</th>
                 <th>pass@1</th><th>pass@k</th>
-                <th>Avg runtime</th><th>Avg memory</th>
+                <th>Avg runtime</th><th>Peak mem</th>
                 <th>Runtime %ile</th><th>Memory %ile</th>
-                <th title="Total $ across all attempts in this submission. Recomputed live from the model's current $/1M-token rates when set on /models.">Cost</th>
-                <th title="Total generation wall-clock summed across attempts.">Gen time</th>
-                <th title="Total generation energy (Joules). Only present when the submit client measured it (NVML / RAPL / provider telemetry).">Gen energy</th>
+                <th title="The total cost in dollars across all attempts in the submission. The system computes it again from the current dollar rate for each 1M tokens of the model. You set this rate on /models.">Cost</th>
+                <th title="The total generation time (wall-clock time) across all attempts.">Gen time</th>
+                <th title="The total generation energy in Joules. It appears only when the submit client measured it (NVML, RAPL, or provider telemetry).">Gen energy</th>
                 <th></th>
               </tr></thead>
               <tbody>

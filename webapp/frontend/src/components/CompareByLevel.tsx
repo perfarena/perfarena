@@ -49,8 +49,21 @@ const METRICS: MetricSpec[] = [
     higherIsBetter: false,
   },
   {
-    key: "avg_memory_mb", label: "Avg memory", unit: "MB",
+    key: "avg_memory_mb", label: "Peak mem", unit: "MB",
     fmt: v => `${v.toFixed(1)} MB`,
+    higherIsBetter: false,
+  },
+  {
+    key: "avg_runtime_energy_j", label: "Avg runtime energy", unit: "J",
+    // Scaling matches formatEnergy in lib/format.ts — mJ/µJ/nJ prefixes so
+    // arena-local per-call values (10⁻⁶ J range) don't clip to "0.00 J".
+    fmt: v => {
+      const abs = Math.abs(v);
+      if (abs >= 1)     return `${v.toFixed(2)} J`;
+      if (abs >= 1e-3)  return `${(v * 1e3).toFixed(2)} mJ`;
+      if (abs >= 1e-6)  return `${(v * 1e6).toFixed(2)} µJ`;
+      return `${(v * 1e9).toFixed(2)} nJ`;
+    },
     higherIsBetter: false,
   },
   {
@@ -100,8 +113,9 @@ export default function CompareByLevel({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Performance by difficulty</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          one grouped chart per metric · bar colour = model · higher bar =
-          larger raw value (the metric label says which direction is better)
+          There is one grouped chart for each metric. The bar colour shows
+          the model. A higher bar means a larger raw value. The metric label
+          tells you which direction is better.
         </span>
       </div>
 
@@ -127,10 +141,23 @@ export default function CompareByLevel({
         gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
         gap: 16,
       }}>
-        {METRICS.map(m => (
-          <MetricChart key={m.key as string}
-                       spec={m} models={models} byCell={byCell} />
-        ))}
+        {METRICS.map(m => {
+          // Hide the chart entirely when no cell has data. Prevents empty
+          // "Avg memory" bars for arena-local imports (which don't yet
+          // measure memory), and empty "Avg runtime energy" bars for LC-
+          // only submissions.
+          const hasAny = models.some(model =>
+            LEVELS.some(level => {
+              const row = byCell.get(`${model}|${level}`);
+              return row != null && (row as unknown as Record<string, number | null>)[m.key as string] != null;
+            }),
+          );
+          if (!hasAny) return null;
+          return (
+            <MetricChart key={m.key as string}
+                         spec={m} models={models} byCell={byCell} />
+          );
+        })}
       </div>
     </div>
   );
@@ -183,7 +210,7 @@ function MetricChart({
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <div style={{ fontWeight: 600 }}>{spec.label}</div>
         <span className="muted" style={{ fontSize: "0.75rem" }}>
-          ({spec.higherIsBetter ? "higher = better" : "lower = better"})
+          ({spec.higherIsBetter ? "a higher value is better" : "a lower value is better"})
         </span>
       </div>
       <svg width={W} height={H}
@@ -213,7 +240,7 @@ function MetricChart({
                   <g key={m}>
                     <rect x={x} y={plotH - 1} width={barW} height={2}
                           fill="var(--fg-dim)" opacity={0.35}>
-                      <title>{`${m} · ${level} — no data`}</title>
+                      <title>{`${m} · ${level}: no data`}</title>
                     </rect>
                   </g>
                 );
@@ -224,7 +251,7 @@ function MetricChart({
                 <g key={m}>
                   <rect x={x} y={y} width={barW} height={Math.max(2, h)}
                         fill={colour} rx={2}>
-                    <title>{`${m} · ${level} — ${spec.fmt(v)}`}</title>
+                    <title>{`${m} · ${level}: ${spec.fmt(v)}`}</title>
                   </rect>
                   {/* Value label above the bar. Skipped when bars are very
                       narrow (4+ models) to avoid overlap. */}

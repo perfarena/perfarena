@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|ruby|sum-of-floored-pairs",
+  "code": "class Solution\n  MOD = 1_000_000_009\n\n  def sum_floor(nums)\n    max_val = 0\n    count = Hash.new(0)\n    nums.each do |num|\n      count[num] += 1\n      max_val = num if num > max_val\n    end\n\n    # freq array for counting occurrences of each integer up to max_val\n    freq = Array.new(max_val + 1, 0)\n    count.each { |k, v| freq[k] = v }\n\n    # prefix sums to quickly get count of elements in a range\n    prefix = Array.new(max_val + 1, 0)\n    (1..max_val).each do |i|\n      prefix[i] = prefix[i - 1] + freq[i]\n    end\n\n    result = 0\n    # Iterate over each unique divisor x\n    (1..max_val).each do |x|\n      next if freq[x] == 0\n      # For each multiple block of x: k*x to (k+1)*x - 1\n      k = 1\n      while k * x <= max_val\n        left = k * x\n        right = [max_val, (k + 1) * x - 1].min\n        # count how many elements are in [left, right]\n        c = prefix[right] - prefix[left - 1]\n        if c > 0\n          # freq[x] * c * k is sum of floor division x divides nums[j]\n          # nums[j] in [left, right] means floor(nums[j]/x) == k\n          result += freq[x] * c * k\n        end\n        k += 1\n      end\n    end\n\n    result % MOD\n  end\nend",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `sum-of-floored-pairs` in Ruby.\n\nGiven an integer array `nums`, return the sum of `floor(nums[i] / nums[j])` for all pairs of indices `0 <= i, j < nums.length` in the array. Since the answer may be too large, return it **modulo** `109 + 7`.\n\nThe `floor()` function returns the integer part of the division.\n\n**Example 1:**\n\n**Input:** nums = \\[2,5,9\\]\n**Output:** 10\n**Explanation:**\nfloor(2 / 5) = floor(2 / 9) = floor(5 / 9) = 0\nfloor(2 / 2) = floor(5 / 5) = floor(9 / 9) = 1\nfloor(5 / 2) = 2\nfloor(9 / 2) = 4\nfloor(9 / 5) = 1\nWe calculate the floor of the division for every pair of indices in the array then sum them up.\n\n**Example 2:**\n\n**Input:** nums = \\[7,7,7,7,7,7,7\\]\n**Output:** 49\n\n**Constraints:**\n\n*   `1 <= nums.length <= 105`\n*   `1 <= nums[i] <= 105`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Ruby using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```ruby code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```ruby\nclass Solution\n  MOD = 1_000_000_009\n\n  def sum_floor(nums)\n    max_val = 0\n    count = Hash.new(0)\n    nums.each do |num|\n      count[num] += 1\n      max_val = num if num > max_val\n    end\n\n    # freq array for counting occurrences of each integer up to max_val\n    freq = Array.new(max_val + 1, 0)\n    count.each { |k, v| freq[k] = v }\n\n    # prefix sums to quickly get count of elements in a range\n    prefix = Array.new(max_val + 1, 0)\n    (1..max_val).each do |i|\n      prefix[i] = prefix[i - 1] + freq[i]\n    end\n\n    result = 0\n    # Iterate over each unique divisor x\n    (1..max_val).each do |x|\n      next if freq[x] == 0\n      # For each multiple block of x: k*x to (k+1)*x - 1\n      k = 1\n      while k * x <= max_val\n        left = k * x\n        right = [max_val, (k + 1) * x - 1].min\n        # count how many elements are in [left, right]\n        c = prefix[right] - prefix[left - 1]\n        if c > 0\n          # freq[x] * c * k is sum of floor division x divides nums[j]\n          # nums[j] in [left, right] means floor(nums[j]/x) == k\n          result += freq[x] * c * k\n        end\n        k += 1\n      end\n    end\n\n    result % MOD\n  end\nend\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-09T00:48:18.098449+00:00",
+    "wall_clock_ms": 6988,
+    "provider_meta": {
+      "system_fingerprint": "fp_d2416f81fa",
+      "usage": {
+        "prompt_tokens": 367,
+        "completion_tokens": 382,
+        "total_tokens": 749,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-09T00:48:18.098611+00:00"
+}

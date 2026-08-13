@@ -1,0 +1,40 @@
+{
+  "tuple_key": "gpt-4.1-mini|experiment-system|java|largest-palindrome-product",
+  "code": "class Solution {\n    public int largestPalindrome(int n) {\n        if (n == 1) return 9; // given in problem\n\n        long max = (long) Math.pow(10, n) - 1;\n        long min = (long) Math.pow(10, n - 1);\n\n        // For n > 1, largest palindrome can be constructed from the half\n        // We generate palindrome from higher half and check if product factors exist\n        for (long left = max; left >= min; left--) {\n            // Create palindrome by appending reverse of left\n            // Example: left = 123, palindrome = 123321\n            long palindrome = createPalindrome(left);\n\n            // Try to find factors i, j of palindrome, both n-digit\n            // i starts from max down to min for efficiency\n            for (long i = max; i * i >= palindrome; i--) {\n                if (palindrome % i == 0) {\n                    long j = palindrome / i;\n                    if (j >= min && j <= max) {\n                        return (int)(palindrome % 1337);\n                    }\n                }\n            }\n        }\n\n        return 0;\n    }\n\n    // create palindrome by appending reverse of left to left\n    private long createPalindrome(long left) {\n        String leftStr = Long.toString(left);\n        StringBuilder sb = new StringBuilder(leftStr);\n        String rev = sb.reverse().toString();\n        sb.reverse();  // revert back\n        return Long.parseLong(leftStr + rev);\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `largest-palindrome-product` in Java.\n\nGiven an integer n, return _the **largest palindromic integer** that can be represented as the product of two `n`\\-digits integers_. Since the answer can be very large, return it **modulo** `1337`.\n\n**Example 1:**\n\n**Input:** n = 2\n**Output:** 987\nExplanation: 99 x 91 = 9009, 9009 % 1337 = 987\n\n**Example 2:**\n\n**Input:** n = 1\n**Output:** 9\n\n**Constraints:**\n\n*   `1 <= n <= 8`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int largestPalindrome(int n) {\n        if (n == 1) return 9; // given in problem\n\n        long max = (long) Math.pow(10, n) - 1;\n        long min = (long) Math.pow(10, n - 1);\n\n        // For n > 1, largest palindrome can be constructed from the half\n        // We generate palindrome from higher half and check if product factors exist\n        for (long left = max; left >= min; left--) {\n            // Create palindrome by appending reverse of left\n            // Example: left = 123, palindrome = 123321\n            long palindrome = createPalindrome(left);\n\n            // Try to find factors i, j of palindrome, both n-digit\n            // i starts from max down to min for efficiency\n            for (long i = max; i * i >= palindrome; i--) {\n                if (palindrome % i == 0) {\n                    long j = palindrome / i;\n                    if (j >= min && j <= max) {\n                        return (int)(palindrome % 1337);\n                    }\n                }\n            }\n        }\n\n        return 0;\n    }\n\n    // create palindrome by appending reverse of left to left\n    private long createPalindrome(long left) {\n        String leftStr = Long.toString(left);\n        StringBuilder sb = new StringBuilder(leftStr);\n        String rev = sb.reverse().toString();\n        sb.reverse();  // revert back\n        return Long.parseLong(leftStr + rev);\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-07-22T14:53:50.505203+00:00",
+    "wall_clock_ms": 4541,
+    "provider_meta": {
+      "system_fingerprint": "fp_2c9f3c0c2f",
+      "usage": {
+        "prompt_tokens": 220,
+        "completion_tokens": 328,
+        "total_tokens": 548,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-4.1-mini-2025-04-14",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-07-22T14:53:50.505650+00:00"
+}
