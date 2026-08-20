@@ -1195,7 +1195,7 @@ def main() -> None:
                          "Answer / Compile Error / Runtime Error. When "
                          "unset, correctness comes from the perf harness's "
                          "own response (LC does both; arena-local's "
-                         "clbg_handler runs `make validate` inside `make "
+                         "perfarena_handler runs `make validate` inside `make "
                          "measure`, so leaving this unset is safe for "
                          "CLBG). Note: `leetcode` is not a valid choice "
                          "for CLBG problems — LC's judge doesn't know "

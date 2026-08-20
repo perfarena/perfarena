@@ -209,7 +209,7 @@ def _resolve_effective_correctness_oracle(
     Just Submission.correctness_oracle_id — no competition fallback,
     matching the decoupled harness resolution above. When NULL,
     correctness comes from the perf harness's own response (LC does
-    both; arena-local's clbg_handler runs `make validate` inside
+    both; arena-local's perfarena_handler runs `make validate` inside
     `make measure`).
     """
     from .models import CorrectnessOracle  # local import — avoid cycles

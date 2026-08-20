@@ -25,8 +25,8 @@ Run the arena runner with:
     export PERFARENA_ROOT=/Users/rar9993/repos/research/leetcode_crawler/Energy-Languages
     python3 webapp/examples/harness_runner_server.py \\
         --host 0.0.0.0 --port 8787 --auth-token dev-secret \\
-        --measure-handler  clbg_handler:measure_once \\
-        --validate-handler clbg_handler:validate_once \\
+        --measure-handler  perfarena_handler:measure_once \\
+        --validate-handler perfarena_handler:validate_once \\
         --verbose
 
 Requirements on the host:
@@ -78,6 +78,20 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+
+
+# --- lightweight phase logging (opt-in via PERFARENA_LOG) --------------------
+# A bench run is otherwise silent until a timeout fires, so a hang is invisible.
+# Set PERFARENA_LOG=1 for timestamped, per-phase lines on the runner's stderr.
+# This is the HANDLER's stderr, separate from the child harness's captured
+# stderr, so it never contaminates the parsed CASE=/ITERS=/BEACON= line.
+_LOG_ON = os.environ.get("PERFARENA_LOG", "").strip().lower() not in (
+    "", "0", "false", "no", "off")
+
+
+def _log(msg: str) -> None:
+    if _LOG_ON:
+        print(f"[clbg {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
 
 
 # Arena language slug (matches the "language" column on Attempt rows)
@@ -161,7 +175,7 @@ def _get_tracker_cls() -> Any:
             from codecarbon import EmissionsTracker  # type: ignore
             _TRACKER_CLS = EmissionsTracker
         except Exception as e:  # noqa: BLE001
-            print(f"[clbg_handler] codecarbon unavailable ({e}); "
+            print(f"[perfarena_handler] codecarbon unavailable ({e}); "
                   f"energy will be None", file=sys.stderr)
             _TRACKER_CLS = None
     return _TRACKER_CLS
@@ -271,18 +285,168 @@ def _killpg(proc: subprocess.Popen) -> None:
             pass
 
 
+class _EnergyBackend:
+    """Per-submission energy sampler. `begin()`/`end()` bracket ONE case's
+    subprocess; `end()` returns joules over that window (or None). Built ONCE
+    per `_measure_curated_looped` so we never pay a per-case codecarbon
+    constructor (that was 15-25 constructions per submission and the dominant
+    measurement overhead — see the RAPL vs codecarbon note in the README)."""
+
+    label = "none"
+
+    def begin(self) -> None:
+        pass
+
+    def end(self) -> "float | None":
+        return None
+
+    def close(self) -> None:
+        pass
+
+
+class _RaplEnergy(_EnergyBackend):
+    """Direct Intel-RAPL reader over the powercap sysfs. Sums the top-level
+    package domains' `energy_uj` before and after the case — a couple of file
+    reads, microsecond overhead, instead of a fresh codecarbon tracker each
+    time. Needs read access to /sys/class/powercap (setup-harness-host.sh
+    grants it)."""
+
+    def __init__(self) -> None:
+        import glob
+        self.label = "rapl"
+        # Top-level package domains only. Subdomains (intel-rapl:N:M — core /
+        # uncore / dram) are subsets of the package and would double-count;
+        # intel-rapl-mmio:* is a separate psys-style view we also skip.
+        self._paths = [
+            p for p in sorted(glob.glob("/sys/class/powercap/intel-rapl:*/energy_uj"))
+            if p.rsplit("/", 2)[1].startswith("intel-rapl:")
+            and p.rsplit("/", 2)[1].count(":") == 1
+        ]
+        self._e0: "int | None" = None
+
+    def available(self) -> bool:
+        return bool(self._paths) and self._read_uj() is not None
+
+    def _read_uj(self) -> "int | None":
+        total = 0
+        for p in self._paths:
+            try:
+                with open(p) as f:
+                    total += int(f.read())
+            except Exception:  # noqa: BLE001
+                return None
+        return total
+
+    def begin(self) -> None:
+        self._e0 = self._read_uj()
+
+    def end(self) -> "float | None":
+        e1 = self._read_uj()
+        if self._e0 is None or e1 is None:
+            return None
+        delta_uj = e1 - self._e0
+        # A negative delta means a counter wrapped mid-case (rare: the range is
+        # ~10^11 uJ, a ~2s case spends ~10^7). Drop it rather than guess.
+        return delta_uj / 1_000_000.0 if delta_uj >= 0 else None
+
+
+class _CodecarbonEnergy(_EnergyBackend):
+    """One codecarbon EmissionsTracker reused across cases via the task API
+    (`start_task`/`stop_task`), so the expensive constructor runs ONCE per
+    submission instead of once per case. Falls back to a fresh tracker per case
+    only if the task API is missing (older codecarbon)."""
+
+    def __init__(self, tracker_cls: Any) -> None:
+        self.label = _energy_tool_name()
+        self._cls = tracker_cls
+        self._tracker = None
+        self._has_tasks = False
+        self._fresh = None
+        try:
+            self._tracker = tracker_cls(
+                project_name="perfarena-curated", log_level="error",
+                save_to_file=False, save_to_api=False, save_to_logger=False)
+            self._has_tasks = (hasattr(self._tracker, "start_task")
+                               and hasattr(self._tracker, "stop_task"))
+            if self._has_tasks:
+                self._tracker.start()
+        except Exception as e:  # noqa: BLE001
+            print(f"[perfarena_handler] codecarbon init failed: {e}", file=sys.stderr)
+            self._tracker = None
+
+    def begin(self) -> None:
+        if self._tracker is not None and self._has_tasks:
+            try:
+                self._tracker.start_task()
+                return
+            except Exception:  # noqa: BLE001
+                self._has_tasks = False
+        # Fallback: a fresh per-case tracker (old, slow, but correct).
+        try:
+            self._fresh = self._cls(
+                project_name="perfarena-curated", log_level="error",
+                save_to_file=False, save_to_api=False, save_to_logger=False)
+            self._fresh.start()
+        except Exception:  # noqa: BLE001
+            self._fresh = None
+
+    def end(self) -> "float | None":
+        if self._tracker is not None and self._has_tasks:
+            try:
+                data = self._tracker.stop_task()
+                e = getattr(data, "energy_consumed", None)
+                return float(e) * 3_600_000.0 if e is not None else None
+            except Exception:  # noqa: BLE001
+                return None
+        if self._fresh is not None:
+            try:
+                self._fresh.stop()
+                d = self._fresh.final_emissions_data
+                e = getattr(d, "energy_consumed", None) if d is not None else None
+                self._fresh = None
+                return float(e) * 3_600_000.0 if e is not None else None
+            except Exception:  # noqa: BLE001
+                self._fresh = None
+                return None
+        return None
+
+    def close(self) -> None:
+        if self._tracker is not None and self._has_tasks:
+            try:
+                self._tracker.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _make_energy_backend() -> _EnergyBackend:
+    """Pick the energy backend ONCE per submission. PERFARENA_ENERGY_TOOL=rapl
+    uses the direct powercap reader (near-zero per-case cost); otherwise a
+    reused codecarbon tracker. Falls back to time-only if neither is usable."""
+    tool = _energy_tool_name()
+    if tool == "rapl":
+        r = _RaplEnergy()
+        if r.available():
+            return r
+        print("[perfarena_handler] PERFARENA_ENERGY_TOOL=rapl but powercap is not "
+              "readable; falling back to codecarbon", file=sys.stderr)
+    cls = _get_tracker_cls()
+    if cls is not None:
+        return _CodecarbonEnergy(cls)
+    return _EnergyBackend()  # time-only; energy stays None
+
+
 def _run_harness_measured(
     cell: Path, harness_lang: str, budget: float, idx: int, timeout: float,
-    *, use_energy: bool = True, poll_rss: bool = False,
+    *, energy: "_EnergyBackend | None" = None, poll_rss: bool = False,
 ) -> dict[str, Any]:
     """Run `run_harness.sh <lang> <budget> <idx>` FROM `cell`. Returns raw
     per-invocation numbers; per-op normalization is the caller's job.
 
-    `use_energy` wraps the run in the codecarbon tracker (energy pass).
-    `poll_rss` polls the process-tree peak RSS (memory pass). They are kept
-    SEPARATE (never both true) so the memory tracker's polling cost never
-    perturbs the energy/time numbers — the CLBG methodology's separate-run
-    rule (see `_measure_curated_looped`)."""
+    `energy` is a shared per-submission backend (RAPL or reused codecarbon)
+    whose begin()/end() bracket the run — None on the memory pass. `poll_rss`
+    polls the process-tree peak RSS. Energy and RSS are kept in SEPARATE passes
+    so the memory poll never perturbs the energy/time numbers — the CLBG
+    methodology's separate-run rule (see `_measure_curated_looped`)."""
     run_harness = _selection_dir() / "run_harness.sh"
     cmd = ["bash", str(run_harness), harness_lang, str(budget), str(idx)]
 
@@ -292,18 +456,14 @@ def _run_harness_measured(
     env["PYTHONPATH"] = f"{root}:{prev_pp}" if prev_pp else str(root)
     env["PATH"] = f"{str(Path(sys.executable).parent)}:{env.get('PATH', '')}"
 
-    Tracker = _get_tracker_cls() if use_energy else None
-    tracker = None
-    if Tracker is not None:
-        try:
-            tracker = Tracker(project_name="perfarena-curated", log_level="error",
-                              save_to_file=False, save_to_api=False,
-                              save_to_logger=False)
-            tracker.start()
-        except Exception as e:  # noqa: BLE001
-            print(f"[clbg_handler] tracker.start failed: {e}", file=sys.stderr)
-            tracker = None
+    if energy is not None:
+        _ts = time.monotonic()
+        energy.begin()
+        _log(f"case idx={idx} energy.begin ({energy.label}) "
+             f"in {time.monotonic() - _ts:.2f}s")
 
+    _log(f"case idx={idx} launch: {' '.join(cmd)} timeout={timeout:.0f}s "
+         f"energy={energy is not None} rss={poll_rss}")
     t0 = time.monotonic()
     proc = subprocess.Popen(
         cmd, cwd=str(cell), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -341,6 +501,7 @@ def _run_harness_measured(
     cadence = 0.003 if poll_rss else 0.01
     while proc.poll() is None:
         if time.monotonic() - t0 > timeout:
+            _log(f"case idx={idx} TIMED OUT after {timeout:.0f}s — killing process group")
             _killpg(proc)
             try:
                 proc.wait(timeout=5)
@@ -358,21 +519,23 @@ def _run_harness_measured(
     wall_s = time.monotonic() - t0
     reader.join(timeout=5)
     stderr = "".join(stderr_chunks)
+    _log(f"case idx={idx} exit={proc.returncode if not timed_out else 'KILLED'} "
+         f"wall={wall_s:.2f}s")
 
     energy_j: float | None = None
     energy_source = "none"
-    if tracker is not None:
+    if energy is not None:
         try:
-            tracker.stop()
-            d = tracker.final_emissions_data
-            if (not timed_out and d is not None
-                    and getattr(d, "energy_consumed", None) is not None):
-                # codecarbon reports energy in kWh; 1 kWh = 3.6e6 J.
-                energy_j = float(d.energy_consumed) * 3_600_000.0
-                energy_source = _energy_tool_name()
+            _ts = time.monotonic()
+            e_win = energy.end()
+            _log(f"case idx={idx} energy.end ({energy.label}) "
+                 f"in {time.monotonic() - _ts:.2f}s -> {e_win}")
+            if not timed_out and e_win is not None:
+                energy_j = e_win
+                energy_source = energy.label
         except Exception as e:  # noqa: BLE001
-            energy_source = "codecarbon-error"
-            print(f"[clbg_handler] tracker.stop failed: {e}", file=sys.stderr)
+            energy_source = f"{energy.label}-error"
+            print(f"[perfarena_handler] energy.end failed: {e}", file=sys.stderr)
 
     if timed_out:
         return {"exit_code": 124, "wall_s": wall_s, "energy_j": None,
@@ -408,6 +571,9 @@ def _measure_curated_looped(
     """
     harness_lang = _HARNESS_LANG[arena_lang]
     cases = _curated_cases(slug)
+    _log(f"curated slug={slug} lang={arena_lang} cases={len(cases)} "
+         f"budget={budget:.1f}s per_case_timeout={per_case_timeout:.0f}s "
+         f"energy={measure_energy} memory={measure_memory}")
     per_case: list[dict[str, Any]] = []
     energy_source: str | None = None
     peak_rss_kb = 0
@@ -415,6 +581,10 @@ def _measure_curated_looped(
     # Peak RSS is reached during solving and doesn't need the full >=1s window,
     # so the memory pass uses a short budget to keep the extra run cheap.
     mem_budget = float(os.environ.get("PERFARENA_MEM_BUDGET_S", "0.5"))
+
+    # Build the energy backend ONCE for the whole submission (RAPL powercap or
+    # a reused codecarbon tracker), not per case — that was the 2-min overhead.
+    energy_backend = _make_energy_backend() if measure_energy else None
 
     for (idx, w, name) in cases:
         row: dict[str, Any] = {
@@ -427,7 +597,7 @@ def _measure_curated_looped(
 
         if measure_energy:
             r = _run_harness_measured(cell, harness_lang, budget, idx,
-                                      per_case_timeout, use_energy=True,
+                                      per_case_timeout, energy=energy_backend,
                                       poll_rss=False)
             iters = r.get("iters") or 0
             meas_s = r.get("meas_s")
@@ -435,8 +605,9 @@ def _measure_curated_looped(
             e_win = r.get("energy_j")
             if r.get("exit_code") != 0 or not iters:
                 any_nonzero_exit = True
-            if r.get("energy_source") and r["energy_source"] not in ("none", "codecarbon-error"):
-                energy_source = r["energy_source"]
+            src = r.get("energy_source")
+            if src and src != "none" and not src.endswith("-error"):
+                energy_source = src
             t_op_us: float | None = None
             e_op_j: float | None = None
             if iters and meas_s and meas_s > 0:
@@ -454,14 +625,20 @@ def _measure_curated_looped(
 
         if measure_memory:
             m = _run_harness_measured(cell, harness_lang, mem_budget, idx,
-                                      per_case_timeout, use_energy=False,
+                                      per_case_timeout, energy=None,
                                       poll_rss=True)
             peak_rss_kb = max(peak_rss_kb, m.get("peak_rss_kb") or 0)
             row["peak_rss_kb_case"] = m.get("peak_rss_kb")
             if m.get("exit_code") not in (0, None):
                 any_nonzero_exit = True
 
+        _log(f"case idx={idx} DONE iters={row.get('iters')} "
+             f"meas_s={row.get('meas_s')} e_win={row.get('energy_j_window')} "
+             f"exit={row.get('exit_code')}")
         per_case.append(row)
+
+    if energy_backend is not None:
+        energy_backend.close()
 
     valid_t = [c for c in per_case if c["time_us_per_op"] is not None]
     tw = sum(c["weight"] for c in valid_t) or 1.0
@@ -887,7 +1064,7 @@ def validate_once(
                 shutil.copy2(backup, source)
                 backup.unlink()
         except Exception as e:  # noqa: BLE001
-            print(f"[clbg_handler] WARN failed to restore {source}: {e}")
+            print(f"[perfarena_handler] WARN failed to restore {source}: {e}")
 
 
 # Vocabulary for the `metrics` selector on the /measure body. Callers
@@ -949,6 +1126,8 @@ def measure_once(
     folder, _ext = _LANG_MAP[language]
     source = _discover_source(cell)
     backup = source.with_suffix(source.suffix + ".perfarena_backup")
+    _log(f"measure_once START slug={title_slug} lang={language} "
+         f"do_measure={do_measure} do_mem={do_mem}")
 
     # Per-invocation timeout — measure is by far the slowest step
     # (PERFARENA_WARMUP + PERFARENA_MEASURE iterations at the
@@ -967,12 +1146,16 @@ def measure_once(
         source.write_text(code)
 
         # 1. compile
+        _tc = time.perf_counter()
         rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
+        _log(f"compile rc={rc.returncode} in {time.perf_counter() - _tc:.2f}s")
         if rc.returncode != 0:
             return _fail_dict("compile", "Compile Error", rc)
 
         # 2. validate (correctness — diff against reference output)
+        _tv = time.perf_counter()
         rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+        _log(f"validate rc={rc.returncode} in {time.perf_counter() - _tv:.2f}s")
         if rc.returncode != 0:
             return _fail_dict("validate", "Wrong Answer", rc)
 
@@ -995,6 +1178,7 @@ def measure_once(
                 cell, language, title_slug, budget, per_case_timeout,
                 measure_energy=do_measure, measure_memory=do_mem)
             looped_wall_s = time.perf_counter() - t0
+            _log(f"curated measure total {looped_wall_s:.2f}s")
 
         # A curated run that produced NO valid per-op on ANY case is a
         # Runtime Error (harness crashed / timed out for this solution).
@@ -1068,4 +1252,4 @@ def measure_once(
                 shutil.copy2(backup, source)
                 backup.unlink()
         except Exception as e:  # noqa: BLE001
-            print(f"[clbg_handler] WARN failed to restore {source}: {e}")
+            print(f"[perfarena_handler] WARN failed to restore {source}: {e}")

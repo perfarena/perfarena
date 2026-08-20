@@ -260,7 +260,7 @@ class SubmissionIn(BaseModel):
     # its POST /validate BEFORE the perf harness's /measure and skips
     # /measure on any non-Accepted verdict. Independent of the perf
     # harness. When null, the perf harness's own status_msg is the
-    # correctness signal (LC gives both; arena-local's clbg_handler
+    # correctness signal (LC gives both; arena-local's perfarena_handler
     # runs `make validate` inside `make measure`).
     correctness_oracle_slug: str | None = Field(
         default=None,
