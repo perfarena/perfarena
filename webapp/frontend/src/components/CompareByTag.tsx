@@ -104,10 +104,10 @@ export default function CompareByTag({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Performance by problem category</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          There is one radar chart for each metric. Each spoke is a LeetCode
-          tag. The polygon colour shows the model. The system normalises the
-          spoke length for each chart. A model that dominates the worst case
-          of one chart still reads as dominant next to its peers.
+          one radar chart per metric · each spoke is a LeetCode tag ·
+          polygon colour = model · spoke length is normalised per chart
+          so a model that dominates one chart's "worst case" still reads
+          as dominant relative to its peers
         </span>
       </div>
 
@@ -154,10 +154,10 @@ export default function CompareByTag({
 
       {tagAttempts.size > tags.length && (
         <div className="muted" style={{ marginTop: 10, fontSize: "0.75rem" }}>
-          This chart shows the top {tags.length} tags by attempt count.{" "}
-          The chart hides {tagAttempts.size - tags.length} less-common tag
-          {tagAttempts.size - tags.length === 1 ? "" : "s"} to keep the
-          spokes readable.
+          Showing the top {tags.length} tags by attempt count.{" "}
+          {tagAttempts.size - tags.length} less-common tag
+          {tagAttempts.size - tags.length === 1 ? "" : "s"} hidden to keep
+          the spokes readable.
         </div>
       )}
     </div>
@@ -228,8 +228,8 @@ function RadarChart({
         <div style={{ fontWeight: 600 }}>{spec.label}</div>
         <span className="muted" style={{ fontSize: "0.75rem" }}>
           ({spec.higherIsBetter
-            ? "a larger polygon is better"
-            : "a larger polygon is better. This chart inverts the radius from " + spec.unit})
+            ? "larger polygon = better"
+            : "larger polygon = better (radius is inverted from " + spec.unit + ")"})
         </span>
       </div>
       <svg width={W} height={H}

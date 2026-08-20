@@ -29,9 +29,8 @@ export default function Blog() {
       <div className="hero">
         <h1>Blog</h1>
         <p>
-          This page has updates from the team: methodology notes, detailed
-          model studies, dataset changes, and leaderboard comments. Click a
-          card to read the full post.
+          Updates from the team: methodology notes, model deep-dives, dataset
+          changes, and leaderboard commentary. Click a card for the full post.
         </p>
       </div>
 
@@ -40,7 +39,7 @@ export default function Blog() {
       {rows.length === 0 ? (
         <div className="empty">
           No posts yet.
-          {isAdmin && " Use the admin panel below to publish the first post."}
+          {isAdmin && " Use the admin panel below to publish the first one."}
         </div>
       ) : (
         <div className="blog-grid">
@@ -229,7 +228,7 @@ function PostForm({
         </label>
       </div>
       <label className="col">
-        <span className="muted">Summary (one-paragraph preview shown on the card)</span>
+        <span className="muted">Summary (one-paragraph teaser shown on the card)</span>
         <textarea rows={2} value={f.summary ?? ""}
                   onChange={e => setF({ ...f, summary: e.target.value })} />
       </label>
@@ -240,7 +239,7 @@ function PostForm({
                   placeholder="# Heading\n\nFull post body in markdown." />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Save in progress…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

@@ -55,14 +55,14 @@ function BaselineSourceChip({
       {fresh && <> · newest fetched {fresh}</>}
       {!allReal && (
         <div className="muted" style={{ marginTop: 4 }}>
-          A coefficient that includes a synthetic baseline is an estimate. A
-          new submission auto-seeds a baseline for its (language, problem) pair.
-          The auto-refresher upgrades a placeholder to real LeetCode data when
-          an accepted submission and credentials are available.
+          Coefficients that include synthetic baselines are estimates. New
+          submissions auto-seed a baseline for their (language, problem) pair;
+          the auto-refresher upgrades placeholders to real LeetCode data when
+          an accepted submission + credentials are available.
           {isAdmin && (
             <div className="row" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
               <button className="secondary" disabled={busy} onClick={refresh}>
-                {busy ? "Please wait." : "Refresh baselines now"}
+                {busy ? "Refreshing…" : "Refresh baselines now"}
               </button>
               {note && <span className="muted">{note}</span>}
             </div>
@@ -78,19 +78,19 @@ function LeaderboardBanner({ s }: { s: SubmissionPublic }) {
   if (s.leaderboard_eligible) {
     return (
       <div className="card" style={{ borderColor: "var(--easy)", background: "rgba(120,200,120,0.08)" }}>
-        <b>On the leaderboard.</b> This submission is complete. It passes more than 25% of the supported problems.
+        <b>On the leaderboard.</b> This submission is complete and passes more than 25% of supported problems.
       </div>
     );
   }
   const r = s.leaderboard_reason;
   let msg: string;
   if (r === "incomplete") {
-    msg = `This submission needs at least one attempt for every supported problem. The model solved ${s.total_solved}/${s.total_problems}. The total number of attempts is ${s.n_attempts}. Add the missing slugs with /api/submissions/${s.id}/attempts.`;
+    msg = `Not on the leaderboard yet: this submission needs at least one attempt for every supported problem. Solved ${s.total_solved}/${s.total_problems}; total attempts so far: ${s.n_attempts}. Append the missing slugs via /api/submissions/${s.id}/attempts.`;
   } else if (r === "pass-rate-too-low") {
     const pct = s.total_problems > 0 ? Math.round((s.total_solved / s.total_problems) * 100) : 0;
-    msg = `The pass-rate ${pct}% does not exceed the 25% threshold. Correct the failed problems. Submit them again to increase the pass-rate.`;
+    msg = `Not on the leaderboard: pass-rate ${pct}% does not exceed the 25% threshold. Fix or re-submit failing problems to raise it.`;
   } else if (r === "not-judged") {
-    msg = `The team still scores this submission. When dispatch finishes, the team evaluates it for the leaderboard.`;
+    msg = `Submission is still being scored: it will be evaluated for the leaderboard once dispatch finishes.`;
   } else {
     msg = `Not on the leaderboard.`;
   }
@@ -124,7 +124,7 @@ export default function SubmissionDetailPage() {
   }, [id]);
 
   async function onDelete() {
-    if (!confirm(`Delete submission #${id} and all its attempts and runs permanently? You can not undo this action.`)) return;
+    if (!confirm(`Permanently delete submission #${id} and all its attempts/runs? This can't be undone.`)) return;
     try {
       await api.deleteSubmission(id);
       nav("/me");
@@ -134,7 +134,7 @@ export default function SubmissionDetailPage() {
   }
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!d) return <div className="empty">Please wait.</div>;
+  if (!d) return <div className="empty">Loading…</div>;
   const { submission: s } = d;
   // Locally-measured (arena-local / per-op) iff a machine or energy tool is
   // attached. Only then is runtime measured per single solve (per-op); on
@@ -168,22 +168,22 @@ export default function SubmissionDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label={`k (samples)`} value={String(s.n_samples_per_problem)} />
-        <Stat label="pass@1" tip="The Chen unbiased estimator at k=1. The team calculates the mean across all the supported problems. An unattempted problem contributes 0. This is the accuracy for one sample across the full problem set." value={formatPassAt1(s.pass_at_1)} />
-        <Stat label="pass@k" tip="The mean acceptance rate across the submitted attempts: total accepted / total submitted. The calculation divides only by the attempts that the submitter sent. A partial submission does not get a penalty for an unattempted problem." value={formatPassAt1(s.pass_at_k)} />
-        <Stat label="pass@full" tip="The best of k for each problem. The team calculates the mean across all the supported problems. This is the fraction of the full set that the submitter solved one time or more across the k samples." value={formatPassAt1(s.pass_at_full)} />
+        <Stat label="pass@1" tip="Chen unbiased estimator at k=1, averaged over ALL supported problems (unattempted problems contribute 0). Single-shot accuracy across the full problem set." value={formatPassAt1(s.pass_at_1)} />
+        <Stat label="pass@k" tip="Mean acceptance rate across submitted attempts: total accepted / total submitted. Only divides by attempts that were actually shipped, so partial submissions aren't penalised for unattempted problems." value={formatPassAt1(s.pass_at_k)} />
+        <Stat label="pass@full" tip="Best-of-k per problem, averaged over all supported problems. Fraction of the full set the submitter solved AT LEAST ONCE across their k samples." value={formatPassAt1(s.pass_at_full)} />
         <Stat label="solved" value={`${s.total_solved} / ${s.total_problems}`} />
         <Stat label="attempts" value={String(s.n_attempts)} />
         <Stat label="total cost"
-              tip="The sum of the cost in dollars of every language model call in this submission (k samples × problems × rounds). The value is 0 for Ollama and local models. The value is blank when the client does not report it."
+              tip="Sum of the $ cost of every LLM call in this submission (k samples × problems × rounds). 0 for Ollama / local models; blank if not reported."
               value={s.total_cost_usd == null ? "–" : `$${s.total_cost_usd.toFixed(4)}`} />
         <Stat label="code tokens"
-              tip="The sum of the code response tokens across all the attempts. This total excludes the reasoning tokens. The submit client gives a best estimate."
+              tip="Sum of code-only response tokens across all attempts (excludes reasoning). Best-effort estimate from the submitting client."
               value={s.total_response_tokens == null ? "–" : s.total_response_tokens.toLocaleString()} />
         <Stat label="total gen time"
-              tip="The sum of the generation wall-clock time of every solution in this submission (k samples × problems × rounds). The value is blank when the client does not report it."
+              tip="Sum of the generation wall-clock of every solution in this submission (k samples × problems × rounds). Blank if not reported."
               value={formatDuration(s.total_generation_ms)} />
         <Stat label="avg gen time"
-              tip="The mean generation wall-clock time for each attempt: total_gen_time / n_attempts. This is the cost for each attempt to produce one solution from this model, prompt, and language. It is independent of the number of samples or problems that the submitter sent."
+              tip="Mean generation wall-clock per attempt: total_gen_time / n_attempts. The per-attempt cost of producing one solution from this model+prompt+language, in isolation from the number of samples or problems shipped."
               value={
                 s.total_generation_ms == null || s.n_attempts === 0
                   ? "–"
@@ -191,22 +191,22 @@ export default function SubmissionDetailPage() {
               } />
         {s.total_generation_energy_j != null && (
           <Stat label="total gen energy"
-                tip="The sum of the generation energy across all the attempts (Joules). The submit client reports this value only when it has a power probe. The value is absent when there is no data."
+                tip="Sum of generation energy across all attempts (Joules). Reported only when the submit client has a power probe; omitted when no data."
                 value={formatEnergy(s.total_generation_energy_j)} />
         )}
         <Stat label={locallyMeasured ? "avg runtime / op" : "avg runtime"}
               tip={locallyMeasured
-                ? "The time for one solve (per-op) under the looped curated methodology. The team measured this submission locally."
+                ? "Time per single solve (per-op) under the looped curated methodology. This submission was measured locally."
                 : undefined}
               value={formatRuntime(s.avg_runtime_ms)} />
         <Stat label={locallyMeasured ? "best runtime / op" : "best runtime"}
               tip={locallyMeasured
-                ? "The fastest per-op time (for one solve). The team measured this submission locally."
+                ? "Fastest per-op (per single solve) time. This submission was measured locally."
                 : undefined}
               value={formatRuntime(s.best_runtime_ms)} />
         {s.avg_memory_mb != null && (
           <Stat label="peak mem"
-                tip="The peak memory (maximum resident). It is the peak on both oracles. It is never per-op."
+                tip="Peak (max resident) memory. Peak on both oracles, never per-op."
                 value={formatMemory(s.avg_memory_mb)} />
         )}
         {s.best_memory_mb != null && (
@@ -214,27 +214,27 @@ export default function SubmissionDetailPage() {
         )}
         {s.avg_runtime_energy_j != null && (
           <Stat label="avg runtime energy"
-                tip="The mean execution energy (Joules) across the accepted attempts. A harness with execution instruments reports this value, for example arena-local. A lower value is better."
+                tip="Mean execution energy (Joules) across accepted attempts. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better."
                 value={formatEnergy(s.avg_runtime_energy_j)} />
         )}
         {s.best_runtime_energy_j != null && (
           <Stat label="best runtime energy"
-                tip="The least execution energy that any accepted attempt in this submission used. The source is the same as the avg runtime energy."
+                tip="Least execution energy any accepted attempt in this submission consumed. Same source as avg runtime energy."
                 value={formatEnergy(s.best_runtime_energy_j)} />
         )}
         {s.avg_energy_j_per_op != null && (
           <Stat label="energy / op"
-                tip="The per-op runtime energy: Joules for one solve under the looped curated methodology. You can compare this energy figure across languages. A lower value is better."
+                tip="Per-op runtime energy: Joules per single solve under the looped curated methodology. The cross-language-comparable energy figure. Lower is better."
                 value={formatEnergy(s.avg_energy_j_per_op)} />
         )}
         {s.avg_time_us_per_op != null && (
           <Stat label="time / op"
-                tip="The per-op runtime: the time for one solve under the looped curated methodology. It is the fair per-op time. The team normalizes it across languages."
+                tip="Per-op runtime: time per single solve under the looped curated methodology. The fair per-op time, normalized across languages."
                 value={formatMicros(s.avg_time_us_per_op)} />
         )}
         {s.avg_iterations != null && (
           <Stat label="iters / measurement"
-                tip="The mean number of solves for each measurement, the confidence count. More iterations give a more accurate per-op estimate."
+                tip="Mean number of solves behind each measurement, the confidence count. More iterations mean a tighter per-op estimate."
                 value={Math.round(s.avg_iterations).toLocaleString()} />
         )}
         <Stat label="avg runtime %ile" value={formatPercentile(s.avg_runtime_percentile)} />
@@ -266,25 +266,25 @@ export default function SubmissionDetailPage() {
             </>
           )}
           <div className="muted" style={{ marginTop: 4 }}>
-            You can compare the energy and time figures only within one
+            Energy / time figures are only comparable within one
             (energy&nbsp;tool, machine) pair.
           </div>
         </div>
       )}
 
       <p className="muted" style={{ marginTop: -4, fontSize: "0.85rem" }}>
-        The team dispatches every problem to LeetCode 5 times and stores all the runs.
-        "avg" is the mean of the runs of each problem. "best" is the fastest run
-        or the run with the least memory of each problem. A submission-level number
-        is the mean of these per-problem values across the accepted problems.
+        Every problem is dispatched to LeetCode 5× and all runs are stored.
+        "avg" is the mean of each problem's runs; "best" is each problem's fastest /
+        leanest run. Submission-level numbers are the mean of those per-problem values
+        across accepted problems.
       </p>
 
       <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
       <p className="muted" style={{ marginTop: 4 }}>
-        This is the ratio of the LeetCode cohort baseline to the model metric. <b>&gt; 1.0×</b> means
-        the model does better than the cohort. <b>&lt; 1.0×</b> means the model does worse. The cohort
-        is every person who submitted on LeetCode for that problem in the same language.
-        It includes humans <em>and</em> AI-assisted submissions, because LeetCode does not separate them.
+        Ratio of the LeetCode population baseline to the model metric. <b>&gt; 1.0×</b> means
+        the model outperforms the cohort; <b>&lt; 1.0×</b> means it's worse. The cohort
+        is everyone who's submitted on LeetCode for that problem in the same language,
+        both humans <em>and</em> AI-assisted submissions, since LeetCode doesn't separate them.
       </p>
       <BaselineSourceChip summary={d.baselines} isAdmin={me?.role === "admin"}
                           onRefreshed={loadDetail} />
@@ -310,14 +310,13 @@ export default function SubmissionDetailPage() {
             </span>
           ) : (
             <span className="muted" style={{ fontSize: "0.85rem" }}>
-              not from the registry
+              ad-hoc (not from registry)
             </span>
           )}
         </div>
         <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
-          The team stored the exact text snapshot at the time of the submission.
-          If someone edits the template in the registry later, this snapshot stays
-          the version that the model saw.
+          The exact text snapshot persisted at submission time. If the registry's
+          template was edited later, this stays the version the model saw.
         </p>
         <pre className="code">{d.prompt_template}</pre>
       </div>
@@ -354,17 +353,17 @@ export default function SubmissionDetailPage() {
         <div className="col" style={{ gap: 6 }}>
           <h2 style={{ marginBottom: 0 }}>Per-op measurements</h2>
           <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
-            The team normalizes energy and time to one solve under the looped curated
-            methodology. You can compare these numbers across languages. <b>iters</b> is
-            the solve count for each measurement (confidence).
+            Energy and time normalized to a single solve under the looped curated
+            methodology: the cross-language-comparable numbers. <b>iters</b> is
+            the solve count behind each measurement (confidence).
           </p>
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>Problem</th><th>Status</th>
-                <th title="the solves for the measurement (confidence)">iters</th>
-                <th title="Joules for one solve">energy / op</th>
-                <th title="the time for one solve (µs source)">time / op</th>
+                <th title="solves behind the measurement (confidence)">iters</th>
+                <th title="Joules per single solve">energy / op</th>
+                <th title="time per single solve (µs source)">time / op</th>
               </tr></thead>
               <tbody>
                 {d.runs.map((r, i) => (
@@ -391,18 +390,18 @@ export default function SubmissionDetailPage() {
       )}
 
       {attempts === null
-        ? <div className="empty">Please wait.</div>
+        ? <div className="empty">Loading attempts…</div>
         : <AttemptsTable rows={attempts} perOp={locallyMeasured} />}
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
         Each row is one attempt. Click <b>N runs</b> to see the per-run
-        runtime and memory chart across the dispatch repeats and the full run
-        table · <b>Error log</b> shows the LeetCode traceback and the failed
-        testcase when a run fails · <b>Provenance</b> shows the exact prompt,
-        the full response of the model, and its reasoning trace · <b>Log entry</b>
-        is the append-only transparency-log row of that attempt (sequence, hashes,
-        signature). Each entry has a hash chain to the previous entry, so anyone
-        can detect a change.
+        runtime/memory chart across the dispatch repeats and the full run
+        table · <b>Error log</b> surfaces LeetCode's traceback / failing
+        testcase when a run failed · <b>Provenance</b> shows the exact prompt,
+        the model's full response, and its reasoning trace · <b>Log entry</b>
+        is that attempt's append-only transparency-log row (sequence, hashes,
+        signature). The entries are hash-chained to the previous one, so any
+        tampering is detectable.
       </p>
     </div>
   );

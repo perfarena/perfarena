@@ -25,7 +25,7 @@ export default function Login() {
     <div className="col" style={{ maxWidth: 480 }}>
       <div className="hero">
         <h1>Sign in</h1>
-        <p>Sign in with your email and password.</p>
+        <p>Log in with your email and password.</p>
       </div>
       <form className="card col" onSubmit={submit}>
         <label className="col" style={{ gap: 4 }}>
@@ -38,14 +38,14 @@ export default function Login() {
           <input required type="password" autoComplete="current-password"
                  value={password} onChange={e => setPassword(e.target.value)} />
         </label>
-        <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Sign in"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}
       </form>
 
       <div className="card col">
-        <h2 style={{ margin: 0 }}>Do you need an account?</h2>
+        <h2 style={{ margin: 0 }}>No account?</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          <Link to="/register">Request access</Link>. When the team approves your account, sign in with the email and password that you set.
+          <Link to="/register">Request access</Link>. Once approved, you can sign in with the email and password you set.
         </p>
       </div>
     </div>

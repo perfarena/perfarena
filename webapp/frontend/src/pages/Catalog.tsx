@@ -48,16 +48,14 @@ export default function Catalog() {
       <div className="hero">
         <h1>Models</h1>
         <p>
-          This page lists every model that the platform has seen submit
-          answers. The team runs each registered model. If a builder wants a
-          rank for a model, the builder gives the team an endpoint and its
-          specifications. Then the team adds the model. Admin-curated rows have
-          the full record and description. The system auto-stubs a row on the
-          first submission. That row starts as <code>unverified</code> until an
-          admin fills in the details. Open a row to see the full metadata of
-          the model. Or click the name to see its submissions, languages, and
-          rankings. See
-          {" "}<Link to="/prompts">Prompts</Link> for the prompts that the team runs and
+          Every model the platform has seen submit answers. The team runs each
+          registered model itself; builders who want their model ranked give us
+          an endpoint and its specs, and we onboard it. Admin-curated rows
+          carry the full provenance and description; rows auto-stubbed on first
+          submission start as <code>unverified</code> until an admin fills in
+          the details. Open a row for the model's full metadata, or click the
+          name to see its submissions, languages, and rankings. See
+          {" "}<Link to="/prompts">Prompts</Link> for the prompts we run and
           {" "}<Link to="/rankings">Rankings</Link> for outcomes.
         </p>
       </div>
@@ -77,9 +75,9 @@ export default function Catalog() {
 
       {isAdmin && unverified > 0 && (
         <div className="card" style={{ borderColor: "var(--medium)", background: "rgba(220,180,80,0.08)", padding: 10, fontSize: "0.9rem" }}>
-          <b>An admin must curate {unverified} model{unverified === 1 ? "" : "s"}.</b>{" "}
-          The system auto-stubbed each one from a submission. Click <em>Edit</em> on any model to fill in
-          the description, type, family, and record.
+          <b>{unverified} model{unverified === 1 ? "" : "s"} awaiting curation.</b>{" "}
+          Auto-stubbed from submissions. Click <em>Edit</em> on any to fill in
+          the description, type, family, and provenance.
         </div>
       )}
 
@@ -173,7 +171,7 @@ function ModelCard({
       {open && (
         <div className="col" style={{ gap: 10, marginTop: 4 }}>
           <DetailField label="Description"  value={m.description} markdown />
-          <DetailField label="Record"       value={m.provenance}   markdown />
+          <DetailField label="Provenance"   value={m.provenance}   markdown />
           <DetailField label="Notes"        value={m.notes}        markdown />
           <DetailField label="Default params (decoding)"
                        value={m.params ? JSON.stringify(m.params, null, 2) : null}
@@ -208,7 +206,7 @@ function DetailField({ label, value, code = false, markdown = false }: {
         ? code
           ? <pre className="code" style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}>{value}</pre>
           : <div style={{ whiteSpace: "pre-wrap", fontSize: markdown ? "0.92rem" : undefined }}>{value}</div>
-        : <div className="muted" style={{ fontStyle: "italic", fontSize: "0.85rem" }}>empty</div>}
+        : <div className="muted" style={{ fontStyle: "italic", fontSize: "0.85rem" }}>not set</div>}
     </div>
   );
 }
@@ -278,9 +276,8 @@ function ModelForm({
       </h3>
       {existing?.status === "unverified" && (
         <div className="muted" style={{ fontSize: "0.85rem" }}>
-          The system auto-stubbed this from a submission. Fill in the
-          description, type, family, and record. When you save, the status
-          becomes <code>active</code>.
+          Auto-stubbed from a submission. Fill in the description, type, family,
+          and provenance. Saving promotes it to <code>active</code>.
         </div>
       )}
 
@@ -325,13 +322,13 @@ function ModelForm({
       </div>
 
       <label className="col">
-        <span className="muted">Description (markdown, shown on the card header)</span>
+        <span className="muted">Description (markdown, surfaced on the card header)</span>
         <textarea rows={2} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
                   placeholder="One-paragraph summary of the model." />
       </label>
       <label className="col">
-        <span className="muted">Record (markdown: model card URL, citation, source)</span>
+        <span className="muted">Provenance (markdown: model card URL, citation, source)</span>
         <textarea rows={3} value={f.provenance ?? ""}
                   onChange={e => setF({ ...f, provenance: e.target.value })}
                   placeholder="https://huggingface.co/…  ·  Paper: …" />
@@ -342,7 +339,7 @@ function ModelForm({
                   placeholder='{"temperature": 0.2}' className="code" />
       </label>
       <label className="col">
-        <span className="muted">Notes (markdown, for operators)</span>
+        <span className="muted">Notes (markdown, operator-facing)</span>
         <textarea rows={2} value={f.notes ?? ""} onChange={e => setF({ ...f, notes: e.target.value })} />
       </label>
       {/* Per-model pricing. When BOTH are set, the SPA recomputes
@@ -358,7 +355,7 @@ function ModelForm({
                  onChange={e => setF({ ...f,
                    input_price_per_1m_usd: e.target.value === "" ? null : Number(e.target.value),
                  })}
-                 placeholder="for example 0.25" />
+                 placeholder="e.g. 0.25" />
         </label>
         <label className="col" style={{ flex: "1 1 180px" }}>
           <span className="muted">Output price ($ per 1M tokens)</span>
@@ -367,11 +364,11 @@ function ModelForm({
                  onChange={e => setF({ ...f,
                    output_price_per_1m_usd: e.target.value === "" ? null : Number(e.target.value),
                  })}
-                 placeholder="for example 2.00" />
+                 placeholder="e.g. 2.00" />
         </label>
       </div>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Save in progress…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

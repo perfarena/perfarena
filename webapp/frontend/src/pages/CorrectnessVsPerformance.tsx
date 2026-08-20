@@ -105,7 +105,7 @@ export default function CorrectnessVsPerformance() {
   }, [byLanguage]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!data) return <div className="empty">Please wait.</div>;
+  if (!data) return <div className="empty">Loading…</div>;
 
   const visibleModels = modelQuery.trim()
     ? allModels.filter(m => m.name.toLowerCase().includes(modelQuery.trim().toLowerCase())
@@ -126,11 +126,11 @@ export default function CorrectnessVsPerformance() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>Correctness vs Performance</h1>
         <p style={{ maxWidth: 760 }}>
-          This page shows correctness (pass@1 and pass@k) and performance
-          (LeetCode runtime and memory percentile) side by side. It covers
-          every supported language. The literature often finds that the two
-          are mostly separate. A model can be more correct but not faster.
-          Check this yourself on the real LeetCode data of PerfArena.
+          Correctness (pass@1 / pass@k) and performance (LeetCode runtime &amp;
+          memory percentile) side by side, across every supported language.
+          The recurring finding in the literature is that the two are largely
+          decoupled: a model can be more correct without being faster. Check
+          that yourself on PerfArena's real LeetCode data.
         </p>
       </div>
 
@@ -138,9 +138,9 @@ export default function CorrectnessVsPerformance() {
       <section className="col" style={{ gap: 8 }}>
         <h2 style={{ margin: 0 }}>Model filter</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Limit the per-language table, the correlation, and the scatter to
-          specific models. If empty, the page uses all models ({allModels.length} in scope,
-          {" "}{data.n_points.toLocaleString()} submissions with a result in total).
+          Scope the per-language table, the correlation, and the scatter to
+          specific models. Empty = all models ({allModels.length} in scope,
+          {" "}{data.n_points.toLocaleString()} judged submissions total).
           {selectedModels.size > 0 && (
             <> Active: <b>{selectedModels.size}</b> model{selectedModels.size === 1 ? "" : "s"}
             {", "}{filteredPoints.length.toLocaleString()} submissions in scope. </>
@@ -165,7 +165,7 @@ export default function CorrectnessVsPerformance() {
         </div>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           {visibleModels.length === 0
-            ? <span className="muted">No models match "{modelQuery}"</span>
+            ? <span className="muted">no models match "{modelQuery}"</span>
             : visibleModels.map(m => {
                 const picked = selectedModels.has(m.name);
                 return (
@@ -193,29 +193,27 @@ export default function CorrectnessVsPerformance() {
           )}
         </h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          These are the means over submissions that have a result in each
-          language. When a filter is active, the page uses only the selected
-          models. <b>corr(pass@1, rt%ile)</b>
-          {" "}is the Pearson correlation between correctness and runtime
-          percentile within one language. A value near 0 means they do not
-          move together.
+          Means over judged submissions in each language (filtered to the
+          selected models when a filter is active). <b>corr(pass@1, rt%ile)</b>
+          {" "}is the within-language Pearson correlation between correctness
+          and runtime percentile. Near 0 means they don't move together.
         </p>
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
               <th>Language</th>
-              <th title="The number of submissions with a result in this language, after the filter.">Subs</th>
-              <th title="The number of distinct models, after the filter.">Models</th>
-              <th title="The mean pass@1 across submissions.">Mean pass@1</th>
-              <th title="The best pass@1 that any submission reached.">Best pass@1</th>
-              <th title="The mean pass@k.">Mean pass@k</th>
-              <th title="The mean LeetCode runtime percentile.">Mean rt %ile</th>
-              <th title="The mean LeetCode memory percentile.">Mean mem %ile</th>
-              <th title="The Pearson r between pass@1 and runtime percentile within one language.">corr(pass@1, rt%ile)</th>
+              <th title="judged submissions in this language (after filter)">Subs</th>
+              <th title="distinct models (after filter)">Models</th>
+              <th title="mean pass@1 across submissions">Mean pass@1</th>
+              <th title="best pass@1 any submission reached">Best pass@1</th>
+              <th title="mean pass@k">Mean pass@k</th>
+              <th title="mean LeetCode runtime percentile">Mean rt %ile</th>
+              <th title="mean LeetCode memory percentile">Mean mem %ile</th>
+              <th title="within-language Pearson r between pass@1 and runtime percentile">corr(pass@1, rt%ile)</th>
             </tr></thead>
             <tbody>
               {byLanguage.length === 0 ? (
-                <tr><td colSpan={9} className="empty">No submissions with a result match the filter.</td></tr>
+                <tr><td colSpan={9} className="empty">No judged submissions match the filter.</td></tr>
               ) : byLanguage.map(r => (
                 <tr key={r.language}>
                   <td>
@@ -260,10 +258,10 @@ export default function CorrectnessVsPerformance() {
           </div>
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
-          Each dot is one submission with a result. The color shows the language ({filteredPoints.length.toLocaleString()} points).
+          Each dot is one judged submission, coloured by language ({filteredPoints.length.toLocaleString()} points).
           {corr != null && (
             <> Pearson r = <b>{corr.toFixed(3)}</b>{" "}
-              ({Math.abs(corr) < 0.2 ? "almost separate"
+              ({Math.abs(corr) < 0.2 ? "essentially decoupled"
                 : Math.abs(corr) < 0.5 ? "weak"
                 : Math.abs(corr) < 0.7 ? "moderate" : "strong"}
               {corr < 0 ? ", negative" : ""}).</>
@@ -278,8 +276,8 @@ export default function CorrectnessVsPerformance() {
       {/* <DiscriminationSection disc={disc} /> */}
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
-        See <Link to="/rankings">Rankings</Link> for the full leaderboard.{" "}
-        See <Link to="/compare">Compare</Link> for direct model differences.
+        See <Link to="/rankings">Rankings</Link> for the full leaderboard and{" "}
+        <Link to="/compare">Compare</Link> for head-to-head model diffs.
         {disc && null}
       </p>
     </div>

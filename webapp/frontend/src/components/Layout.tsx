@@ -66,7 +66,7 @@ export default function Layout() {
       <main><Outlet /></main>
       <footer className="col" style={{ gap: 4 }}>
         <div>
-          Open rankings of code models · anyone can check every result ·
+          Open, replicable coding-model rankings · every result verified and auditable ·
           {" "}<a href="/docs" target="_blank" rel="noreferrer">API docs</a> ·
           {" "}<a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a> ·
           {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
@@ -74,8 +74,8 @@ export default function Layout() {
         </div>
         {/* Consolidated from the former per-page footers on Home / About. */}
         <div>
-          This project has the Apache License 2.0. The problem statements are the
-          property of LeetCode. This site has no connection to LeetCode.
+          Licensed under the Apache License 2.0. Problem statements © LeetCode;
+          this site is not affiliated with LeetCode.
         </div>
       </footer>
     </div>

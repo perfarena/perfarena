@@ -31,7 +31,7 @@ export default function AttemptResults() {
   }, [rows]);
 
   if (err && !rows) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!rows) return <div className="empty">Please wait…</div>;
+  if (!rows) return <div className="empty">Loading…</div>;
 
   const visible = rows.filter(a =>
     (filter === "all" || bucket(a) === filter) &&
@@ -47,7 +47,7 @@ export default function AttemptResults() {
           {s && <span className="muted"> · {s.model_name} {s.model_version}</span>}
         </h1>
         <p className="muted" style={{ marginTop: 0 }}>
-          The platform dispatched every attempt below to LeetCode and scored it as accepted, rejected, or queued.
+          Every attempt below was dispatched to LeetCode and scored: accepted, rejected, or still queued.
         </p>
         <p className="muted">
           Submission #{id}{s ? ` · ${s.language}` : ""} ·{" "}
@@ -83,7 +83,7 @@ export default function AttemptResults() {
       </div>
 
       {visible.length === 0
-        ? <div className="empty">No attempt matches the filters.</div>
+        ? <div className="empty">No attempts match.</div>
         : <AttemptsTable rows={visible}
                          perOp={s?.energy_tool != null || s?.machine_name != null} />}
     </div>

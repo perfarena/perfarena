@@ -79,8 +79,8 @@ export default function Submissions() {
       <div className="hero">
         <h1>Submissions</h1>
         <p>
-          This page lists every batch that approved competitors submitted.
-          {loggedIn ? " Start or continue your own batch below." : " Log in to submit your own batch."}
+          Every batch submitted by approved competitors.
+          {loggedIn ? " Start or continue your own below." : " Log in to submit your own."}
         </p>
       </div>
 
@@ -89,22 +89,22 @@ export default function Submissions() {
       <section className="col" style={{ gap: 10 }}>
         <div className="filter-bar">
           <select value={harnessSlug} onChange={e => setHarnessSlug(e.target.value)}
-                  title="Show only the submissions that one performance oracle (harness) scored. Use the deep link ?harness=slug.">
-            <option value="">All performance oracles</option>
+                  title="Scope to submissions scored by one PERFORMANCE oracle (harness). Deep-linkable via ?harness=slug.">
+            <option value="">All perf oracles</option>
             {harnesses.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
             ))}
           </select>
           <select value={correctnessOracleSlug}
                   onChange={e => setCorrectnessOracleSlug(e.target.value)}
-                  title="Show only the submissions that one correctness oracle (the verdict source) checked. Use the deep link ?correctness_oracle=slug.">
+                  title="Scope to submissions judged by one CORRECTNESS oracle (verdict source). Deep-linkable via ?correctness_oracle=slug.">
             <option value="">All correctness oracles</option>
             {correctnessOracles.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
             ))}
           </select>
           <select value={competitionSlug} onChange={e => setCompetitionSlug(e.target.value)}
-                  title="Show only the submissions for one competition. Use the deep link ?competition=slug.">
+                  title="Scope to submissions targeting one competition. Deep-linkable via ?competition=slug.">
             <option value="">All competitions</option>
             {competitions.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
@@ -138,12 +138,12 @@ export default function Submissions() {
         <SubmitPanel />
       ) : (
         <div className="card col" style={{ gap: 8 }}>
-          <h2 style={{ margin: 0 }}>Do you want to submit your own model?</h2>
+          <h2 style={{ margin: 0 }}>Want to submit your own model?</h2>
           <p className="muted" style={{ margin: 0 }}>
             Submissions are open to approved competitors.{" "}
             <Link to="/register">Request access</Link> or{" "}
             <Link to="/login">log in</Link> to start a batch. The submit form
-            and the API documentation appear here after you sign in.
+            and API docs appear here once you're signed in.
           </p>
         </div>
       )}
@@ -160,11 +160,11 @@ function Pagination({
   return (
     <div className="row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
       <span className="muted" style={{ fontSize: "0.85rem" }}>
-        Rows {total === 0 ? 0 : start + 1} to {start + shown} of {total}
+        Showing {total === 0 ? 0 : start + 1} to {start + shown} of {total}
       </span>
       <div className="row" style={{ gap: 6 }}>
         <button className="secondary" disabled={page <= 0} onClick={() => onPage(0)}>« First</button>
-        <button className="secondary" disabled={page <= 0} onClick={() => onPage(page - 1)}>‹ Previous</button>
+        <button className="secondary" disabled={page <= 0} onClick={() => onPage(page - 1)}>‹ Prev</button>
         <span className="muted" style={{ padding: "0 8px", alignSelf: "center" }}>
           Page {page + 1} / {totalPages}
         </span>

@@ -14,13 +14,13 @@ export default function Snapshots() {
     <div className="col">
       <div className="hero">
         <h1>Snapshots</h1>
-        <p>A snapshot is a copy of the rankings and the dataset at a fixed time. The team makes one snapshot each week. Use a snapshot to do a result again. Each snapshot shows the top models, the top submitters, and the health of the competition.</p>
+        <p>Point-in-time exports of the rankings, frozen each week so results stay reproducible: top models, top submitters, and overall competition health.</p>
       </div>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>}
 
       {rows.length === 0 ? (
-        <div className="empty">There are no snapshots yet. The team makes one snapshot each week.</div>
+        <div className="empty">No snapshots yet. The team captures one each week.</div>
       ) : (
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">

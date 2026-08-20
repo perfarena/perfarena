@@ -17,7 +17,7 @@ export default function HarnessDetailPage() {
   }, [slug]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!d) return <div className="empty">Please wait…</div>;
+  if (!d) return <div className="empty">Loading…</div>;
 
   return (
     <div className="col">
@@ -32,10 +32,10 @@ export default function HarnessDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label="competitions" value={String(d.n_competitions)}
-              tip={d.competitions.map(c => c.slug).join(", ") || "no competition uses this harness yet"} />
+              tip={d.competitions.map(c => c.slug).join(", ") || "no competitions bound to this harness yet"} />
         <Stat label="submissions" value={String(d.n_submissions)} />
         <Stat label="runs"        value={String(d.n_runs)}
-              tip="The total number of Run rows for this harness. The count includes every attempt that the system dispatched. It also counts each repeated k-sample." />
+              tip="Total Run rows tagged with this harness. Counts every dispatched attempt, including repeated k-samples." />
         <Stat label="languages"   value={String(d.languages.length)}
               tip={d.languages.join(", ") || "no submissions on this harness yet"} />
       </div>
@@ -48,8 +48,8 @@ export default function HarnessDetailPage() {
         {d.description
           ? <div style={{ whiteSpace: "pre-wrap", maxWidth: 760 }}>{d.description}</div>
           : <div className="muted" style={{ fontStyle: "italic" }}>
-              No description yet. An admin can open the edit form and
-              record what this harness measures and how it scores a run.
+              No description yet. An admin can use the edit form to document
+              what this harness measures and how it scores a run.
             </div>}
         {d.config && Object.keys(d.config).length > 0 && (
           <div className="col" style={{ gap: 6 }}>
@@ -67,7 +67,7 @@ export default function HarnessDetailPage() {
 
       <h2 style={{ marginBottom: 4 }}>Competitions on this harness</h2>
       {d.competitions.length === 0 ? (
-        <div className="empty">No competition uses this harness by default yet.</div>
+        <div className="empty">No competitions default to this harness yet.</div>
       ) : (
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           {d.competitions.map(c => (
@@ -81,19 +81,19 @@ export default function HarnessDetailPage() {
 
       <h2 style={{ marginBottom: 4 }}>Top models</h2>
       {d.top_models.length === 0 ? (
-        <div className="empty">No submission has a score on this harness yet.</div>
+        <div className="empty">No scored submissions on this harness yet.</div>
       ) : (
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Version</th>
-              <th title="The best pass@1 that this model reached on any submission that this harness scored.">pass@1</th>
-              <th title="The best pass@k across this model's submissions on this harness.">pass@k</th>
-              <th title="The average runtime across accepted attempts that this harness scored.">Avg runtime</th>
-              <th title="The average peak (max resident) memory across accepted attempts that this harness scored. Both oracles report the peak value, never a per-op value.">Peak mem</th>
-              <th title="The average runtime percentile across accepted attempts.">Runtime %ile</th>
-              <th title="The average memory percentile across accepted attempts.">Memory %ile</th>
-              <th title="The total number of submissions that this model has on this harness.">subs</th>
+              <th title="Best pass@1 this model achieved on any submission scored by this harness.">pass@1</th>
+              <th title="Best pass@k across this model's submissions on this harness.">pass@k</th>
+              <th title="Average runtime across accepted attempts scored by this harness.">Avg runtime</th>
+              <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Peak on both oracles, never per-op.">Peak mem</th>
+              <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
+              <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
+              <th title="Total submissions this model has on this harness.">subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (
@@ -128,7 +128,7 @@ export default function HarnessDetailPage() {
           the harness's headline stats into the ranked list. */}
       <div className="row" style={{ gap: 6, marginTop: 4 }}>
         <Link to={`/rankings?harness=${encodeURIComponent(d.slug)}`}>
-          <button className="secondary">See the full leaderboard on this harness →</button>
+          <button className="secondary">See full leaderboard on this harness →</button>
         </Link>
       </div>
     </div>

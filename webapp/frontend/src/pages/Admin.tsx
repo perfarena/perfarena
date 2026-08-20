@@ -31,7 +31,7 @@ export default function Admin() {
     finally { setBusyId(null); }
   }
   async function reject(u: PendingUser) {
-    if (!confirm(`Reject ${u.email}? This is permanent.`)) return;
+    if (!confirm(`Reject ${u.email}? This cannot be undone.`)) return;
     setBusyId(u.id); setErr("");
     try {
       await api.adminReject(u.id);
@@ -41,7 +41,7 @@ export default function Admin() {
   }
 
   if (me && me.role !== "admin") {
-    return <div className="card" style={{ borderColor: "var(--bad)" }}>This page is for administrators only.</div>;
+    return <div className="card" style={{ borderColor: "var(--bad)" }}>Admins only.</div>;
   }
 
   return (
@@ -49,12 +49,12 @@ export default function Admin() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>Admin</h1>
         <p>
-          Review each pending registration and grant access. An approved
-          user gets an API key. The user can sign in with an email address
-          and a password, if the user set a password at registration. The{" "}
-          <Link to="/admin/export">Export and Import</Link> page downloads a
-          JSON bundle of the content of the platform. Use it to merge the
-          content into another instance.
+          Review pending registrations and grant access — approved users
+          get an API key and can sign in with email + password (if they set
+          one during registration). For replica work, the{" "}
+          <Link to="/admin/export">Export &amp; Import</Link> page lets you
+          download a JSON bundle of the platform's content and merge it back
+          into another instance.
         </p>
       </div>
       <h2 style={{ marginBottom: 4 }}>Pending registrations</h2>
@@ -65,9 +65,9 @@ export default function Admin() {
         <div className="card" style={{ borderColor: "var(--easy)", background: "rgba(120,200,120,0.08)" }}>
           <b>Approved {issued.user.display_name}</b> ({issued.user.email}).
           <div className="muted" style={{ marginTop: 4 }}>
-            The user can sign in with the password that the user chose at
-            registration. If the user did not set a password, give this API
-            key to the user. The system shows this API key one time only:
+            They can log in with the password they chose at registration. If
+            they didn't set one (legacy flow), share this API key with them —
+            it won't be shown again:
           </div>
           <pre className="code" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{issued.api_key}</pre>
           <div className="row">
@@ -78,7 +78,7 @@ export default function Admin() {
       )}
 
       {pending.length === 0
-        ? <div className="empty">There are no pending registrations.</div>
+        ? <div className="empty">No pending registrations.</div>
         : (
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">

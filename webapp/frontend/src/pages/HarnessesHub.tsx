@@ -37,17 +37,16 @@ export default function HarnessesHub() {
         <h1 style={{ marginBottom: 4 }}>Harnesses</h1>
         <p style={{ margin: 0 }}>
           A competition scores each solution with two oracles. A{" "}
-          <b>performance oracle</b> measures how a solution runs. It
-          reports runtime, memory, percentiles, and energy. A{" "}
-          <b>correctness oracle</b> finds if the solution solved the
-          problem
+          <b>performance oracle</b> measures how a solution runs (runtime,
+          memory, percentiles, energy). A <b>correctness oracle</b> decides
+          whether it solved the problem at all
           (Accepted / Wrong Answer / Runtime Error / TLE / Compile Error).
-          LeetCode does both tasks today. Thus the seeded{" "}
-          <code>leetcode</code> row on each tab covers every earlier
-          submission. Put each new harness on its correct tab. Use an
-          in-house RAPL runner for performance. Use a HumanEval
-          unit-test suite for correctness. Competition rows and
-          submission rows bind the two oracles independently.
+          LeetCode's online judge does both today, so the seeded{" "}
+          <code>leetcode</code> row on each tab covers every legacy
+          submission. New harnesses go on the tab they belong to (an in-house
+          RAPL-instrumented runner for performance, a HumanEval unit-test
+          suite for correctness), and competition and submission rows bind
+          them independently.
         </p>
       </div>
 

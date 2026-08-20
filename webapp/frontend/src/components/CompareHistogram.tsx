@@ -45,17 +45,17 @@ interface MetricSpec {
 const METRICS: MetricSpec[] = [
   {
     key: "runtime", label: "Runtime", unit: "ms",
-    unitTip: "The mean runtime of the best accepted attempt, in ms. A lower value is better. The bar width shows the rank of each model on this metric within the problem. The fastest model, with the lowest ms, fills the track. The other models scale down by the minimum ms divided by their own ms, times the track width. A bigger bar is better.",
+    unitTip: "Mean runtime of the best accepted attempt (ms). Lower ms is better. Bar width shows each model's RANK on this metric within the problem: the FASTEST model (lowest ms) fills the track; others scale down as (min / their_ms) × track_width. BIGGER bar is better.",
     raw: c => c.runtime_ms,
   },
   {
     key: "memory", label: "Peak mem", unit: "MB",
-    unitTip: "The mean peak memory (maximum resident) of the best accepted attempt, in MB. This is peak memory on both oracles. It is never per-op. A lower value is better. The scaling matches the runtime metric. The leanest model, with the lowest MB, fills the track. The other models scale by the ratio. A bigger bar is better.",
+    unitTip: "Mean peak (max resident) memory of the best accepted attempt (MB), peak on both oracles, never per-op. Lower MB is better. Same scaling as runtime: the LEANEST model (lowest MB) fills the track; others scale by ratio. BIGGER bar is better.",
     raw: c => c.memory_mb,
   },
   {
     key: "energy", label: "Energy", unit: "J",
-    unitTip: "The best-attempt energy in Joules. It prefers runtime energy (the execution side). Arena-local and similar harnesses report the runtime energy. This is the axis that changes most across models that solve the same problem. It falls back to generation energy (the LLM side) when the runtime figure is empty. A lower value is better. The scaling is the same. The most efficient model fills the track.",
+    unitTip: "Best-attempt energy in Joules. Prefers RUNTIME energy (execution-side, reported by arena-local and similar harnesses): the axis that actually varies across models solving the same problem. Falls back to GENERATION energy (LLM-side) when the runtime figure isn't populated. Lower J is better. Same scaling: the most efficient model fills the track.",
     raw: c => c.runtime_energy_j ?? c.generation_energy_j,
   },
 ];

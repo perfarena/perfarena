@@ -42,7 +42,7 @@ export function SubmitPanel() {
     try {
       const body = JSON.parse(raw);
       const out = await api.submitBatch(body);
-      setResult(`Submission #${out.submission_id} started. The platform dispatches ${out.attempts_received} attempts now.`);
+      setResult(`Started submission #${out.submission_id} (${out.attempts_received} attempts dispatching).`);
       await refresh();
     } catch (e: unknown) {
       setErr(String(e));
@@ -61,18 +61,18 @@ export function SubmitPanel() {
   return (
     <div className="col" style={{ gap: 24 }}>
       <section className="col">
-        <h2>Submit the solutions of your model</h2>
+        <h2>Submit your model's solutions</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          A submission is <b>fully accepted</b> when every supported problem has a solution
-          that LeetCode accepts in at least one language. Start with a partial batch. Add the
-          other solutions later. This page shows your progress for each language below.
+          A submission qualifies as <b>fully accepted</b> once every supported problem has a
+          working solution accepted by LeetCode in at least one language. Start with a partial
+          batch and fill in the rest over time. Your progress is tracked per language below.
         </p>
       </section>
 
       <section className="col">
         <h2>Your submissions in progress</h2>
         {progress.length === 0 ? (
-          <div className="empty">You have no submissions yet. Start one below.</div>
+          <div className="empty">No submissions yet. Start one below.</div>
         ) : (
           <div className="col" style={{ gap: 14 }}>
             {Array.from(byLanguage.entries()).map(([lang, entries]) => (
@@ -86,15 +86,15 @@ export function SubmitPanel() {
         <h2>Start a new submission</h2>
         <div className="card">
           <p className="muted" style={{ marginTop: 0 }}>
-            Send one JSON payload. It contains a model header and a first list of attempts.
-            The list can be partial. Each attempt must contain <code>title_slug</code>, <code>code</code>, and <code>inference_trace</code> (20 characters or more).
-            Add more attempts later from the submission page.
+            One JSON payload: a model header plus an initial list of attempts, which can be partial.
+            Required per attempt: <code>title_slug</code>, <code>code</code>, <code>inference_trace</code> (≥ 20 chars).
+            Add more attempts later from the per-submission view.
           </p>
         </div>
         <div className="card col">
           <textarea rows={16} value={raw} onChange={e => setRaw(e.target.value)} className="code" />
           <div className="row">
-            <button onClick={startBatch} disabled={busy}>{busy ? "Please wait…" : "Create submission"}</button>
+            <button onClick={startBatch} disabled={busy}>{busy ? "Submitting…" : "Create submission"}</button>
             <button className="secondary" onClick={() => setRaw(NEW_SAMPLE)} disabled={busy}>Reset to sample</button>
           </div>
           {result && <div className="muted" style={{ color: "var(--accent-2)" }}>{result}</div>}
@@ -121,11 +121,11 @@ function ApiDocs() {
       {open && (
         <div className="card col" style={{ gap: 14 }}>
           <p className="muted" style={{ margin: 0 }}>
-            The UI does each task with a plain HTTP call. Authenticate with{" "}
-            <code>Authorization: Bearer &lt;your-api-key&gt;</code>. The file{" "}
-            <code>webapp/examples/submit_with_local_model.py</code> gives a complete
-            client that you can run. It drives a local model that is compatible with
-            OpenAI, submits the solutions, then prints the results.
+            Everything the UI does is a plain HTTP call. Authenticate with{" "}
+            <code>Authorization: Bearer &lt;your-api-key&gt;</code>. There is also a
+            ready-to-run end-to-end client in{" "}
+            <code>webapp/examples/submit_with_local_model.py</code> (drives a local
+            OpenAI-compatible model → submits → prints results).
           </p>
 
           <Doc title="1 · List supported problems (public)">
@@ -245,9 +245,9 @@ curl -H "Authorization: Bearer $ARENA_API_KEY" ${base}/api/me/progress`}
           </Doc>
 
           <p className="muted" style={{ margin: 0 }}>
-            A submission is <b>fully accepted</b> when every supported
+            A submission qualifies as <b>fully accepted</b> once every supported
             problem has an accepted solution in at least one language. Loop over{" "}
-            <code>/api/problems</code> and append attempts. Continue until{" "}
+            <code>/api/problems</code> and append attempts until{" "}
             <code>/api/submissions/&#123;id&#125;/progress</code> reports{" "}
             <code>fully_accepted: true</code>.
           </p>
@@ -309,7 +309,7 @@ function ProgressRow({ entry, onRefresh }: { entry: ProgressEntryPayload; onRefr
         <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
       <div className="row" style={{ gap: 16 }}>
-        <Link to={`/submit/${entry.submission_id}`}>Continue the submission →</Link>
+        <Link to={`/submit/${entry.submission_id}`}>Continue submitting →</Link>
         <Link to={`/submit/${entry.submission_id}/attempts`}>Attempt results →</Link>
       </div>
     </div>

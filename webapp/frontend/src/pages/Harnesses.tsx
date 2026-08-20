@@ -33,7 +33,7 @@ export default function Harnesses() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this harness? The system refuses when a competition, a submission, or a run still refers to it.")) return;
+    if (!confirm("Delete this harness? Refuses if any competitions / submissions / runs still reference it.")) return;
     try { await api.deleteHarness(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -142,7 +142,7 @@ function HarnessCard({
         {canProbe && (
           <button className="secondary" disabled={probing} onClick={onProbe}
                   title="POST /api/admin/harnesses/{id}/probe → runner's /healthz">
-            {probing ? "Please wait…" : "Test connection"}
+            {probing ? "Probing…" : "Test connection"}
           </button>
         )}
         {isAdmin && (
@@ -246,23 +246,23 @@ function HarnessForm({
         <span className="muted">Description (markdown). How does this harness score a solution? What does it measure? Where does the code run?</span>
         <textarea rows={4} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
-                  placeholder="For example: This harness runs each submission in a firecracker VM on the local runner. It reports wall-clock ns with clock_monotonic and peak RSS with getrusage. Read docs/harness/arena-local.md for the full procedure." />
+                  placeholder="e.g. Runs each submission inside a firecracker VM on our local runner. Reports wall-clock ns via clock_monotonic and peak RSS via getrusage. See docs/harness/arena-local.md for the full pipeline." />
       </label>
       <label className="col">
-        <span className="muted">Config (JSON, optional). Give the endpoint URL, the docker image tag, the resource limits, and any other data the harness needs to repeat a run.</span>
+        <span className="muted">Config (JSON, optional). Endpoint URL, docker image tag, resource limits, whatever the harness needs to reproduce a run.</span>
         <textarea rows={5} value={configText}
                   onChange={e => setConfigText(e.target.value)}
-                  placeholder={`arena-local schema (the fields the dispatcher reads):
+                  placeholder={`arena-local schema (what the dispatcher reads):
 {
   "endpoint":    "http://runner.internal:8787",  // required for remote dispatch
-  "auth_token":  "<shared-secret>",              // the harness sends this as Bearer on every request
+  "auth_token":  "<shared-secret>",              // sent as Bearer on every request
   "timeout_s":   300                             // per-attempt HTTP timeout
 }
-Read webapp/examples/harness_runner_server.py for the example server.`}
+See webapp/examples/harness_runner_server.py for the reference server.`}
                   style={{ fontFamily: "var(--mono, monospace)" }} />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

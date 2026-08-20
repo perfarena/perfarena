@@ -1,0 +1,17 @@
+date=2026-08-19T13:59:52+04:00
+host=Darwin/arm64
+gcc:                 Apple clang version 17.0.0 (clang-1700.6.3.2)
+g++:                 Apple clang version 17.0.0 (clang-1700.6.3.2)
+clang:               Apple clang version 17.0.0 (clang-1700.6.3.2)
+python3:             Python 3.14.4
+node:                v25.2.1
+tsc:                 Version 6.0.3
+javac:               javac 17.0.4.1
+dotnet:              10.0.107
+php:                 PHP 8.5.6 (cli) (built: May  5 2026 21:19:36) (NTS)
+ruby:                ruby 2.6.10p210 (2022-04-12 revision 67958) [universal.arm64e-darwin24]
+go:                  go version go1.26.3 darwin/amd64
+rustc:               rustc 1.95.0 (59807616e 2026-04-14)
+cargo:               cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+venv=/Users/rar9993/.venvs/perfrunner
+codecarbon 3.2.9 psutil 7.2.2

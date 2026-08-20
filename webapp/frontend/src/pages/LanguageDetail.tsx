@@ -62,7 +62,7 @@ export default function LanguageDetail() {
   }, [d, sortKey]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!d) return <div className="empty">Please wait.</div>;
+  if (!d) return <div className="empty">Loading…</div>;
 
   const { info, stats } = d;
   const top_models = sortedTop;
@@ -96,7 +96,7 @@ export default function LanguageDetail() {
           <KV label="SO admired (2024)" value={info.so_admired_pct_2024 == null ? "–" : `${info.so_admired_pct_2024.toFixed(0)}%`} />
           <KV label="TIOBE 2025 rank" value={info.tiobe_rank_2025 == null ? "–" : `#${info.tiobe_rank_2025}`} />
           <div className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
-            These figures are approximate. They come from public developer surveys (Stack Overflow 2024 and TIOBE 2025).
+            Approximate figures from public developer surveys (Stack Overflow 2024, TIOBE 2025).
           </div>
         </div>
 
@@ -147,19 +147,19 @@ export default function LanguageDetail() {
           </label>
         </div>
         {top_models.length === 0 ? (
-          <div className="empty">This language has no submissions with results yet.</div>
+          <div className="empty">No judged submissions in this language yet.</div>
         ) : (
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th>
-                <th title="The registered prompt template that the submission used. Click to compare the prompts.">Prompt</th>
+                <th title="Registered prompt template used. Click to compare prompts.">Prompt</th>
                 <th>pass@1</th><th>pass@k</th>
                 <th>Avg runtime</th><th>Peak mem</th>
                 <th>Runtime %ile</th><th>Memory %ile</th>
-                <th title="The total cost in dollars across all attempts in the submission. The system computes it again from the current dollar rate for each 1M tokens of the model. You set this rate on /models.">Cost</th>
-                <th title="The total generation time (wall-clock time) across all attempts.">Gen time</th>
-                <th title="The total generation energy in Joules. It appears only when the submit client measured it (NVML, RAPL, or provider telemetry).">Gen energy</th>
+                <th title="Total $ across all attempts in this submission. Recomputed live from the model's current $/1M-token rates when set on /models.">Cost</th>
+                <th title="Total generation wall-clock summed across attempts.">Gen time</th>
+                <th title="Total generation energy (Joules). Only present when the submit client measured it (NVML / RAPL / provider telemetry).">Gen energy</th>
                 <th></th>
               </tr></thead>
               <tbody>

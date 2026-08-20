@@ -36,10 +36,9 @@ export default function Languages() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>Languages</h1>
         <p>
-          This page lists every language that the platform tracks. Each card
-          shows the paradigm, the TIOBE rank, and the current top submissions.
-          Click a card to open the full leaderboard for the language. The
-          leaderboard has sortable metric columns.
+          Every language the platform tracks, with paradigm, TIOBE rank, and the
+          current top submissions. Click any card for the full per-language
+          leaderboard with sortable metrics.
         </p>
       </div>
 
@@ -47,16 +46,16 @@ export default function Languages() {
         <label className="row" style={{ gap: 6, fontSize: "0.9rem" }}>
           <input type="checkbox" checked={hideEmpty}
                  onChange={e => setHideEmpty(e.target.checked)} />
-          hide languages that have no submissions
+          hide languages with no submissions
         </label>
       </div>
 
       {rows.length === 0 ? (
-        <div className="empty">Please wait.</div>
+        <div className="empty">Loading…</div>
       ) : visible.length === 0 ? (
         <div className="empty">
-          No language has a submission yet. Clear the filter to see all
-          languages.
+          No language has any submissions yet. Uncheck the filter to see the
+          full catalog.
         </div>
       ) : (
         <div style={{
@@ -111,7 +110,7 @@ function LanguageCard({ l }: { l: LanguageListItem }) {
         ))}
         {(l.paradigms ?? []).length === 0 && (
           <span className="muted" style={{ fontSize: "0.8rem" }}>
-            no paradigm data
+            no paradigm metadata
           </span>
         )}
       </div>
@@ -124,7 +123,7 @@ function LanguageCard({ l }: { l: LanguageListItem }) {
 
       {(l.top_submissions ?? []).length === 0 ? (
         <div className="muted" style={{ fontSize: "0.85rem", fontStyle: "italic" }}>
-          This language has no submissions with results yet.
+          No judged submissions yet for this language.
         </div>
       ) : (
         <div className="col" style={{ gap: 4 }}>
@@ -135,9 +134,9 @@ function LanguageCard({ l }: { l: LanguageListItem }) {
             <thead>
               <tr>
                 <th>Model</th>
-                <th title="The mean acceptance across the submitted attempts.">pass@k</th>
-                <th title="pass@1 is the acceptance on the first attempt.">p@1</th>
-                <th title="The average runtime that LeetCode reports across the accepted attempts.">Runtime</th>
+                <th title="Mean acceptance across submitted attempts.">pass@k</th>
+                <th title="pass@1: first-shot acceptance.">p@1</th>
+                <th title="Avg LeetCode-reported runtime across accepted attempts.">Runtime</th>
               </tr>
             </thead>
             <tbody>

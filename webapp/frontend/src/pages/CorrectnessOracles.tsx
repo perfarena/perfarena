@@ -36,7 +36,7 @@ export default function CorrectnessOracles() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this correctness oracle? The system refuses when a competition, a submission, or a run still refers to it.")) return;
+    if (!confirm("Delete this correctness oracle? Refuses if any competitions / submissions / runs still reference it.")) return;
     try { await api.deleteCorrectnessOracle(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -216,20 +216,20 @@ function CorrectnessOracleForm({
         </label>
       </div>
       <label className="col">
-        <span className="muted">Description (markdown). How does this oracle decide if a solution is correct? Which results can it give? Which test suite does it use?</span>
+        <span className="muted">Description (markdown). How does this oracle decide whether a solution is correct? What verdicts can it emit? Which test suite backs it?</span>
         <textarea rows={4} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
-                  placeholder="For example: This oracle runs each submission against pytest in an isolated container. It gives Accepted, Wrong Answer, Runtime Error, or Timeout. Test suite: HumanEval-plus (r3). Read docs/correctness/humaneval-plus.md." />
+                  placeholder="e.g. Runs each submission against pytest inside a sandboxed container. Emits Accepted / Wrong Answer / Runtime Error / Timeout. Test suite: HumanEval-plus (r3). See docs/correctness/humaneval-plus.md." />
       </label>
       <label className="col">
-        <span className="muted">Config (JSON, optional). Give the test-suite path, the docker image tag, the timeouts, and any other data the oracle needs to repeat a result.</span>
+        <span className="muted">Config (JSON, optional). Test-suite path, docker image tag, timeouts, whatever the oracle needs to reproduce a verdict.</span>
         <textarea rows={3} value={configText}
                   onChange={e => setConfigText(e.target.value)}
                   placeholder='{"tests_dir": "/opt/humaneval-plus", "image": "perfarena/correctness:sha256-…", "timeout_s": 30}'
                   style={{ fontFamily: "var(--mono, monospace)" }} />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

@@ -15,7 +15,7 @@ export default function BlogPostPage() {
   }, [slug]);
 
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
-  if (!p) return <div className="empty">Please wait.</div>;
+  if (!p) return <div className="empty">Loading…</div>;
 
   const date = p.published_at ?? p.created_at;
   return (

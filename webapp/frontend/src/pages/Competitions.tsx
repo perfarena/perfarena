@@ -32,7 +32,7 @@ export default function Competitions() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this competition? The system keeps all existing submissions and problems.")) return;
+    if (!confirm("Delete this competition? Existing submissions and problems are NOT touched.")) return;
     try { await api.deleteCompetition(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -42,14 +42,14 @@ export default function Competitions() {
       <div className="hero">
         <h1>Competitions</h1>
         <p>
-          Each competition has a problem set and its own oracles. A
-          correctness oracle decides if a solution is correct. A
-          performance oracle measures how the solution runs. Each competition
-          keeps its own leaderboard. The seed set is the 99 LeetCode problems
-          (LC-99). Admins can add more sets later, for example HumanEval,
-          MBPP, or a custom set. A problem can belong to several competitions.
-          Submissions refer to problems by slug. Therefore each competition
-          leaderboard is a view of the same submission data.
+          Each competition pairs a problem set with its own oracles: a
+          correctness oracle decides whether a solution is right, and a
+          performance oracle measures how it runs. Every competition keeps its
+          own leaderboard. The seed set is LeetCode's 99 problems (LC-99), and
+          admins can add more later (HumanEval, MBPP, a custom set). A problem
+          can belong to several competitions, and submissions reference
+          problems by slug, so each competition's leaderboard is a view over
+          the same submission data.
         </p>
       </div>
 
@@ -134,7 +134,7 @@ function CompetitionCard({
         Compatible harnesses:{" "}
         {c.compatible_harness_slugs.length === 0 ? (
           <span style={{ color: "var(--bad, #c33)" }}>
-            none. Submissions get a 400 error until you add at least one harness on the edit form
+            none. Submissions will 400 until at least one is added on the edit form
           </span>
         ) : (
           c.compatible_harness_slugs.map((s, i) => (
@@ -253,15 +253,15 @@ function CompetitionForm({
       </div>
       <div className="col" style={{ gap: 6 }}>
         <span className="muted" style={{ fontSize: "0.9rem" }}>
-          <b>Compatible harnesses</b>: the list of harnesses that can
-          score submissions for this competition. The server rejects a
-          submission when its <code>harness_slug</code> is not in this
-          list. The server returns a 400 error and a clear message. Leave
-          the list empty to stop new submissions until the admin decides.
+          <b>Compatible harnesses</b>: the allow-list of harnesses that
+          may score submissions against this competition. The server
+          rejects any submission whose <code>harness_slug</code> isn't
+          checked here (400 with a clear error). Leave empty to freeze
+          new submissions until the admin decides.
         </span>
         {harnesses.length === 0 ? (
           <div className="muted" style={{ fontSize: "0.85rem" }}>
-            No harnesses are registered. Add one on <code>/harnesses</code>.
+            No harnesses registered. Add one on <code>/harnesses</code>.
           </div>
         ) : (
           <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -291,10 +291,10 @@ function CompetitionForm({
         <span className="muted">Description (markdown)</span>
         <textarea rows={3} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
-                  placeholder="Describe what this competition evaluates, where the problems come from, and how to read the leaderboard." />
+                  placeholder="What this competition evaluates, where the problems come from, how the leaderboard is interpreted." />
       </label>
       <div className="row" style={{ gap: 6 }}>
-        <button type="submit" disabled={busy}>{busy ? "Save in progress…" : "Save"}</button>
+        <button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
         <button type="button" className="secondary" onClick={onCancel}>Cancel</button>
       </div>
       {err && <div className="muted" style={{ color: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

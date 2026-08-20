@@ -113,9 +113,8 @@ export default function CompareByLevel({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Performance by difficulty</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          There is one grouped chart for each metric. The bar colour shows
-          the model. A higher bar means a larger raw value. The metric label
-          tells you which direction is better.
+          one grouped chart per metric · bar colour = model · higher bar =
+          larger raw value (the metric label says which direction is better)
         </span>
       </div>
 
@@ -210,7 +209,7 @@ function MetricChart({
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <div style={{ fontWeight: 600 }}>{spec.label}</div>
         <span className="muted" style={{ fontSize: "0.75rem" }}>
-          ({spec.higherIsBetter ? "a higher value is better" : "a lower value is better"})
+          ({spec.higherIsBetter ? "higher = better" : "lower = better"})
         </span>
       </div>
       <svg width={W} height={H}

@@ -42,7 +42,7 @@ function StatusBadge({ a }: { a: AttemptResultPayload }) {
   // so users can tell them apart from real LC verdicts.
   const isPrefailed = !!a.prefailed_reason;
   const title = isPrefailed
-    ? `The client marked this attempt as malformed (${a.prefailed_reason}). The system recorded it as failed and did not dispatch it to LeetCode. The record keeps the raw response.`
+    ? `client-flagged as malformed (${a.prefailed_reason}): recorded as failed without LeetCode dispatch; raw response preserved in trace`
     : undefined;
   return (
     <span className={`badge ${cls}`} title={title}>
@@ -115,7 +115,7 @@ function RawLeetCodeResponse({
           {open ? "Hide" : "Show"} raw LeetCode response
         </button>
         <span className="muted" style={{ fontSize: "0.78rem" }}>
-          This is the full raw payload. It includes the fields that the structured log does not list.
+          Full verbatim payload, including fields the structured log doesn't enumerate.
         </span>
       </div>
       {open && (
@@ -148,8 +148,8 @@ function RoundChainBadge({
       <span className="badge"
             title={
               isRefinementStart
-                ? "Round 0 is the first attempt and starts with no prior context. The system adds its verdict and error log to the prompt for round 1."
-                : `The system generated round ${roundIdx} after it read the LeetCode verdict and error log of round ${roundIdx - 1}. It passes them through {{rounds_history}}.`
+                ? "Round 0 = cold-start attempt. Its verdict + error log get folded into the round-1 prompt."
+                : `Round ${roundIdx} was generated after seeing round-${roundIdx - 1}'s LeetCode verdict + error log via {{rounds_history}}.`
             }
             style={{
               fontSize: "0.72rem", padding: "1px 6px",
@@ -222,17 +222,17 @@ function AttemptRow({
         <td className="metric">
           {formatPercentile(a.avg_runtime_percentile)} / {formatPercentile(a.avg_memory_percentile)}
         </td>
-        <td className="metric" title="The cost of this LLM call in dollars. The cost is 0 for Ollama.">
+        <td className="metric" title="$ cost of this LLM call (0 for Ollama)">
           {a.cost_usd == null ? "–" : `$${a.cost_usd.toFixed(4)}`}
         </td>
-        <td className="metric" title="The response tokens for code only. This is an estimate.">
+        <td className="metric" title="code-only response tokens (estimate)">
           {a.response_tokens == null ? "–" : a.response_tokens.toLocaleString()}
         </td>
-        <td className="metric" title="The generation wall-clock time for this solution.">
+        <td className="metric" title="generation wall-clock for this solution">
           {formatDuration(a.wall_clock_ms)}
         </td>
         {showEnergy && (
-          <td className="metric" title="The generation energy for this solution in Joules.">
+          <td className="metric" title="generation energy for this solution (Joules)">
             {formatEnergy(a.generation_energy_j)}
           </td>
         )}
@@ -297,7 +297,7 @@ function AttemptRow({
 export default function AttemptsTable(
   { rows, perOp = false }: { rows: AttemptResultPayload[]; perOp?: boolean },
 ) {
-  if (rows.length === 0) return <div className="empty">There are no attempts to show.</div>;
+  if (rows.length === 0) return <div className="empty">No attempts to show.</div>;
   // Generation-energy column (LLM-side) — only rendered when at least one
   // row reports it.
   const showEnergy = rows.some(a => a.generation_energy_j != null);
@@ -364,22 +364,22 @@ export default function AttemptsTable(
       <table className="tbl">
         <thead><tr>
           <th>Problem</th><th>Status</th>
-          <th title="The number of accepted runs out of the total dispatch runs.">Runs ✓</th>
-          <th title="The mean runtime over the accepted runs.">Avg runtime</th>
-          <th title="The fastest single run.">Best runtime</th>
-          {showMemory && <th title="The mean peak memory (maximum resident) over the accepted runs. This is peak memory on both oracles. It is never per-op.">Peak mem</th>}
-          {showMemory && <th title="The lowest peak memory of any single run.">Best peak mem</th>}
+          <th title="accepted runs / total dispatch runs">Runs ✓</th>
+          <th title="mean over accepted runs">Avg runtime</th>
+          <th title="fastest single run">Best runtime</th>
+          {showMemory && <th title="mean peak (max resident) memory over accepted runs, peak on both oracles, never per-op">Peak mem</th>}
+          {showMemory && <th title="leanest single run's peak memory">Best peak mem</th>}
           {showRuntimeEnergy && (
-            <th title="Runtime energy in Joules. This is the execution energy that this solution consumes when it runs. Harnesses with execution instruments report this value, for example arena-local. A lower value is better.">Avg energy</th>
+            <th title="Runtime energy (Joules): execution energy consumed while running this solution. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Avg energy</th>
           )}
           {showRuntimeEnergy && (
-            <th title="The best (least) runtime energy across the dispatch runs. It has the same source as the Avg energy column.">Best energy</th>
+            <th title="Best (least) runtime energy across dispatch runs. Same source as Avg energy.">Best energy</th>
           )}
-          <th title="The average runtime percentile and the average memory percentile.">%ile (rt/mem)</th>
-          <th title="The cost of this LLM call in dollars for one sample.">Cost</th>
-          <th title="The response tokens for code only. This is an estimate.">Tokens</th>
-          <th title="The generation wall-clock time for this solution.">Gen time</th>
-          {showEnergy && <th title="The generation energy for this solution in Joules.">Gen energy</th>}
+          <th title="avg runtime / memory percentile">%ile (rt/mem)</th>
+          <th title="$ cost of this LLM call (one sample)">Cost</th>
+          <th title="code-only response tokens (estimate)">Tokens</th>
+          <th title="generation wall-clock for this solution">Gen time</th>
+          {showEnergy && <th title="generation energy for this solution (Joules)">Gen energy</th>}
           <th></th>
         </tr></thead>
         <tbody>

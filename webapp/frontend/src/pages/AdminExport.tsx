@@ -105,12 +105,12 @@ export default function AdminExport() {
   return (
     <div className="col" style={{ gap: 24 }}>
       <div className="hero">
-        <h1>Export and Import</h1>
+        <h1>Export & Import</h1>
         <p>
-          Download the content of the platform as a bundle, or merge the
-          export from another instance into this database. This helps when
-          several replicas run at the same time, each with a different
-          LeetCode account. Merge the replicas into one database.
+          Snapshot the platform's content into a downloadable bundle, or
+          merge another instance's export into this database. Useful when
+          several replicas run in parallel (different LeetCode accounts)
+          and you want to converge them into one.
           {" "}<Link to="/admin">Back to admin</Link>
         </p>
       </div>
@@ -121,9 +121,9 @@ export default function AdminExport() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Export</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Select the tables and a format. Then download the bundle. You can
-          import the JSON bundle into another instance with the Import section
-          below. Use the CSV format for spreadsheet inspection only.
+          Pick tables, pick a format, then download. JSON can be replayed
+          back into another instance via Import below; CSV is for spreadsheet
+          inspection only.
         </p>
 
         <div className="card col" style={{ gap: 10 }}>
@@ -159,17 +159,16 @@ export default function AdminExport() {
               <div className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.5 }}>
                 {includeCreds ? (
                   <>
-                    ⚠ The bundle includes the raw{" "}
-                    <code>LEETCODE_SESSION</code> JWT of every account. Keep the
-                    download secret. Encrypt the download. Do not commit the
-                    download to git. Change the cookies on the target instance
-                    after import.
+                    ⚠ The bundle will ship every account's raw{" "}
+                    <code>LEETCODE_SESSION</code> JWT. Treat the download as a
+                    secret — encrypt at rest, don't commit to git, and rotate
+                    the cookies on the target instance after import.
                   </>
                 ) : (
                   <>
-                    The export includes account names and cooldown timestamps.{" "}
-                    The cookies appear as <code>&lt;head&gt;…&lt;redacted&gt;</code>.
-                    Select the box only when you move a real credential pool
+                    Account names + cooldown timestamps export normally;{" "}
+                    cookies appear as <code>&lt;head&gt;…&lt;redacted&gt;</code>.
+                    Tick the box only when migrating an actual credential pool
                     to another instance.
                   </>
                 )}
@@ -182,7 +181,7 @@ export default function AdminExport() {
             <label className="row" style={{ gap: 6 }}>
               <input type="radio" name="format" value="json"
                      checked={format === "json"} onChange={() => setFormat("json")} />
-              JSON <span className="muted" style={{ fontSize: "0.8rem" }}>(you can import it back)</span>
+              JSON <span className="muted" style={{ fontSize: "0.8rem" }}>(round-trippable)</span>
             </label>
             <label className="row" style={{ gap: 6 }}>
               <input type="radio" name="format" value="csv"
@@ -190,7 +189,7 @@ export default function AdminExport() {
               CSV zip <span className="muted" style={{ fontSize: "0.8rem" }}>(spreadsheets)</span>
             </label>
             <button onClick={downloadExport} disabled={busy || selectedCount === 0}>
-              {busy ? "Please wait…" : `Download ${format.toUpperCase()}`}
+              {busy ? "Building…" : `Download ${format.toUpperCase()}`}
             </button>
           </div>
         </div>
@@ -200,36 +199,36 @@ export default function AdminExport() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Import (merge)</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Select a JSON bundle that another instance exported. The merge works
-          like this:
+          Drop a JSON bundle produced by another instance's export. Merge
+          semantics:
         </p>
         <ul className="muted" style={{ marginTop: 0, lineHeight: 1.6, fontSize: "0.9rem" }}>
           <li>
             Natural-key tables (<code>users</code>, <code>problems</code>,{" "}
             <code>prompt_templates</code>, <code>registered_models</code>,{" "}
             <code>competitions</code>, <code>blog_posts</code>,{" "}
-            <code>baselines</code>): the merge <b>skips</b> an incoming row when
-            its key already exists in this database. The local data wins.
+            <code>baselines</code>) — incoming rows whose key already exists
+            locally are <b>skipped</b>; admin curation here wins.
           </li>
           <li>
             Surrogate-key tables (<code>submissions</code>,{" "}
-            <code>attempts</code>, <code>runs</code>): the merge <b>always
-            inserts</b> the rows with new local ids. It remaps the foreign keys.
-            Replicas with the same integer ids then merge without a collision.
+            <code>attempts</code>, <code>runs</code>) — rows are <b>always
+            inserted</b> with new local ids, FKs remapped so replicas with
+            overlapping integer ids merge cleanly.
           </li>
           <li>
-            <code>leetcode_accounts</code> (the credential pool in a file): the
-            merge writes into <code>data/leetcode_accounts.json</code> by name.
-            The merge <b>skips</b> a name that already exists in this database
-            (the local cookies win). The merge also skips a row when its{" "}
-            <code>cookie_header</code> looks redacted (it has no{" "}
-            <code>LEETCODE_SESSION</code>, or it has the mark{" "}
-            <code>&lt;redacted&gt;</code>). A sanitized bundle is therefore safe
-            to import. It brings only the shape of the account list.
+            <code>leetcode_accounts</code> (file-backed credential pool) —
+            merged into <code>data/leetcode_accounts.json</code> by name.
+            Names that already exist locally are <b>skipped</b> (local cookies
+            win). Rows whose <code>cookie_header</code> looks redacted (no
+            <code>LEETCODE_SESSION</code>, or marked{" "}
+            <code>&lt;redacted&gt;</code>) are silently skipped — so importing
+            a sanitized bundle is safe and just brings over the account-list
+            shape.
           </li>
           <li>
-            The merge <b>excludes</b> the append-only hash chain for transparency
-            (<code>TraceLogEntry</code>). Each instance builds its own hash chain.
+            The append-only transparency hash chain (<code>TraceLogEntry</code>)
+            is <b>not</b> imported — it's per-instance by construction.
           </li>
         </ul>
 
@@ -244,7 +243,7 @@ export default function AdminExport() {
           )}
           <div className="row" style={{ gap: 8 }}>
             <button onClick={runImport} disabled={!importFile || importing}>
-              {importing ? "Please wait…" : "Import and merge"}
+              {importing ? "Merging…" : "Import & merge"}
             </button>
             {importFile && (
               <button className="secondary"

@@ -31,7 +31,7 @@ function MiniLineChart({ label, values, color, formatValue }: MiniLineChartProps
       <div className="col" style={{ gap: 4, minWidth: 220 }}>
         <div style={{ fontWeight: 600 }}>{label}</div>
         <div className="muted" style={{ fontSize: "0.8rem" }}>
-          There are no accepted runs to plot.
+          no accepted runs to plot
         </div>
       </div>
     );
@@ -137,10 +137,9 @@ export function RunsChart({ runs }: { runs: AttemptRunDetail[] }) {
   return (
     <div className="col" style={{ gap: 12, padding: "12px 14px" }}>
       <div className="muted" style={{ fontSize: "0.78rem" }}>
-        This shows the spread of the measurements across the {runs.length} repeated
-        dispatches. LeetCode runs a submission on shared infrastructure. The same code
-        therefore varies by 10 to 30 percent for each dispatch. The dashed line is the
-        mean over the accepted runs.
+        Spread of measurements across the {runs.length} repeated dispatches.
+        LeetCode runs submissions on shared infra, so the same code typically
+        swings by 10 to 30% per shot. The dashed line is the mean over accepted runs.
       </div>
       <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
         <MiniLineChart

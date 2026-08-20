@@ -166,16 +166,16 @@ function CompareView() {
     <div className="col">
       <div className="hero">
         <h1>Compare models</h1>
-        <p>Select two or more models. You can also select a language or a
-          subset of problems. The summary combines the <i>best</i> attempt of
-          each model for each problem in the filter. The matrix below shows
-          the direct per-problem comparison.</p>
+        <p>Pick two or more models and (optionally) a language or a problem
+          subset. The summary aggregates each model's <i>best</i> attempt per
+          problem within the filter; the matrix below shows the per-problem
+          head-to-head.</p>
       </div>
 
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Models</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Search, then click to add or remove a model. You need at least 2 models to compare.
+          Search, then click to add / remove. Need at least 2 to compare.
           {picked.length > 0 && <> Picked: <b>{picked.length}</b>.</>}
         </p>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -194,9 +194,9 @@ function CompareView() {
         </div>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           {models.length === 0
-            ? <span className="muted">No models are submitted yet</span>
+            ? <span className="muted">no models submitted yet</span>
             : visibleModels.length === 0
-              ? <span className="muted">No models match "{modelQuery}"</span>
+              ? <span className="muted">no models match "{modelQuery}"</span>
               : visibleModels.map(m => (
                 <button key={m.name}
                         className={picked.includes(m.name) ? "" : "secondary"}
@@ -216,14 +216,14 @@ function CompareView() {
           <label className="col" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>language</span>
             <select value={language} onChange={e => setLanguage(e.target.value)}>
-              <option value="">all languages (max for each model)</option>
+              <option value="">all languages (per-model max)</option>
               {langOptions.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
           </label>
           <label className="col" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>prompt</span>
             <select value={promptIdSel} onChange={e => setPromptIdSel(e.target.value)}
-                    title="Limit the comparison to submissions that use this prompt template">
+                    title="Restrict the comparison to submissions made with this prompt template">
               <option value="">any prompt</option>
               {prompts.map(p => (
                 <option key={p.id} value={String(p.id)}>{p.name}</option>
@@ -231,7 +231,7 @@ function CompareView() {
             </select>
           </label>
           <button onClick={run} disabled={loading || picked.length < 2}>
-            {loading ? "Comparison in progress…" : `Compare ${picked.length || ""} model${picked.length === 1 ? "" : "s"}`}
+            {loading ? "Comparing…" : `Compare ${picked.length || ""} model${picked.length === 1 ? "" : "s"}`}
           </button>
           {(picked.length > 0 || promptIdSel) && (
             <button className="secondary" onClick={() => { setPicked([]); setProblemFilter([]); setPromptIdSel(""); setData(null); }}>
@@ -242,7 +242,7 @@ function CompareView() {
         {promptIdSel && (
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: -8 }}>
             Filter: prompt = <PromptName id={Number(promptIdSel)} name={prompts.find(p => p.id === Number(promptIdSel))?.name ?? null} />.
-            The comparison excludes submissions that use any other prompt.
+            Submissions made with any other prompt are excluded from the comparison.
           </div>
         )}
       </section>
@@ -250,10 +250,10 @@ function CompareView() {
       <section className="col">
         <details>
           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-            Limit to specific problems ({problemFilter.length || "any"})
+            Restrict to specific problems ({problemFilter.length || "any"})
           </summary>
           <p className="muted" style={{ marginTop: 8 }}>
-            Click to add or remove a problem. If empty, the comparison uses all attempted problems.
+            Click to add / remove. Empty = compare across all attempted problems.
           </p>
           <div className="row" style={{ gap: 4, flexWrap: "wrap", maxHeight: 220, overflowY: "auto" }}>
             {problems.map(p => (
@@ -280,13 +280,13 @@ function CompareView() {
             background: "rgba(220,180,80,0.08)",
             fontSize: "0.88rem",
           }}>
-            <b>This comparison covers {langs.size} languages ({Array.from(langs).sort().join(", ")}).</b>{" "}
-            The raw avg and best runtime and memory do not compare directly
-            across languages. Therefore this page hides the "fastest avg
-            runtime" and "leanest peak mem" verdicts below. The other winners
-            are fair across languages: pass@1, pass@k, pass@full, problems
-            solved, and runtime and memory percentile. To show the raw-number
-            winners, select a language filter above.
+            <b>Comparing across {langs.size} languages ({Array.from(langs).sort().join(", ")}).</b>{" "}
+            Raw avg / best runtime + memory are not directly comparable across
+            languages, so the "fastest avg runtime" and "leanest peak mem"
+            verdicts are suppressed below. The remaining winners (pass@1 / pass@k /
+            pass@full / problems solved / runtime + memory percentile) are
+            language-fair. To show the raw-number winners, pick a language
+            filter above.
           </div>
         );
       })()}
@@ -302,7 +302,7 @@ function CompareView() {
         <PerProblemMatrix models={data.models} rows={data.problems} />
       )}
       {data && data.summary.every(s => s.n_submissions === 0) && (
-        <div className="empty">No selected model has a submission that matches this filter and has a result.</div>
+        <div className="empty">None of the selected models have judged submissions matching this filter.</div>
       )}
     </div>
   );
@@ -342,7 +342,7 @@ function WinnersBanner({ winners }: { winners: CompareWinners }) {
             </span>
           </span>
         ) : (
-          <span className="muted">No clear winner yet. Not enough metrics are decided.</span>
+          <span className="muted">No clear winner yet; not enough metrics decided.</span>
         )}
       </div>
       {visible.length > 0 && (
@@ -371,31 +371,30 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
     <section className="col">
       <h2 style={{ marginBottom: 4 }}>Summary</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        One row for each model. The "Best" metrics use the best attempt for
-        each problem. The system averages them across all problems that the
-        model accepted in the filter scope.
+        One row per model. "Best" metrics are the per-problem best attempt,
+        averaged across all problems the model accepted in the filter scope.
       </p>
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
           <thead><tr>
             <th>Model</th>
-            <th title="The number of distinct submissions in scope.">Subs</th>
-            <th title="The number of distinct problems that have at least one accepted attempt.">Solved</th>
-            <th title="The number of distinct problems that the model attempted.">Attempted</th>
-            <th title="The languages that the model has submissions in, within the filter.">Langs</th>
-            <th title="The best pass@1 across the submissions of the model. It is unbiased over k samples.">pass@1</th>
-            <th title="The best pass@k.">pass@k</th>
-            <th title="The best pass@full (any of k).">pass@full</th>
-            <th title="The mean of the per-problem average runtime.">Avg rt</th>
-            <th title="The mean of the per-problem best runtime.">Best rt</th>
-            <th title="The mean of the per-problem mean peak memory. It is peak (maximum resident) on both oracles. It is never a per-op value.">Peak mem</th>
-            <th title="The mean of the per-problem best (minimum) peak memory.">Best peak mem</th>
-            <th title="The mean LeetCode runtime percentile.">RT %ile</th>
-            <th title="The mean LeetCode memory percentile.">Mem %ile</th>
-            <th title="The speedup against the average LeetCode submission. A value above 1 is faster than the average.">t/avg</th>
-            <th title="The speedup against the expert LeetCode cohort. A value above 1 matches the top performers.">t/exp</th>
-            <th title="The memory ratio against the average LeetCode submission. A value above 1 uses less memory.">m/avg</th>
-            <th title="The memory ratio against the expert LeetCode cohort.">m/exp</th>
+            <th title="Distinct submissions in scope">Subs</th>
+            <th title="Distinct problems with at least one accepted attempt">Solved</th>
+            <th title="Distinct problems attempted">Attempted</th>
+            <th title="Languages the model has submissions in (within filter)">Langs</th>
+            <th title="Best pass@1 across the model's submissions (unbiased over k samples)">pass@1</th>
+            <th title="Best pass@k">pass@k</th>
+            <th title="Best pass@full (any-of-k)">pass@full</th>
+            <th title="Mean per-problem avg runtime">Avg rt</th>
+            <th title="Mean per-problem best runtime">Best rt</th>
+            <th title="Mean per-problem mean PEAK memory. Peak (max resident) on both oracles, never per-op.">Peak mem</th>
+            <th title="Mean per-problem best (min) peak memory">Best peak mem</th>
+            <th title="Mean LeetCode runtime percentile">RT %ile</th>
+            <th title="Mean LeetCode memory percentile">Mem %ile</th>
+            <th title="Speedup vs the average LeetCode submission (>1 = faster than avg)">t/avg</th>
+            <th title="Speedup vs the expert LeetCode cohort (>1 = matches top performers)">t/exp</th>
+            <th title="Memory ratio vs the average LeetCode submission (>1 = uses less)">m/avg</th>
+            <th title="Memory ratio vs the expert LeetCode cohort">m/exp</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -448,11 +447,11 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
   const showEnergy = showBars && shouldShowEnergyColumn(rows, models);
   return (
     <section className="col">
-      <h2 style={{ marginBottom: 4 }}>Per-problem comparison ({rows.length})</h2>
+      <h2 style={{ marginBottom: 4 }}>Per-problem head-to-head ({rows.length})</h2>
       <p className="muted" style={{ marginTop: 0 }}>
-        Each cell is the best attempt of the model for that problem. The
-        system sorts by accepted first, then by fastest. A dash means the
-        model did not attempt this problem in the filter scope.
+        Each cell is the model's best attempt for that problem (accepted-first,
+        then fastest). A dash means the model didn't attempt this problem in
+        the filter scope.
       </p>
       {showBars && (
         /* Colour-key banner — identifies which overlapping bar belongs to
@@ -482,9 +481,9 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
               </span>
             ))}
             <span className="muted" style={{ fontSize: "0.85rem" }}>
-              · The bar width shows the rank of each model on the metric within
-              the problem. A lower value of ms or MB{showEnergy ? " or J" : ""} is better.
-              {" "}A larger bar shows a better model. The winner gets the full bar.
+              · Bar width shows each model's rank on the metric within the
+              problem (lower ms / MB{showEnergy ? " / J" : ""} = better);
+              {" "}a bigger bar is a better model (the winner takes the full bar).
             </span>
           </div>
         </div>
@@ -494,7 +493,7 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
           <thead><tr>
             <th>Problem</th><th>Level</th>
             {models.map(m => <th key={m}>{m}</th>)}
-            {showBars && <th title="This column shows overlapping bars for each metric. The lowest value of ms, MB, or J in the row is the best model and fills the track. The other bars scale down by ratio. A larger bar is a better model. Every row uses the same rule, so the winner always has the longest bar for any metric.">Comparison</th>}
+            {showBars && <th title="Overlapping bars per metric. The lowest ms/MB/J in the row (= best model) fills the track; others scale down by ratio. BIGGER bar = better model. Same convention in every row, so the winner always has the longest bar regardless of which metric.">Comparison</th>}
           </tr></thead>
           <tbody>
             {rows.map(p => {
@@ -554,8 +553,8 @@ function PerProblemMatrix({ models, rows }: { models: string[]; rows: import("..
                               {" · "}
                               <span style={isMostEfficient ? { fontWeight: 700, color: "var(--easy)" } : undefined}
                                     title={c.runtime_energy_j != null
-                                      ? "runtime energy (execution side)"
-                                      : "generation energy (language model side)"}>
+                                      ? "runtime energy (execution-side)"
+                                      : "generation energy (LLM-side)"}>
                                 {formatEnergy(energyForCell)}{isMostEfficient && " ★"}
                               </span>
                             </>
@@ -647,20 +646,19 @@ function PromptStrategiesView() {
       <div className="hero">
         <h1>Compare prompt strategies</h1>
         <p>
-          Keep a model, version, and language fixed. Then select two or more
-          prompt templates. The summary combines the <i>best</i> attempt of
-          each prompt for each problem in that cell. Then you can see if richer
-          prompts give more correctness or performance than the plain template.
-          For example, compare <code>explain-then-code</code> with the plain
-          template.
+          Hold a model + version + language fixed, then pick 2+ prompt
+          templates. The summary aggregates each prompt's <i>best</i> attempt
+          per problem in that cell, so you can read off whether richer
+          prompts (e.g. <code>explain-then-code</code>) buy correctness or
+          performance over the plain template.
         </p>
       </div>
 
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Model / version</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          The comparison uses one model and version, so the only variable is
-          the prompt. Select any model that the platform has seen submit answers.
+          Comparison is scoped to one (model, version) so the only variable is
+          the prompt. Pick from any model the platform has seen submit answers.
         </p>
         <select value={pairKey} onChange={e => {
           setPairKey(e.target.value);
@@ -669,7 +667,7 @@ function PromptStrategiesView() {
           setData(null);
         }}
                 style={{ minWidth: 320 }}>
-          <option value="">select a model</option>
+          <option value="">pick a model</option>
           {pairs.map(p => {
             const key = `${p.name}|${p.version}`;
             return (
@@ -684,12 +682,12 @@ function PromptStrategiesView() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Prompts</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Click to add or remove a prompt. You need at least 2 prompts to compare.
+          Click to add / remove. Need at least 2 to compare.
           {pickedPrompts.length > 0 && <> Picked: <b>{pickedPrompts.length}</b>.</>}
         </p>
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           {prompts.length === 0
-            ? <span className="muted">No prompts are in the registry yet</span>
+            ? <span className="muted">no prompts in the registry yet</span>
             : prompts.map(p => (
               <button key={p.id}
                       className={pickedPrompts.includes(p.id) ? "" : "secondary"}
@@ -708,13 +706,13 @@ function PromptStrategiesView() {
           <label className="col" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>language</span>
             <select value={language} onChange={e => setLanguage(e.target.value)} disabled={!selectedPair}>
-              <option value="">all languages that this model has used</option>
+              <option value="">all languages this model has used</option>
               {langOptions.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
           </label>
           <button onClick={run}
                   disabled={loading || !selectedPair || pickedPrompts.length < 2}>
-            {loading ? "Comparison in progress…" : `Compare ${pickedPrompts.length || ""} prompt${pickedPrompts.length === 1 ? "" : "s"}`}
+            {loading ? "Comparing…" : `Compare ${pickedPrompts.length || ""} prompt${pickedPrompts.length === 1 ? "" : "s"}`}
           </button>
           {(pickedPrompts.length > 0 || pairKey || language) && (
             <button className="secondary"
@@ -726,7 +724,7 @@ function PromptStrategiesView() {
         </div>
         {!selectedPair && (
           <div className="muted" style={{ fontSize: "0.85rem" }}>
-            Select a model first. Its language set fills the language picker.
+            Pick a model first; its language set populates the language picker.
           </div>
         )}
       </section>
@@ -749,13 +747,13 @@ function PromptStrategiesView() {
 
 function PromptWinnersBanner({ winners }: { winners: ComparePromptsWinners }) {
   const fields: { label: string; key: keyof ComparePromptsWinners; tip: string }[] = [
-    { label: "best pass@1",        key: "best_pass_at_1",        tip: "The highest pass@1 across the prompts." },
-    { label: "best pass@k",        key: "best_pass_at_k",        tip: "The highest pass@k." },
-    { label: "most problems",      key: "most_problems_solved",  tip: "The most distinct accepted problems." },
-    { label: "fastest avg runtime",key: "fastest_avg_runtime",   tip: "The lowest mean LeetCode runtime (ms) across accepted attempts." },
-    { label: "leanest peak mem",   key: "leanest_avg_memory",    tip: "The lowest mean peak memory (MB) across accepted attempts." },
-    { label: "best runtime %ile",  key: "best_runtime_percentile", tip: "The highest mean LeetCode runtime percentile." },
-    { label: "best memory %ile",   key: "best_memory_percentile",  tip: "The highest mean LeetCode memory percentile." },
+    { label: "best pass@1",        key: "best_pass_at_1",        tip: "highest pass@1 across the prompts" },
+    { label: "best pass@k",        key: "best_pass_at_k",        tip: "highest pass@k" },
+    { label: "most problems",      key: "most_problems_solved",  tip: "most distinct problems accepted" },
+    { label: "fastest avg runtime",key: "fastest_avg_runtime",   tip: "lowest mean LeetCode runtime (ms) across accepted attempts" },
+    { label: "leanest peak mem",   key: "leanest_avg_memory",    tip: "lowest mean peak memory (MB) across accepted attempts" },
+    { label: "best runtime %ile",  key: "best_runtime_percentile", tip: "highest mean LeetCode runtime percentile" },
+    { label: "best memory %ile",   key: "best_memory_percentile",  tip: "highest mean LeetCode memory percentile" },
   ];
   return (
     <section className="col">
@@ -800,18 +798,18 @@ function PromptSummaryTable({
         <table className="tbl">
           <thead><tr>
             <th>Prompt</th>
-            <th title="The number of submissions with a result in scope.">Subs</th>
-            <th title="The number of distinct accepted problems.">Solved</th>
-            <th title="The best pass@1 across the submissions in scope.">pass@1</th>
-            <th title="The best pass@k.">pass@k</th>
-            <th title="The best pass@full.">pass@full</th>
-            <th title="The mean of the accepted-best average runtime (ms).">Avg runtime</th>
-            <th title="The mean of the accepted-best best runtime (ms).">Best runtime</th>
-            <th title="The mean of the accepted-best mean peak memory (MB). It is peak on both oracles.">Peak mem</th>
-            <th title="The mean of the accepted-best average runtime percentile.">RT %ile</th>
-            <th title="The mean of the accepted-best average memory percentile.">Mem %ile</th>
-            <th title="The time coefficient against the LeetCode average. A value above 1 is faster than the LeetCode population.">t vs avg</th>
-            <th title="The memory coefficient against the LeetCode average.">m vs avg</th>
+            <th title="number of judged submissions in scope">Subs</th>
+            <th title="distinct problems accepted">Solved</th>
+            <th title="best pass@1 across the submissions in scope">pass@1</th>
+            <th title="best pass@k">pass@k</th>
+            <th title="best pass@full">pass@full</th>
+            <th title="mean of accepted-best avg runtime (ms)">Avg runtime</th>
+            <th title="mean of accepted-best best runtime (ms)">Best runtime</th>
+            <th title="mean of accepted-best mean peak memory (MB), peak on both oracles">Peak mem</th>
+            <th title="mean of accepted-best avg runtime percentile">RT %ile</th>
+            <th title="mean of accepted-best avg memory percentile">Mem %ile</th>
+            <th title="time-vs-LeetCode-avg coefficient (>1 = faster than the LeetCode population)">t vs avg</th>
+            <th title="memory-vs-LeetCode-avg coefficient">m vs avg</th>
             <th></th>
           </tr></thead>
           <tbody>
@@ -902,11 +900,12 @@ function SubmissionsCompareView() {
     <div className="col">
       <div className="hero">
         <h1>Compare submissions</h1>
-        <p>Select two or more submissions to compare them directly. This helps
-          you compare the same model with different prompts, sweep runs, or
-          settings. It does not average them together. The Models tab averages
-          them. The summary, the per-difficulty charts, and the per-problem
-          matrix below use the same component as the Models tab.</p>
+        <p>Pick two or more submissions to compare head-to-head. Useful for
+          comparing the same model under different prompts, sweep runs, or
+          settings without averaging them together (which is what the
+          Models tab does). The summary, per-difficulty charts, and the
+          per-problem matrix below all render with the same component the
+          Models tab uses.</p>
       </div>
 
       <section className="col">
@@ -955,13 +954,13 @@ function SubmissionsCompareView() {
             </tbody>
           </table>
           {visible.length > 200 && (
-            <div className="empty">This list shows the first 200 of {visible.length} matches.</div>
+            <div className="empty">Showing first 200 of {visible.length} matches.</div>
           )}
         </div>
 
         <div className="row" style={{ gap: 8, alignItems: "center" }}>
           <button onClick={run} disabled={picked.length < 2 || loading}>
-            {loading ? "Comparison in progress…" : `Compare ${picked.length} submission${picked.length === 1 ? "" : "s"}`}
+            {loading ? "Comparing…" : `Compare ${picked.length} submission${picked.length === 1 ? "" : "s"}`}
           </button>
           {picked.length > 0 && (
             <button className="secondary" onClick={() => setPicked([])}>clear selection</button>
