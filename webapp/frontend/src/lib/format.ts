@@ -93,3 +93,47 @@ export function coefficientClass(c: number | null | undefined): string {
   if (c <= 0.95) return "coef-bad";
   return "coef-mid";
 }
+
+/* ---- chart series formatters -------------------------------------------
+ * A single-value formatter (formatRuntime/formatEnergy) picks a unit per
+ * value, which is right for a table cell but wrong for a chart axis (points
+ * would render in different units). These pick ONE unit for the whole series
+ * — from its largest magnitude — so every point/tick on a chart is consistent.
+ */
+
+/** Time series in ms → a formatter locked to one unit (ms/µs/ns/ps). */
+export function timeSeriesFormatterMs(
+  valuesMs: (number | null | undefined)[],
+): (v: number) => string {
+  const nums = valuesMs.filter((v): v is number => v != null && isFinite(v)).map(Math.abs);
+  const ref = nums.length ? Math.max(...nums) : 1;
+  let unit = "ms", scale = 1;
+  if      (ref >= 1)    { unit = "ms"; scale = 1;   }
+  else if (ref >= 1e-3) { unit = "µs"; scale = 1e3; }
+  else if (ref >= 1e-6) { unit = "ns"; scale = 1e6; }
+  else                  { unit = "ps"; scale = 1e9; }
+  return (v: number) => {
+    const s = v * scale, a = Math.abs(s);
+    return `${s.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)} ${unit}`;
+  };
+}
+
+/** Energy series in Joules → a formatter locked to one SI unit (MJ…pJ). */
+export function energySeriesFormatter(
+  valuesJ: (number | null | undefined)[],
+): (v: number) => string {
+  const nums = valuesJ.filter((v): v is number => v != null && isFinite(v)).map(Math.abs);
+  const ref = nums.length ? Math.max(...nums) : 1;
+  let unit = "J", scale = 1;
+  if      (ref >= 1e6)  { unit = "MJ"; scale = 1e-6; }
+  else if (ref >= 1e3)  { unit = "kJ"; scale = 1e-3; }
+  else if (ref >= 1)    { unit = "J";  scale = 1;    }
+  else if (ref >= 1e-3) { unit = "mJ"; scale = 1e3;  }
+  else if (ref >= 1e-6) { unit = "µJ"; scale = 1e6;  }
+  else if (ref >= 1e-9) { unit = "nJ"; scale = 1e9;  }
+  else                  { unit = "pJ"; scale = 1e12; }
+  return (v: number) => {
+    const s = v * scale, a = Math.abs(s);
+    return `${s.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)} ${unit}`;
+  };
+}

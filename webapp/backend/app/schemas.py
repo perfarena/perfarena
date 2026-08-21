@@ -1143,6 +1143,12 @@ class AttemptRunDetail(BaseModel):
     memory_mb: float | None
     runtime_percentile: float | None
     memory_percentile: float | None
+    # Execution energy + per-op metrics — populated only by execution-
+    # instrumented harnesses (arena-local); None on LeetCode-scored runs. Let
+    # the per-run charts/tables plot energy and per-op time in native units.
+    runtime_energy_j: float | None = None
+    energy_j_per_op: float | None = None
+    time_us_per_op: float | None = None
     total_correct: int | None
     total_testcases: int | None
     error_log: RunErrorLog | None = None

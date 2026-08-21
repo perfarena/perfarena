@@ -1187,19 +1187,20 @@ def main() -> None:
                          "harness never mixes with the same cell scored "
                          "under another.")
     ap.add_argument("--correctness-oracle", default=None, metavar="SLUG",
-                    help="Optional correctness oracle slug. When set, the "
-                         "dispatcher calls this oracle's /validate BEFORE "
-                         "the perf harness's /measure and skips /measure "
-                         "on any non-Accepted verdict — cheap gate that "
-                         "avoids paying the full measurement cost on Wrong "
-                         "Answer / Compile Error / Runtime Error. When "
-                         "unset, correctness comes from the perf harness's "
-                         "own response (LC does both; arena-local's "
-                         "perfarena_handler runs `make validate` inside `make "
-                         "measure`, so leaving this unset is safe for "
-                         "CLBG). Note: `leetcode` is not a valid choice "
-                         "for CLBG problems — LC's judge doesn't know "
-                         "them; use `arena-local` there instead.")
+                    help="Correctness oracle slug — REQUIRED unless "
+                         "--skip-correctness. Correctness is ALWAYS checked "
+                         "first, then perf is measured only if Accepted, "
+                         "oracle-independent: the dispatcher checks correctness "
+                         "via this oracle (`leetcode` = one LeetCode "
+                         "submission; an arena-local slug = the runner's "
+                         "/validate), and only on Accepted does the perf "
+                         "harness measure. Correctness is no longer done "
+                         "implicitly inside /measure, so name it explicitly.")
+    ap.add_argument("--skip-correctness", action="store_true",
+                    help="Skip the correctness gate entirely — measure perf "
+                         "without checking correctness first. Mutually "
+                         "exclusive with --correctness-oracle; use for "
+                         "perf-only runs where correctness is already known.")
     ap.add_argument("--problem-order", default="interleave",
                     choices=("interleave", "alpha", "as-is"),
                     help="how to order problem slugs across the sweep "
@@ -1306,6 +1307,12 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true",
                     help="enumerate the matrix and report; no model calls, no submits.")
     args = ap.parse_args()
+    # --correctness-oracle is required UNLESS --skip-correctness. Skipping sends
+    # no oracle, so the dispatcher's correctness gate stays off for the run.
+    if args.skip_correctness:
+        args.correctness_oracle = None
+    elif not args.correctness_oracle:
+        ap.error("--correctness-oracle is required unless --skip-correctness is passed")
 
     if not args.dry_run and not args.api_key:
         raise SystemExit("set --api-key or ARENA_API_KEY (skip with --dry-run)")

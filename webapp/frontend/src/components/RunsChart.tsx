@@ -1,4 +1,5 @@
 import { AttemptRunDetail } from "../lib/api";
+import { energySeriesFormatter, timeSeriesFormatterMs } from "../lib/format";
 
 /* Per-run line charts for a single attempt's repeated dispatches.
  *
@@ -123,37 +124,69 @@ function MiniLineChart({ label, values, color, formatValue }: MiniLineChartProps
   );
 }
 
-export function RunsChart({ runs }: { runs: AttemptRunDetail[] }) {
+export function RunsChart({ runs, perOp = false }: { runs: AttemptRunDetail[]; perOp?: boolean }) {
   // Single-run attempts have nothing to "spread" — hide the chart entirely.
   if (runs.length < 2) return null;
 
   const sorted = [...runs].sort((a, b) => a.run_index - b.run_index);
-  const runtimes = sorted.map(r => r.runtime_ms);
-  const memories = sorted.map(r => r.memory_mb);
 
-  // Both metrics absent? Nothing useful to draw.
-  if (runtimes.every(v => v == null) && memories.every(v => v == null)) return null;
+  // Time: per-op time (µs, arena-local) when available, else wall runtime (ms).
+  // Normalised to ms so the adaptive formatter picks ONE unit (ns/µs/ms) for
+  // the whole series instead of the fixed "ms" the old chart hard-coded.
+  const usePerOpTime = perOp && sorted.some(r => r.time_us_per_op != null);
+  const timeVals = sorted.map(r =>
+    usePerOpTime
+      ? (r.time_us_per_op != null ? r.time_us_per_op * 1e-3 : null)   // µs → ms
+      : r.runtime_ms,
+  );
+  const timeLabel = usePerOpTime ? "Time per op" : "Runtime per run";
+  const fmtTime = timeSeriesFormatterMs(timeVals);
+
+  // Energy (J): per-op energy (arena-local) when available, else whole-run.
+  const usePerOpEnergy = perOp && sorted.some(r => r.energy_j_per_op != null);
+  const energyVals = sorted.map(r =>
+    usePerOpEnergy ? r.energy_j_per_op : r.runtime_energy_j,
+  );
+  const hasEnergy = energyVals.some(v => v != null);
+  const energyLabel = usePerOpEnergy ? "Energy per op" : "Energy per run";
+  const fmtEnergy = energySeriesFormatter(energyVals);
+
+  const memories = sorted.map(r => r.memory_mb);
+  const hasMem = memories.some(v => v != null);
+
+  // Nothing to draw?
+  if (timeVals.every(v => v == null) && !hasEnergy && !hasMem) return null;
 
   return (
     <div className="col" style={{ gap: 12, padding: "12px 14px" }}>
       <div className="muted" style={{ fontSize: "0.78rem" }}>
         Spread of measurements across the {runs.length} repeated dispatches.
-        LeetCode runs submissions on shared infra, so the same code typically
-        swings by 10 to 30% per shot. The dashed line is the mean over accepted runs.
+        The dashed line is the mean over accepted runs. Units adapt to the
+        measured magnitude.
       </div>
       <div className="row" style={{ gap: 20, flexWrap: "wrap" }}>
         <MiniLineChart
-          label="Runtime per run"
-          values={runtimes}
+          label={timeLabel}
+          values={timeVals}
           color="var(--accent)"
-          formatValue={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} ms`}
+          formatValue={fmtTime}
         />
-        <MiniLineChart
-          label="Peak mem per run"
-          values={memories}
-          color="var(--warn)"
-          formatValue={(v) => `${v.toFixed(2)} MB`}
-        />
+        {hasEnergy && (
+          <MiniLineChart
+            label={energyLabel}
+            values={energyVals}
+            color="var(--ok, #10b981)"
+            formatValue={fmtEnergy}
+          />
+        )}
+        {hasMem && (
+          <MiniLineChart
+            label="Peak mem per run"
+            values={memories}
+            color="var(--warn)"
+            formatValue={(v) => `${v.toFixed(2)} MB`}
+          />
+        )}
       </div>
     </div>
   );

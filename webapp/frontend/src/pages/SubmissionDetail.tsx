@@ -243,34 +243,52 @@ export default function SubmissionDetailPage() {
         )}
       </div>
 
-      {/* Measurement provenance — which machine + energy tool these
-          energy/time numbers came from. Only rendered when at least one
-          provenance field is present; LeetCode-scored submissions leave all
-          null (they ran on LeetCode's judges, so the machine is "unknown"). */}
-      {(s.machine_name || s.energy_tool || s.run_uid) && (
-        <div className="card" style={{ padding: 10, fontSize: "0.85rem" }}>
-          <b>Measured on</b> machine <b>{s.machine_name ?? "unknown"}</b>
-          {s.energy_tool && <> · energy tool <b>{s.energy_tool}</b></>}
+      {/* Oracles + measurement provenance. The two oracles (perf + correctness)
+          are ALWAYS shown so a reader can see HOW the submission was scored.
+          The machine / energy tool / measurement config appear only for
+          locally-measured (arena-local) submissions — LeetCode-scored ones
+          leave them null. */}
+      <div className="card" style={{ padding: 10, fontSize: "0.85rem" }}>
+        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+          <span>
+            <b>Perf oracle:</b>{" "}
+            {s.harness_slug
+              ? <Link to={`/harnesses/${s.harness_slug}`}>{s.harness_name ?? s.harness_slug}</Link>
+              : (s.harness_name ?? "unknown")}
+          </span>
+          <span>
+            <b>Correctness oracle:</b>{" "}
+            {s.correctness_oracle_name ?? s.correctness_oracle_slug ?? "unknown"}
+          </span>
+          {(s.machine_name || s.energy_tool) && (
+            <span>
+              <b>Measured on:</b> machine <b>{s.machine_name ?? "unknown"}</b>
+              {s.energy_tool && <> · energy tool <b>{s.energy_tool}</b></>}
+            </span>
+          )}
           {s.avg_iterations != null && (
-            <> · {Math.round(s.avg_iterations).toLocaleString()} solves / measurement</>
+            <span>{Math.round(s.avg_iterations).toLocaleString()} solves / measurement</span>
           )}
-          {s.run_uid && (
-            <> · run{" "}
-              <code className="muted" title={s.run_uid}
-                    style={{ fontSize: "0.78rem", maxWidth: 220,
-                             display: "inline-block", overflow: "hidden",
-                             textOverflow: "ellipsis", whiteSpace: "nowrap",
-                             verticalAlign: "bottom" }}>
-                {s.run_uid}
-              </code>
-            </>
-          )}
+        </div>
+        {s.run_uid && (
+          <div className="muted" style={{ marginTop: 4 }}>
+            run{" "}
+            <code title={s.run_uid}
+                  style={{ fontSize: "0.78rem", maxWidth: 260,
+                           display: "inline-block", overflow: "hidden",
+                           textOverflow: "ellipsis", whiteSpace: "nowrap",
+                           verticalAlign: "bottom" }}>
+              {s.run_uid}
+            </code>
+          </div>
+        )}
+        {(s.machine_name || s.energy_tool) && (
           <div className="muted" style={{ marginTop: 4 }}>
             Energy / time figures are only comparable within one
             (energy&nbsp;tool, machine) pair.
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <p className="muted" style={{ marginTop: -4, fontSize: "0.85rem" }}>
         Every problem is dispatched to LeetCode 5× and all runs are stored.

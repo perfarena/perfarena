@@ -1351,6 +1351,9 @@ export interface AttemptRunDetail {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
+  runtime_energy_j: number | null;
+  energy_j_per_op: number | null;
+  time_us_per_op: number | null;
   total_correct: number | null;
   total_testcases: number | null;
   error_log?: RunErrorLog | null;

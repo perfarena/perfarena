@@ -270,7 +270,7 @@ function AttemptRow({
           }}>
             {open === "runs" && (
               <div className="col" style={{ gap: 8 }}>
-                <RunsChart runs={a.runs} />
+                <RunsChart runs={a.runs} perOp={perOp} />
                 <table className="tbl" style={{ margin: 0 }}>
                   <thead><tr>
                     <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>

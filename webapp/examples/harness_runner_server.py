@@ -421,7 +421,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(400, {
                     "error": "metrics must be a list of strings"})
                 return
-            allowed = {"time", "energy", "memory"}
+            allowed = {"time", "energy", "memory", "correctness"}
             unknown = set(m) - allowed
             if unknown:
                 self._send_json(400, {

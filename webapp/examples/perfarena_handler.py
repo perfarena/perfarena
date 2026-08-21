@@ -1086,7 +1086,9 @@ def validate_once(
 # not with the maximum possible. `time` and `energy` share a run (both
 # come out of `make measure`), so requesting one runs measure; memory
 # always costs a separate `make run` (paper methodology).
-_KNOWN_METRICS = frozenset({"time", "energy", "memory"})
+_KNOWN_METRICS = frozenset({"time", "energy", "memory", "correctness"})
+# Default is perf-only — correctness is opt-in (it is NOT in the default set),
+# so /measure never runs `make validate` unless a caller asks for it.
 _DEFAULT_METRICS = frozenset({"time", "energy", "memory"})
 
 
@@ -1135,6 +1137,11 @@ def measure_once(
     requested = _resolve_metrics(metrics)
     do_measure = bool(requested & {"time", "energy"})
     do_mem = "memory" in requested
+    # Correctness is opt-in: /measure only runs `make validate` when a caller
+    # explicitly asks ("correctness" in metrics). Otherwise it is perf-only and
+    # never emits a Wrong Answer verdict — correctness comes from the
+    # submission's correctness oracle (its /validate), dispatched separately.
+    do_validate = "correctness" in requested
     cell = _cell_dir(title_slug, language)
     folder, _ext = _LANG_MAP[language]
     source = _discover_source(cell)
@@ -1165,12 +1172,15 @@ def measure_once(
         if rc.returncode != 0:
             return _fail_dict("compile", "Compile Error", rc)
 
-        # 2. validate (correctness — diff against reference output)
-        _tv = time.perf_counter()
-        rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-        _log(f"validate rc={rc.returncode} in {time.perf_counter() - _tv:.2f}s")
-        if rc.returncode != 0:
-            return _fail_dict("validate", "Wrong Answer", rc)
+        # 2. validate (correctness — diff against reference output) — ONLY when
+        # explicitly requested ("correctness" metric). Perf-only by default;
+        # correctness is the correctness oracle's job, not the perf harness's.
+        if do_validate:
+            _tv = time.perf_counter()
+            rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+            _log(f"validate rc={rc.returncode} in {time.perf_counter() - _tv:.2f}s")
+            if rc.returncode != 0:
+                return _fail_dict("validate", "Wrong Answer", rc)
 
         # 3. Looped curated-case measurement (the fair per-language
         # methodology). Runs every curated case looped to a wall-time

@@ -256,6 +256,62 @@ def _is_remote_validate_oracle(o: "CorrectnessOracle | None") -> bool:
     cfg = o.config or {}
     return bool(cfg.get("endpoint"))
 
+
+# Statuses that are transport/quota failures, NOT a real correctness verdict.
+# Mirrors the loop-local set used on the remote-runner path.
+_TRANSIENT_STATUSES = frozenset({
+    "Rate limited", "Auth failed", "Dispatch timeout", "Dispatch error",
+    "Dispatch parse error", "LeetCode transient error", "dispatch_warning",
+    "Unknown",
+})
+
+
+def _leetbot_validate(problem: "Problem", language: str, code: str,
+                      session: "Session") -> dict:
+    """Correctness-only LeetCode check: ONE leetbot submission, return just the
+    verdict. Perf fields are discarded — performance comes from the perf
+    harness. This is the LeetCode side of the oracle-independent correctness
+    gate (arena-local uses its HTTP /validate endpoint instead)."""
+    try:
+        runs = _real_dispatch_repeated(problem, language, code, repeats=1,
+                                       session=session)
+    except Exception as e:  # noqa: BLE001
+        return {"status_msg": "dispatch_warning", "system_failure": True,
+                "raw_response": {"note": f"leetbot correctness gate error: {e}"}}
+    r = runs[0] if runs else {}
+    status = r.get("status_msg", "Unknown")
+    return {
+        "status_msg": status,
+        "total_correct": r.get("total_correct"),
+        "total_testcases": r.get("total_testcases"),
+        "raw_response": r.get("raw_response") or r.get("leetcode_full_response") or {},
+        # A system failure (LC outage / transient) must NOT read as a real
+        # verdict — the caller keeps the attempt pending, same as /validate.
+        "system_failure": status in _TRANSIENT_STATUSES,
+    }
+
+
+def _correctness_gate(session: "Session", sub: Submission, code: str,
+                      problem: "Problem",
+                      oracle: "CorrectnessOracle | None") -> dict | None:
+    """Oracle-independent correctness check. Returns a verdict dict
+    (status_msg, raw_response, ...), or None when the oracle can't gate.
+      * remote /validate oracle (arena-local) -> HTTP /validate
+      * leetcode oracle                        -> one leetbot submission
+    Perf is measured separately by the perf harness, only when this is
+    Accepted. Skipping correctness = no correctness oracle on the submission."""
+    if oracle is None:
+        return None
+    if _is_remote_validate_oracle(oracle):
+        return _arena.validate_via_arena_local(
+            problem, sub.language, code, oracle,
+            meta={"submission_id": sub.id},
+        )
+    if oracle.kind == "leetcode":
+        return _leetbot_validate(problem, sub.language, code, session)
+    return None
+
+
 # Per-ACCOUNT inter-submission gap. Drives `pick_for_submission(min_gap_s=
 # INTER_DELAY)` — the picker refuses to return an account whose
 # `last_used_at + INTER_DELAY` is still in the future, falling through to
@@ -1073,11 +1129,23 @@ def dispatch_submission(submission_id: int) -> None:
         # `_resolve_effective_correctness_oracle` for the layering rules.
         effective_correctness = _resolve_effective_correctness_oracle(session, sub)
         use_remote_validate = _is_remote_validate_oracle(effective_correctness)
-        if use_remote_validate:
+        # Oracle-independent correctness gate: check correctness FIRST (via the
+        # oracle's own mechanism — /validate for arena-local, one leetbot
+        # submission for leetcode), then measure perf only if Accepted. Fires
+        # whenever a correctness oracle is set AND perf runs on a SEPARATE
+        # remote runner. When perf is leetbot itself its verdict already covers
+        # correctness, so no separate gate. No correctness oracle on the
+        # submission = skip the gate (the sweep's --skip-correctness omits it).
+        use_correctness_gate = (
+            effective_correctness is not None
+            and use_remote_runner
+            and (use_remote_validate or effective_correctness.kind == "leetcode")
+        )
+        if use_correctness_gate:
+            _how = "/validate" if use_remote_validate else "leetbot submission"
             print(f"[dispatch] sub {submission_id}: correctness oracle "
-                  f"{effective_correctness.slug!r} "
-                  f"kind={effective_correctness.kind} "
-                  f"— will call /validate before /measure per attempt",
+                  f"{effective_correctness.slug!r} kind={effective_correctness.kind} "
+                  f"— will check correctness ({_how}) before /measure per attempt",
                   file=sys.stderr)
 
         # Explicit-non-LC harness with missing config → hard fail, do NOT
@@ -1237,16 +1305,17 @@ def dispatch_submission(submission_id: int) -> None:
             # aggregated.
             validate_gate_rejected = False
             try:
-                if (real and use_remote_validate and not a.prefailed_reason):
-                    # Correctness gate: call /validate BEFORE spending a
+                if (real and use_correctness_gate and not a.prefailed_reason):
+                    # Correctness gate: check correctness BEFORE spending a
                     # /measure iteration. If not Accepted we persist one
                     # Run row with the verdict (perf fields NULL) and
                     # skip the measure branch entirely — saves a lot of
                     # time on Wrong Answer / Runtime Error solutions.
-                    vr = _arena.validate_via_arena_local(
-                        problem, sub.language, a.code,
-                        effective_correctness,
-                        meta={"submission_id": sub.id, "attempt_id": a.id},
+                    # Oracle-independent: /validate for arena-local, a leetbot
+                    # submission for leetcode (perf still comes from the perf
+                    # harness afterwards).
+                    vr = _correctness_gate(
+                        session, sub, a.code, problem, effective_correctness,
                     )
                     if vr.get("system_failure"):
                         # Transport / auth / parse failure — treat like a
