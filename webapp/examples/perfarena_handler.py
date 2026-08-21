@@ -223,6 +223,19 @@ def _machine_descriptor() -> dict[str, Any]:
     return _MACHINE_CACHE
 
 
+def _measure_config() -> dict[str, Any]:
+    """The measurement parameters that affect the per-op numbers — the config
+    half of a MeasurementProfile (machine x tool x config). The energy tool is
+    tracked separately; this captures the loop/budget knobs so the arena can
+    dedup a submission's runs to one profile."""
+    return {
+        "budget_s": float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
+        "mem_budget_s": float(os.environ.get("PERFARENA_MEM_BUDGET_S", "0.5")),
+        "warmup_frac": 0.3,
+        "skip_mem": bool(os.environ.get("PERFARENA_SKIP_MEM")),
+    }
+
+
 _ITERS_RE = re.compile(r"ITERS=(\d+)")
 _MEAS_RE = re.compile(r"MEAS_S=([0-9][0-9.eE+\-]*)")
 _CASE_RE = re.compile(r"CASE=(\S+)")
@@ -1226,6 +1239,7 @@ def measure_once(
             # ── provenance (Parts 2+3) ──
             energy_tool=energy_tool_out,
             machine=machine,
+            config=_measure_config(),
             raw_response=dict(
                 stage="curated-looped",
                 requested_metrics=sorted(requested),

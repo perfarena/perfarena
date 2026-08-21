@@ -34,8 +34,8 @@ from sqlmodel import Session, select
 
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
-    CorrectnessOracle, Harness, Problem, PromptTemplate, RegisteredModel,
-    Run, Submission, User,
+    CorrectnessOracle, Harness, Machine, MeasurementProfile, Problem,
+    PromptTemplate, RegisteredModel, Run, Submission, User,
 )
 from . import leetcode_accounts as _lc_accounts
 
@@ -56,6 +56,11 @@ EXPORTABLE: list[tuple[str, type]] = [
     # symmetric reason — Competition/Submission/Run FK into both.
     ("harnesses",            Harness),
     ("correctness_oracles",  CorrectnessOracle),
+    # Provenance of a run's numbers: the physical box + the (tool, config)
+    # profile it ran under. Machine before profiles (profile FKs machine);
+    # both before submissions/runs, which FK into them.
+    ("machines",             Machine),
+    ("measurement_profiles", MeasurementProfile),
     ("competitions",         Competition),
     ("competition_problems", CompetitionProblem),
     ("baselines",            Baseline),
@@ -317,7 +322,7 @@ def import_bundle(session: Session, bundle: dict) -> dict:
     id_maps: dict[str, dict[int, int]] = {
         "users": {}, "problems": {}, "prompt_templates": {},
         "registered_models": {}, "competitions": {}, "harnesses": {},
-        "correctness_oracles": {},
+        "correctness_oracles": {}, "machines": {}, "measurement_profiles": {},
         "blog_posts": {}, "submissions": {}, "attempts": {},
         "runs": {}, "baselines": {},
     }
@@ -380,6 +385,39 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 report[tname]["errored"] += 1
         session.commit()
 
+    # 1b) Machines + measurement profiles — a run's measurement provenance.
+    # Machine has no FKs; MeasurementProfile.machine_id remaps through it.
+    for row in incoming.get("machines") or []:
+        try:
+            payload = _coerce_for_table(Machine, row)
+            old_id = payload.pop("id", None)
+            obj = Machine(**payload)
+            session.add(obj)
+            session.flush()
+            if old_id is not None:
+                id_maps["machines"][int(old_id)] = int(obj.id)
+            report["machines"]["inserted"] += 1
+        except Exception:                                    # noqa: BLE001
+            report["machines"]["errored"] += 1
+    session.commit()
+
+    for row in incoming.get("measurement_profiles") or []:
+        try:
+            payload = _coerce_for_table(MeasurementProfile, row)
+            old_id = payload.pop("id", None)
+            mid = payload.get("machine_id")
+            if mid is not None:
+                payload["machine_id"] = id_maps["machines"].get(int(mid), mid)
+            obj = MeasurementProfile(**payload)
+            session.add(obj)
+            session.flush()
+            if old_id is not None:
+                id_maps["measurement_profiles"][int(old_id)] = int(obj.id)
+            report["measurement_profiles"]["inserted"] += 1
+        except Exception:                                    # noqa: BLE001
+            report["measurement_profiles"]["errored"] += 1
+    session.commit()
+
     # 2) Submissions — children of users + prompts + competitions + harnesses.
     # Remap all four FKs; drop the submission when its user_id can't be
     # resolved (unresolvable user = orphan row).
@@ -415,6 +453,9 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 payload["correctness_oracle_id"] = (
                     id_maps["correctness_oracles"].get(int(coid), coid)
                 )
+            mid = payload.get("machine_id")
+            if mid is not None:
+                payload["machine_id"] = id_maps["machines"].get(int(mid), mid)
             obj = Submission(**payload)
             session.add(obj)
             session.flush()
@@ -475,6 +516,11 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             if coid is not None:
                 payload["correctness_oracle_id"] = (
                     id_maps["correctness_oracles"].get(int(coid), coid)
+                )
+            mpid = payload.get("measurement_profile_id")
+            if mpid is not None:
+                payload["measurement_profile_id"] = (
+                    id_maps["measurement_profiles"].get(int(mpid), mpid)
                 )
             obj = Run(**payload)
             session.add(obj)

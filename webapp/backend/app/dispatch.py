@@ -41,6 +41,7 @@ from .models import (
     Competition, CompetitionProblem, Harness, Machine,
     Problem, Run, Submission, SubmissionStatus,
 )
+from .measurement_profile import config_hash, get_or_create_profile
 
 def _resolve_leetbot() -> Path:
     """Locate leetbot.py across the layouts we actually deploy to:
@@ -145,6 +146,7 @@ def _upsert_machine(session: "Session", desc: dict) -> Machine:
 def _stamp_submission_provenance(
     session: "Session", sub: Submission,
     tools: set[str], machines: list[dict],
+    configs: list[dict] | None = None,
 ) -> None:
     """Enforce ONE energy tool + ONE machine per submission (Parts 2+3).
 
@@ -190,6 +192,27 @@ def _stamp_submission_provenance(
         print(f"[dispatch] sub {sub.id}: runs span MULTIPLE machines "
               f"{sorted(k[0] for k in uniq)} — leaving machine_id unset",
               file=sys.stderr)
+
+    # Measurement profile — (machine x tool x config). When the submission
+    # resolved to a single machine + tool, dedupe the reported configs; if
+    # they agree too, upsert the profile and stamp every run of the submission
+    # with it (mirrors the single-tool / single-machine rule above).
+    if configs and sub.machine_id and sub.energy_tool:
+        uniq_cfg = {config_hash(sub.energy_tool, c): c
+                    for c in configs if isinstance(c, dict)}
+        if len(uniq_cfg) == 1:
+            cfg = next(iter(uniq_cfg.values()))
+            profile = get_or_create_profile(
+                session, sub.machine_id, sub.energy_tool, cfg)
+            run_rows = session.exec(
+                select(Run).join(Attempt).where(Attempt.submission_id == sub.id)
+            ).all()
+            for r in run_rows:
+                r.measurement_profile_id = profile.id
+                session.add(r)
+        elif len(uniq_cfg) > 1:
+            print(f"[dispatch] sub {sub.id}: runs span MULTIPLE configs "
+                  f"— leaving measurement_profile unset", file=sys.stderr)
 
     # Unique measurement-run identifier: a stable opaque handle for THIS
     # submission's measurement, distinct from the autoincrement id, for
@@ -1185,6 +1208,7 @@ def dispatch_submission(submission_id: int) -> None:
         # (= "unknown machine").
         runner_tools: set[str] = set()
         runner_machines: list[dict] = []
+        runner_configs: list[dict] = []
 
         for idx, a in enumerate(pending):
             # Pause before THIS attempt if we've just crossed the
@@ -1322,6 +1346,9 @@ def dispatch_submission(submission_id: int) -> None:
                                 _rm = result.get("machine")
                                 if isinstance(_rm, dict) and _rm.get("name"):
                                     runner_machines.append(_rm)
+                                _rc = result.get("config")
+                                if isinstance(_rc, dict):
+                                    runner_configs.append(_rc)
                             session.add(Run(
                                 attempt_id=a.id,
                                 run_index=idx_1based,
@@ -1824,7 +1851,8 @@ def dispatch_submission(submission_id: int) -> None:
         # Stamp the single energy tool + machine this submission was measured
         # on (Parts 2+3). No-op for LeetCode-scored submissions (accumulators
         # stay empty) so those keep energy_tool NULL + machine_id NULL.
-        _stamp_submission_provenance(session, sub, runner_tools, runner_machines)
+        _stamp_submission_provenance(session, sub, runner_tools, runner_machines,
+                                     runner_configs)
         sub.status = SubmissionStatus.judged
         session.add(sub)
         session.commit()

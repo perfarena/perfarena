@@ -251,6 +251,7 @@ def _normalise_run(row: dict) -> dict:
         # can stamp them on the submission (one tool / one machine per sub).
         "energy_tool":               row.get("energy_tool"),
         "machine":                   row.get("machine"),
+        "config":                    row.get("config"),
         "raw_response":              raw_response,
         "leetcode_full_response":    None,     # arena-local ⇒ never LC
     }

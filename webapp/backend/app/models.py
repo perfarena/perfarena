@@ -219,6 +219,25 @@ class Machine(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class MeasurementProfile(SQLModel, table=True):
+    """A specific (machine x energy tool x config) under which measurements
+    were taken. Splitting this from Machine lets ONE physical box host several
+    setups — RAPL at budget 1.5s, codecarbon at 1.0s, a different governor —
+    without duplicating the hardware row. A Run points at the profile that
+    ACTUALLY produced its numbers (mirrors Run.harness_id). Energy is only
+    comparable within one profile."""
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: int | None = Field(default=None, foreign_key="machine.id", index=True)
+    energy_tool: str | None = None        # rapl | codecarbon | powermetrics | none
+    # Free-form measurement config: budget_s, mem_budget_s, warmup_frac,
+    # repeats, governor, turbo_disabled, toolchain_versions, noise_floor_cv, ...
+    config: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    # sha256 over canonical_json({energy_tool, config}); the (machine_id,
+    # config_hash) pair is the dedup key so the same setup resolves to one row.
+    config_hash: str = Field(index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class Attempt(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     submission_id: int = Field(foreign_key="submission.id", index=True)
@@ -404,6 +423,12 @@ class Run(SQLModel, table=True):
     # oracle.
     correctness_oracle_id: int | None = Field(
         default=None, foreign_key="correctnessoracle.id", index=True,
+    )
+    # The (machine x tool x config) that ACTUALLY produced this run's numbers.
+    # Mirrors the harness_id / correctness_oracle_id layering. NULL for external
+    # (LeetCode) runs that carry no local measurement environment.
+    measurement_profile_id: int | None = Field(
+        default=None, foreign_key="measurementprofile.id", index=True,
     )
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
