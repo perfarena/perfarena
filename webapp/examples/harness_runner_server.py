@@ -430,15 +430,45 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 return
             metrics_kw["metrics"] = m
 
+        # `compile` — build the artifact ONCE for this batch (default off).
+        # A batch-aware handler compiles once then measures `repeats` times;
+        # the compile is never repeated per run.
+        compile_flag = bool(body.get("compile", False))
         if not self._acquire_or_reject(meta):
             return
         try:
-            runs = [
-                _normalise(self._call_handler(
-                    _MEASURE_HANDLER, body, extra_kwargs=metrics_kw,
-                ))
-                for _ in range(repeats)
-            ]
+            import inspect
+            try:
+                batch_ok = "repeats" in inspect.signature(_MEASURE_HANDLER).parameters
+            except (TypeError, ValueError):
+                batch_ok = False
+            if batch_ok:
+                # Batch handler: ONE call, returns a list of `repeats` results.
+                try:
+                    batch = _MEASURE_HANDLER(
+                        body["title_slug"], body["language"], body["code"],
+                        **{**metrics_kw, "repeats": repeats, "do_compile": compile_flag},
+                    )
+                except Exception as e:                               # noqa: BLE001
+                    batch = [{"status_msg": "Runtime Error",
+                              "raw_response": {"note": f"handler raised: "
+                                                       f"{type(e).__name__}: {e}"}}]
+            else:
+                # Back-compat handler (no batch support): loop the per-call shape.
+                batch = [self._call_handler(_MEASURE_HANDLER, body,
+                                            extra_kwargs=metrics_kw)
+                         for _ in range(repeats)]
+            if isinstance(batch, dict):
+                batch = [batch]
+            batch = [b for b in batch if isinstance(b, dict) and "status_msg" in b]
+            if not batch:
+                batch = [{"status_msg": "Runtime Error",
+                          "raw_response": {"note": "handler returned no runs"}}]
+            # Pad/truncate to `repeats` — a compile/validate fail returns one
+            # row; replicate it so the arena's aggregate math stays valid.
+            if len(batch) < repeats:
+                batch = batch + [batch[-1]] * (repeats - len(batch))
+            runs = [_normalise(b) for b in batch[:repeats]]
         finally:
             self._release()
         self._send_json(200, {"runs": runs})

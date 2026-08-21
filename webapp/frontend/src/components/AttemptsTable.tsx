@@ -51,7 +51,7 @@ function StatusBadge({ a }: { a: AttemptResultPayload }) {
   );
 }
 
-function RunRow({ run, perOp }: { run: AttemptRunDetail; perOp: boolean }) {
+function RunRow({ run, perOp, showTests }: { run: AttemptRunDetail; perOp: boolean; showTests: boolean }) {
   const [open, setOpen] = useState(false);
   const log = run.error_log;
   const showLog = hasErrorLog(log);
@@ -77,7 +77,9 @@ function RunRow({ run, perOp }: { run: AttemptRunDetail; perOp: boolean }) {
         <td className="metric">{formatMemory(run.memory_mb)}</td>
         <td className="metric">{formatPercentile(run.runtime_percentile)}</td>
         <td className="metric">{formatPercentile(run.memory_percentile)}</td>
-        <td className="metric">{run.total_correct ?? "?"}/{run.total_testcases ?? "?"}</td>
+        {showTests && (
+          <td className="metric">{run.total_correct ?? "?"}/{run.total_testcases ?? "?"}</td>
+        )}
         <td>
           {canExpand && (
             <button className="secondary" onClick={() => setOpen(o => !o)}>
@@ -274,10 +276,13 @@ function AttemptRow({
                 <table className="tbl" style={{ margin: 0 }}>
                   <thead><tr>
                     <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>
-                    <th>RT %ile</th><th>Mem %ile</th><th>Tests</th><th></th>
+                    <th>RT %ile</th><th>Mem %ile</th>
+                    {a.runs.some(r => r.total_correct != null || r.total_testcases != null) && <th>Tests</th>}
+                    <th></th>
                   </tr></thead>
                   <tbody>
-                    {a.runs.map(r => <RunRow key={r.run_index} run={r} perOp={perOp} />)}
+                    {a.runs.map(r => <RunRow key={r.run_index} run={r} perOp={perOp}
+                      showTests={a.runs.some(rr => rr.total_correct != null || rr.total_testcases != null)} />)}
                   </tbody>
                 </table>
               </div>

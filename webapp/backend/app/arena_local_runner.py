@@ -301,6 +301,9 @@ def dispatch_via_arena_local(
         "language":   language,
         "code":       code,
         "repeats":    repeats,
+        # Build the model's code ONCE for this batch; the runner then measures
+        # `repeats` times against that single artifact (no per-repeat compile).
+        "compile":    True,
         "meta":       meta or {},
     }
     # Metric selector — controls which physical runs the runner's

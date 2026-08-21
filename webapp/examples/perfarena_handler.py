@@ -1109,10 +1109,80 @@ def _resolve_metrics(metrics: Any) -> frozenset[str]:
     return requested
 
 
+def _run_one_measurement(cell, language: str, title_slug: str,
+                         requested, do_measure: bool, do_mem: bool) -> dict[str, Any]:
+    """ONE measurement pass (the curated per-op loop + result dict).
+    measure_once calls this N times AFTER a single compile — it never
+    recompiles, so a compiled language pays the build cost once per batch."""
+    looped: dict[str, Any] = {}
+    looped_wall_s: float | None = None
+    if do_measure or do_mem:
+        budget = float(os.environ.get("PERFARENA_BUDGET_S", "1.5"))
+        per_case_timeout = float(os.environ.get("PERFARENA_CASE_TIMEOUT_S", "180"))
+        t0 = time.perf_counter()
+        looped = _measure_curated_looped(
+            cell, language, title_slug, budget, per_case_timeout,
+            measure_energy=do_measure, measure_memory=do_mem)
+        looped_wall_s = time.perf_counter() - t0
+        _log(f"curated measure total {looped_wall_s:.2f}s")
+
+    if do_measure:
+        produced = looped.get("time_us_per_op") is not None
+        status = "Accepted" if produced else "Runtime Error"
+    elif do_mem:
+        status = "Accepted" if looped.get("peak_rss_kb") else "Runtime Error"
+    else:
+        status = "Accepted"
+
+    t_us = looped.get("time_us_per_op")
+    e_op = looped.get("energy_j_per_op")
+    runtime_ms = (t_us / 1000.0) if (t_us is not None and "time" in requested) else None
+    energy_j = e_op if (e_op is not None and "energy" in requested) else None
+    memory_mb = ((looped.get("peak_rss_kb") or 0) / 1024.0) if do_mem and looped.get("peak_rss_kb") else None
+
+    machine = _machine_descriptor()
+    _src = looped.get("energy_source")
+    energy_tool_out: str | None = (
+        _src if (energy_j is not None and _src
+                 and _src not in ("none", "codecarbon-error"))
+        else None
+    )
+
+    return dict(
+        status_msg=status,
+        runtime_ms=runtime_ms,
+        memory_mb=memory_mb,
+        runtime_energy_j=energy_j,
+        iterations=looped.get("iterations"),
+        energy_j_per_op=(e_op if "energy" in requested else None),
+        time_us_per_op=(t_us if "time" in requested else None),
+        energy_tool=energy_tool_out,
+        machine=machine,
+        config=_measure_config(),
+        raw_response=dict(
+            stage="curated-looped",
+            requested_metrics=sorted(requested),
+            energy_source=looped.get("energy_source"),
+            budget_s=float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
+            n_cases=looped.get("n_cases"),
+            iterations=looped.get("iterations"),
+            energy_j_per_op=e_op,
+            time_us_per_op=t_us,
+            peak_rss_kb=looped.get("peak_rss_kb"),
+            any_nonzero_exit=looped.get("any_nonzero_exit"),
+            measure_wall_s=looped_wall_s,
+            per_case=looped.get("per_case"),
+            energy_tool=energy_tool_out,
+            machine=machine,
+            cell=str(cell),
+        ),
+    )
+
+
 def measure_once(
     title_slug: str, language: str, code: str,
-    metrics: Any = None,
-) -> dict[str, Any]:
+    metrics: Any = None, repeats: int = 1, do_compile: bool = False,
+) -> "list[dict[str, Any]]":
     """Adapter matching harness_runner_server.py's --measure-handler protocol.
 
     Returns a dict shaped for arena_local_runner._normalise_run:
@@ -1165,12 +1235,15 @@ def measure_once(
         shutil.copy2(source, backup)
         source.write_text(code)
 
-        # 1. compile
-        _tc = time.perf_counter()
-        rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
-        _log(f"compile rc={rc.returncode} in {time.perf_counter() - _tc:.2f}s")
-        if rc.returncode != 0:
-            return _fail_dict("compile", "Compile Error", rc)
+        # 1. compile — ONCE, only when explicitly requested. Default /measure
+        # assumes the artifact is already built (compile once, then measure
+        # many); it never recompiles per repeat.
+        if do_compile:
+            _tc = time.perf_counter()
+            rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
+            _log(f"compile rc={rc.returncode} in {time.perf_counter() - _tc:.2f}s")
+            if rc.returncode != 0:
+                return [_fail_dict("compile", "Compile Error", rc)]
 
         # 2. validate (correctness — diff against reference output) — ONLY when
         # explicitly requested ("correctness" metric). Perf-only by default;
@@ -1180,94 +1253,16 @@ def measure_once(
             rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
             _log(f"validate rc={rc.returncode} in {time.perf_counter() - _tv:.2f}s")
             if rc.returncode != 0:
-                return _fail_dict("validate", "Wrong Answer", rc)
+                return [_fail_dict("validate", "Wrong Answer", rc)]
 
-        # 3. Looped curated-case measurement (the fair per-language
-        # methodology). Runs every curated case looped to a wall-time
-        # budget (>=1s each) under the machine's energy tool, then
-        # normalizes to per-op metrics that ARE comparable across
-        # languages. Memory (peak RSS) is co-measured by polling the
-        # process tree during the loop — the loop dwarfs the poll cost,
-        # so it doesn't contaminate the perf numbers the way a naive
-        # in-band tracker would.
-        looped: dict[str, Any] = {}
-        looped_wall_s: float | None = None
-        if do_measure or do_mem:
-            budget = float(os.environ.get("PERFARENA_BUDGET_S", "1.5"))
-            per_case_timeout = float(
-                os.environ.get("PERFARENA_CASE_TIMEOUT_S", "180"))
-            t0 = time.perf_counter()
-            looped = _measure_curated_looped(
-                cell, language, title_slug, budget, per_case_timeout,
-                measure_energy=do_measure, measure_memory=do_mem)
-            looped_wall_s = time.perf_counter() - t0
-            _log(f"curated measure total {looped_wall_s:.2f}s")
-
-        # A curated run that produced NO valid per-op on ANY case is a
-        # Runtime Error (harness crashed / timed out for this solution).
-        # If SOME cases produced per-op we accept (partial coverage noted
-        # in raw_response.per_case).
-        if do_measure:
-            produced = looped.get("time_us_per_op") is not None
-            status = "Accepted" if produced else "Runtime Error"
-        elif do_mem:
-            status = ("Accepted" if looped.get("peak_rss_kb")
-                      else "Runtime Error")
-        else:
-            status = "Accepted"
-
-        t_us = looped.get("time_us_per_op")
-        e_op = looped.get("energy_j_per_op")
-        # Legacy UI columns alias the per-op values so every existing
-        # comparison view (which reads runtime_ms / runtime_energy_j)
-        # shows the FAIR per-single-solve numbers with no frontend change.
-        runtime_ms = (t_us / 1000.0) if (t_us is not None and "time" in requested) else None
-        energy_j = e_op if (e_op is not None and "energy" in requested) else None
-        memory_mb = ((looped.get("peak_rss_kb") or 0) / 1024.0) if do_mem and looped.get("peak_rss_kb") else None
-
-        machine = _machine_descriptor()
-        # Only stamp an energy tool when energy was actually MEASURED AND
-        # STORED this run (A3). A time-only request still runs codecarbon
-        # around the loop, but if we didn't keep an energy number the
-        # submission must not claim a tool produced one.
-        _src = looped.get("energy_source")
-        energy_tool_out: str | None = (
-            _src if (energy_j is not None and _src
-                     and _src not in ("none", "codecarbon-error"))
-            else None
-        )
-
-        return dict(
-            status_msg=status,
-            runtime_ms=runtime_ms,
-            memory_mb=memory_mb,
-            runtime_energy_j=energy_j,
-            # ── per-op metrics (Part 4) ──
-            iterations=looped.get("iterations"),
-            energy_j_per_op=(e_op if "energy" in requested else None),
-            time_us_per_op=(t_us if "time" in requested else None),
-            # ── provenance (Parts 2+3) ──
-            energy_tool=energy_tool_out,
-            machine=machine,
-            config=_measure_config(),
-            raw_response=dict(
-                stage="curated-looped",
-                requested_metrics=sorted(requested),
-                energy_source=looped.get("energy_source"),
-                budget_s=float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
-                n_cases=looped.get("n_cases"),
-                iterations=looped.get("iterations"),
-                energy_j_per_op=e_op,
-                time_us_per_op=t_us,
-                peak_rss_kb=looped.get("peak_rss_kb"),
-                any_nonzero_exit=looped.get("any_nonzero_exit"),
-                measure_wall_s=looped_wall_s,
-                per_case=looped.get("per_case"),
-                energy_tool=energy_tool_out,
-                machine=machine,
-                cell=str(cell),
-            ),
-        )
+        # 3. Measure N times against the single compiled artifact — the compile
+        # above ran at most ONCE (never per repeat). Each pass is an independent
+        # per-op measurement; together they give the run-to-run spread.
+        return [
+            _run_one_measurement(cell, language, title_slug, requested,
+                                 do_measure, do_mem)
+            for _ in range(max(1, int(repeats)))
+        ]
     finally:
         # Always restore the canonical source, even on exception, so
         # the fork stays byte-identical to git between attempts.

@@ -299,17 +299,36 @@ def _correctness_gate(session: "Session", sub: Submission, code: str,
       * remote /validate oracle (arena-local) -> HTTP /validate
       * leetcode oracle                        -> one leetbot submission
     Perf is measured separately by the perf harness, only when this is
-    Accepted. Skipping correctness = no correctness oracle on the submission."""
+    Accepted. Skipping correctness = no correctness oracle on the submission.
+
+    A single call is enough; it is retried ONLY on a transient/timeout failure
+    (never on a real verdict), up to _CORRECTNESS_GATE_RETRIES extra tries."""
     if oracle is None:
         return None
-    if _is_remote_validate_oracle(oracle):
-        return _arena.validate_via_arena_local(
-            problem, sub.language, code, oracle,
-            meta={"submission_id": sub.id},
-        )
-    if oracle.kind == "leetcode":
-        return _leetbot_validate(problem, sub.language, code, session)
-    return None
+
+    def _one() -> "dict | None":
+        if _is_remote_validate_oracle(oracle):
+            return _arena.validate_via_arena_local(
+                problem, sub.language, code, oracle,
+                meta={"submission_id": sub.id},
+            )
+        if oracle.kind == "leetcode":
+            return _leetbot_validate(problem, sub.language, code, session)
+        return None
+
+    last: "dict | None" = None
+    for i in range(_CORRECTNESS_GATE_RETRIES + 1):
+        vr = _one()
+        if vr is None:
+            return None
+        if not vr.get("system_failure"):
+            return vr                        # real verdict — done, no retry
+        last = vr
+        if i < _CORRECTNESS_GATE_RETRIES:
+            print(f"[dispatch] correctness gate transient "
+                  f"({vr.get('status_msg')}) — retry "
+                  f"{i + 1}/{_CORRECTNESS_GATE_RETRIES}", file=sys.stderr)
+    return last                              # exhausted — return the transient
 
 
 # Per-ACCOUNT inter-submission gap. Drives `pick_for_submission(min_gap_s=
@@ -362,6 +381,21 @@ BACKOFF_CAP_S = float(os.environ.get("ARENA_DISPATCH_BACKOFF_CAP_S", "8"))
 # leetbot subprocess hung.
 SUBPROCESS_TIMEOUT = int(os.environ.get("ARENA_DISPATCH_SUBPROC_TIMEOUT", "1200"))
 REPEATS = max(1, int(os.environ.get("ARENA_DISPATCH_REPEATS", "3")))
+# Correctness gate retries: retry the SINGLE correctness call ONLY on a
+# transient/timeout failure (never on a real verdict). Default: 1 retry.
+_CORRECTNESS_GATE_RETRIES = max(0, int(os.environ.get("ARENA_CORRECTNESS_RETRIES", "1")))
+
+
+def _repeats_for_harness(h: "Harness | None") -> int:
+    """Perf repeats for THIS harness. arena-local already averages within each
+    measure (the per-op loop), so a harness may lower the count via
+    config['repeats']; LeetCode keeps the global count (each repeat is a
+    separate submission)."""
+    if h is not None:
+        n = (h.config or {}).get("repeats")
+        if isinstance(n, int) and n >= 1:
+            return n
+    return REPEATS
 # On a Time Limit Exceeded verdict, leetbot re-submits up to this many extra
 # times before accepting the TLE — TLE is judge-load-flaky and a borderline
 # solution often passes on retry. Applied per repeat (so the worst case is
@@ -1117,6 +1151,7 @@ def dispatch_submission(submission_id: int) -> None:
         # runner. Legacy submissions with no harness_id and no
         # competition-default fall through to the leetbot path unchanged.
         effective_harness = _resolve_effective_harness(session, sub)
+        n_repeats = _repeats_for_harness(effective_harness)
         use_remote_runner = _is_remote_runner_harness(effective_harness)
         if use_remote_runner:
             print(f"[dispatch] sub {submission_id}: harness "
@@ -1304,6 +1339,10 @@ def dispatch_submission(submission_id: int) -> None:
             # the Run row so it should NOT be double-persisted, only
             # aggregated.
             validate_gate_rejected = False
+            # Correctness verdict from the gate (leetbot / remote /validate) —
+            # carried onto the perf run so a LeetCode-validated, arena-measured
+            # attempt shows the real test-case count instead of ?/?.
+            gate_verdict: dict | None = None
             try:
                 if (real and use_correctness_gate and not a.prefailed_reason):
                     # Correctness gate: check correctness BEFORE spending a
@@ -1370,6 +1409,9 @@ def dispatch_submission(submission_id: int) -> None:
                               f"{vr['status_msg']} — skipping /measure",
                               file=sys.stderr)
                     else:
+                        # Accepted — remember the verdict so its test-case
+                        # count + oracle attribution land on the perf run.
+                        gate_verdict = vr
                         print(f"[dispatch] attempt {a.id}: /validate → "
                               f"Accepted — proceeding to /measure",
                               file=sys.stderr)
@@ -1433,8 +1475,19 @@ def dispatch_submission(submission_id: int) -> None:
                                 iterations=result.get("iterations"),
                                 energy_j_per_op=result.get("energy_j_per_op"),
                                 time_us_per_op=result.get("time_us_per_op"),
-                                total_correct=result.get("total_correct"),
-                                total_testcases=result.get("total_testcases"),
+                                # Arena-local /measure reports no test-case
+                                # count; fall back to the correctness gate's
+                                # verdict (e.g. LeetCode 43/43) when present.
+                                total_correct=(
+                                    result.get("total_correct")
+                                    if result.get("total_correct") is not None
+                                    else (gate_verdict.get("total_correct")
+                                          if gate_verdict else None)),
+                                total_testcases=(
+                                    result.get("total_testcases")
+                                    if result.get("total_testcases") is not None
+                                    else (gate_verdict.get("total_testcases")
+                                          if gate_verdict else None)),
                                 raw_response=result.get("raw_response") or result,
                                 # Stamp the harness so /submissions/{id}
                                 # aggregation can attribute runs to the
@@ -1456,7 +1509,8 @@ def dispatch_submission(submission_id: int) -> None:
                                 # separate oracle judged it.
                                 correctness_oracle_id=(
                                     effective_correctness.id
-                                    if use_remote_validate else None),
+                                    if (use_remote_validate or gate_verdict is not None)
+                                    else None),
                             ))
                             real_so_far = [r for r in runs_so_far
                                            if r.get("status_msg") not in _SYSTEM_FAIL]
@@ -1480,11 +1534,11 @@ def dispatch_submission(submission_id: int) -> None:
                                 else f"fail (not persisted) — "
                                      f"{(result.get('raw_response') or {}).get('note') or 'no detail'}")
                         print(f"[dispatch] attempt {a.id}: "
-                              f"run {idx_1based}/{REPEATS} → {status_msg} ({tail})",
+                              f"run {idx_1based}/{n_repeats} → {status_msg} ({tail})",
                               file=sys.stderr)
 
                     runs = _arena.dispatch_via_arena_local(
-                        problem, sub.language, a.code, REPEATS,
+                        problem, sub.language, a.code, n_repeats,
                         harness=effective_harness,
                         on_run_completed=_persist_run_remote,
                         meta={"submission_id": sub.id, "attempt_id": a.id},
@@ -1640,11 +1694,11 @@ def dispatch_submission(submission_id: int) -> None:
                                     note = note[:197] + "..."
                                 tail = f"fail (not persisted) — {note}"
                             print(f"[dispatch] attempt {a.id}: "
-                                  f"run {idx_1based}/{REPEATS} → {status_msg} ({tail})",
+                                  f"run {idx_1based}/{n_repeats} → {status_msg} ({tail})",
                                   file=sys.stderr)
 
                         runs = _real_dispatch_repeated(
-                            problem, sub.language, a.code, REPEATS,
+                            problem, sub.language, a.code, n_repeats,
                             session=session, force_account=chosen.name,
                             on_run_completed=_persist_run,
                         )
