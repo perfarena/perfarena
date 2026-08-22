@@ -1029,6 +1029,24 @@ def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
     )
 
 
+_VALIDATE_NCASES_RE = re.compile(r"\bncases=(\d+)")
+_VALIDATE_PASSED_RE = re.compile(r"\bpassed=(\d+)")
+
+
+def _parse_validate_counts(stderr: str) -> "tuple[int | None, int | None]":
+    """Extract (total_correct, total_testcases) from a full-suite VALIDATE line.
+    Validators emit `... passed=<K> ncases=<N>`; K = cases that passed before the
+    verdict (LeetCode's total_correct semantics), N = total reference cases.
+    Returns (None, None) for the legacy `make validate` fallback (no counts)."""
+    if not stderr:
+        return None, None
+    n = _VALIDATE_NCASES_RE.search(stderr)
+    k = _VALIDATE_PASSED_RE.search(stderr)
+    total = int(n.group(1)) if n else None
+    passed = int(k.group(1)) if k else None
+    return passed, total
+
+
 def _full_suite_validate(cell: Path, arena_lang: str,
                          timeout: float = 300.0) -> subprocess.CompletedProcess:
     """Run the full-suite correctness validator (selection/run_validate.sh) FROM
@@ -1075,18 +1093,26 @@ def validate_once(
         # and diff each result. Falls back to the legacy single-case
         # `make validate` for languages whose validator isn't built yet (rc 2).
         vr = _full_suite_validate(cell, language)
+        total_correct = total_testcases = None
         if vr.returncode == 2:
             vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
             status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
         else:
             status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+            # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
+            # before the verdict (== LeetCode total_correct), N total.
+            total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         if status != "Accepted":
             fd = _fail_dict("validate", status, vr)
             return {"status_msg": fd["status_msg"],
                     "error_log":  fd["error_log"],
+                    "total_correct": total_correct,
+                    "total_testcases": total_testcases,
                     "raw_response": fd["raw_response"]}
         return dict(
             status_msg="Accepted",
+            total_correct=total_correct,
+            total_testcases=total_testcases,
             raw_response=dict(
                 stage="validate",
                 validate=(vr.stderr or "")[-2000:],

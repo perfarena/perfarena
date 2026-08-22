@@ -1387,7 +1387,10 @@ def dispatch_submission(submission_id: int) -> None:
                             runtime_percentile=None, memory_percentile=None,
                             runtime_energy_j=None,
                             runtime_energy_percentile=None,
-                            total_correct=None, total_testcases=None,
+                            # K/N reference cases the oracle got through before
+                            # the verdict (so Wrong Answer shows "45/60", not ?/?).
+                            total_correct=vr.get("total_correct"),
+                            total_testcases=vr.get("total_testcases"),
                             raw_response=vr.get("raw_response") or {
                                 "note": "correctness oracle rejected",
                             },
@@ -1400,7 +1403,8 @@ def dispatch_submission(submission_id: int) -> None:
                             "runtime_percentile": None, "memory_percentile": None,
                             "runtime_energy_j": None,
                             "runtime_energy_percentile": None,
-                            "total_correct": None, "total_testcases": None,
+                            "total_correct": vr.get("total_correct"),
+                            "total_testcases": vr.get("total_testcases"),
                             "raw_response": vr.get("raw_response"),
                             "leetcode_full_response": None,
                         }]

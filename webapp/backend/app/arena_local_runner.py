@@ -532,8 +532,13 @@ def validate_via_arena_local(
     if verdict.get("error_log") and isinstance(raw, dict):
         raw = {**raw, "error_log": raw.get("error_log") or verdict["error_log"]}
     return {
-        "status_msg":     status,
-        "raw_response":   raw,
-        "system_failure": False,
+        "status_msg":      status,
+        # Full-suite validators report cases passed before the verdict (==
+        # LeetCode total_correct) and the total; the dispatcher stamps these
+        # onto the Run row so the Tests column shows K/N instead of ?/?.
+        "total_correct":   verdict.get("total_correct"),
+        "total_testcases": verdict.get("total_testcases"),
+        "raw_response":    raw,
+        "system_failure":  False,
     }
 

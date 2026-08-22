@@ -496,9 +496,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         # by the handler). Perf fields are meaningless on /validate.
         self._send_json(200, {
             "verdict": {
-                "status_msg":   r.get("status_msg") or "Runtime Error",
-                "error_log":    r.get("error_log"),
-                "raw_response": r.get("raw_response"),
+                "status_msg":      r.get("status_msg") or "Runtime Error",
+                "error_log":       r.get("error_log"),
+                # Full-suite validators report how many reference cases passed
+                # before the verdict (== LeetCode total_correct) and the total.
+                "total_correct":   r.get("total_correct"),
+                "total_testcases": r.get("total_testcases"),
+                "raw_response":    r.get("raw_response"),
             },
         })
 
