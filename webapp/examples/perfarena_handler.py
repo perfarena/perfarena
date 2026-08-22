@@ -1029,6 +1029,19 @@ def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
     )
 
 
+def _full_suite_validate(cell: Path, arena_lang: str,
+                         timeout: float = 300.0) -> subprocess.CompletedProcess:
+    """Run the full-suite correctness validator (selection/run_validate.sh) FROM
+    the cell — the solution against EVERY reference case. Exit codes: 0 Accepted,
+    1 Wrong Answer, 3 Runtime Error, 2 not-yet-built for this language (the
+    caller falls back to the legacy single-case `make validate`)."""
+    script = _selection_dir() / "run_validate.sh"
+    # run_validate.sh keys on the same labels as run_harness.sh (e.g. "golang",
+    # not "go"), so normalise the arena slug the same way the measure path does.
+    harness_lang = _HARNESS_LANG.get(arena_lang, arena_lang)
+    return _run(["bash", str(script), harness_lang], cwd=cell, timeout=timeout)
+
+
 def validate_once(
     title_slug: str, language: str, code: str,
 ) -> dict[str, Any]:
@@ -1058,9 +1071,17 @@ def validate_once(
             return {"status_msg": fd["status_msg"],
                     "error_log":  fd["error_log"],
                     "raw_response": fd["raw_response"]}
-        rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-        if rc.returncode != 0:
-            fd = _fail_dict("validate", "Wrong Answer", rc)
+        # Full-suite correctness: run the solution against EVERY reference case
+        # and diff each result. Falls back to the legacy single-case
+        # `make validate` for languages whose validator isn't built yet (rc 2).
+        vr = _full_suite_validate(cell, language)
+        if vr.returncode == 2:
+            vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+            status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+        else:
+            status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+        if status != "Accepted":
+            fd = _fail_dict("validate", status, vr)
             return {"status_msg": fd["status_msg"],
                     "error_log":  fd["error_log"],
                     "raw_response": fd["raw_response"]}
@@ -1068,7 +1089,7 @@ def validate_once(
             status_msg="Accepted",
             raw_response=dict(
                 stage="validate",
-                stdout=rc.stdout[-2000:] if rc.stdout else None,
+                validate=(vr.stderr or "")[-2000:],
             ),
         )
     finally:
@@ -1250,10 +1271,15 @@ def measure_once(
         # correctness is the correctness oracle's job, not the perf harness's.
         if do_validate:
             _tv = time.perf_counter()
-            rc = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-            _log(f"validate rc={rc.returncode} in {time.perf_counter() - _tv:.2f}s")
-            if rc.returncode != 0:
-                return [_fail_dict("validate", "Wrong Answer", rc)]
+            vr = _full_suite_validate(cell, language)
+            if vr.returncode == 2:
+                vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+                _vstatus = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+            else:
+                _vstatus = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+            _log(f"validate {_vstatus} in {time.perf_counter() - _tv:.2f}s")
+            if _vstatus != "Accepted":
+                return [_fail_dict("validate", _vstatus, vr)]
 
         # 3. Measure N times against the single compiled artifact — the compile
         # above ran at most ONCE (never per repeat). Each pass is an independent
