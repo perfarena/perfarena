@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, AttemptResultPayload, BaselineSummary, getApiKey, MePayload, SubmissionDetail, SubmissionPublic } from "../lib/api";
 import {
-  DASH, formatCoefficient, formatDuration, formatEnergy, formatMemory, formatMicros, formatPassAt1, formatPercentile, formatRuntime,
+  formatCoefficient, formatDuration, formatEnergy, formatMemory, formatMicros, formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import LanguageLink from "../components/LanguageLink";
 import AttemptsTable from "../components/AttemptsTable";
@@ -362,50 +362,6 @@ export default function SubmissionDetailPage() {
           ? <CompareByTag models={[s.model_name]} rows={byTag} />
           : null;
       })()}
-
-      {/* Per-op measurement breakdown (one row per attempt's final run).
-          Only rendered when the scoring harness reported per-op metrics
-          (looped curated methodology) — LeetCode-scored submissions leave
-          every field null and the whole section stays hidden. */}
-      {d.runs.some(r => r.iterations != null || r.energy_j_per_op != null || r.time_us_per_op != null) && (
-        <div className="col" style={{ gap: 6 }}>
-          <h2 style={{ marginBottom: 0 }}>Per-op measurements</h2>
-          <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
-            Energy and time normalized to a single solve under the looped curated
-            methodology: the cross-language-comparable numbers. <b>iters</b> is
-            the solve count behind each measurement (confidence).
-          </p>
-          <div className="card tbl-scroll" style={{ padding: 0 }}>
-            <table className="tbl">
-              <thead><tr>
-                <th>Problem</th><th>Status</th>
-                <th title="solves behind the measurement (confidence)">iters</th>
-                <th title="Joules per single solve">energy / op</th>
-                <th title="time per single solve (µs source)">time / op</th>
-              </tr></thead>
-              <tbody>
-                {d.runs.map((r, i) => (
-                  <tr key={i}>
-                    <td>
-                      <Link to={`/problems/${r.problem_slug}`}><code>{r.problem_slug}</code></Link>
-                    </td>
-                    <td>
-                      <span className={`badge ${r.status_msg === "Accepted" ? "badge-easy" : "badge-hard"}`}>
-                        {r.status_msg}
-                      </span>
-                    </td>
-                    <td className="metric">
-                      {r.iterations == null ? DASH : r.iterations.toLocaleString()}
-                    </td>
-                    <td className="metric">{formatEnergy(r.energy_j_per_op)}</td>
-                    <td className="metric">{formatMicros(r.time_us_per_op)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {attempts === null
         ? <div className="empty">Loading attempts…</div>

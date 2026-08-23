@@ -1134,6 +1134,7 @@ class RunErrorLog(BaseModel):
     note: str | None = None              # our classifier note (auth failed, etc.)
     raw_stdout: str | None = None        # leetbot subprocess stdout tail
     raw_stderr: str | None = None        # leetbot subprocess stderr tail
+    error_log: str | None = None         # verbatim handler/validator error (arena-local)
 
 
 class AttemptRunDetail(BaseModel):

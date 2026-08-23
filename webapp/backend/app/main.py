@@ -5196,6 +5196,9 @@ _ERROR_FIELDS = (
     "runtime_error", "full_runtime_error", "compile_error", "full_compile_error",
     "last_testcase", "expected_output", "code_output", "std_output",
     "note", "raw_stdout", "raw_stderr",
+    # verbatim handler/validator error string (arena-local /validate + /measure):
+    # the full-suite validator's VALIDATE line, a compile tail, etc.
+    "error_log",
 )
 
 

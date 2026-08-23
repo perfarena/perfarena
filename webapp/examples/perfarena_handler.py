@@ -756,6 +756,35 @@ def _discover_source(cell: Path) -> Path:
     return cell / m.group(1)
 
 
+# Java top-level `public class Foo` must live in Foo.java; the cell source is
+# solution.java, so a model that writes `public class Solution` fails to compile
+# ("class Solution is public, should be declared in a file named Solution.java").
+# Strip `public` from top-level type declarations (start-of-line) as a safety net
+# — package-private is fine within the cell's single compilation unit. Method /
+# field modifiers (`public int foo()`) are unaffected: they don't start a line
+# with `public class|interface|enum|record`.
+_JAVA_PUBLIC_TYPE_RE = re.compile(
+    r"(?m)^(\s*)public\s+((?:final\s+|abstract\s+|sealed\s+)*(?:class|interface|enum|record)\b)")
+
+# The Rust harness injects `pub struct Solution;` when the solution lacks one.
+# LeetCode's Rust editor hides that boilerplate, so models often add their own
+# `struct Solution;` (sometimes twice) -> E0428 "Solution defined multiple
+# times". Strip every unit-struct Solution the model declares; the harness then
+# supplies exactly one. A `struct Solution { ... }` WITH a body is left alone
+# (the harness sees it and won't add a second).
+_RUST_STRUCT_SOLUTION_RE = re.compile(
+    r"(?m)^[ \t]*(?:pub\s+)?struct\s+Solution\s*;[ \t]*\r?\n?")
+
+
+def _normalize_solution_code(language: str, code: str) -> str:
+    """Best-effort fixups so common model-output quirks still compile."""
+    if language == "java":
+        return _JAVA_PUBLIC_TYPE_RE.sub(r"\1\2", code)
+    if language == "rust":
+        return _RUST_STRUCT_SOLUTION_RE.sub("", code)
+    return code
+
+
 _MEM_HELPER = r"""
 import json, resource, subprocess, sys
 try:
@@ -1079,7 +1108,7 @@ def validate_once(
     backup = source.with_suffix(source.suffix + ".perfarena_backup")
     try:
         shutil.copy2(source, backup)
-        source.write_text(code)
+        source.write_text(_normalize_solution_code(language, code))
 
         rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
         if rc.returncode != 0:
@@ -1280,7 +1309,7 @@ def measure_once(
 
     try:
         shutil.copy2(source, backup)
-        source.write_text(code)
+        source.write_text(_normalize_solution_code(language, code))
 
         # 1. compile — ONCE, only when explicitly requested. Default /measure
         # assumes the artifact is already built (compile once, then measure

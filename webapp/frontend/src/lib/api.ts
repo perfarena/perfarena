@@ -1342,6 +1342,7 @@ export interface RunErrorLog {
   note?: string | null;
   raw_stdout?: string | null;
   raw_stderr?: string | null;
+  error_log?: string | null;
 }
 
 export interface AttemptRunDetail {

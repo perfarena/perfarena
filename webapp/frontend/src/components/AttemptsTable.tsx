@@ -277,7 +277,9 @@ function AttemptRow({
                   <thead><tr>
                     <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>
                     <th>RT %ile</th><th>Mem %ile</th>
-                    {a.runs.some(r => r.total_correct != null || r.total_testcases != null) && <th>Tests</th>}
+                    {a.runs.some(r => r.total_correct != null || r.total_testcases != null) && (
+                      <th title="Reference cases the correctness oracle passed / total, checked ONCE by the /validate gate. The perf measurement runs only the ~5 curated cases, not all of these — so this is a correctness figure, not the number of tests each run executed.">Correctness</th>
+                    )}
                     <th></th>
                   </tr></thead>
                   <tbody>

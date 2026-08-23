@@ -20,6 +20,7 @@ export function sigBadge(s: string | null | undefined) {
 
 export function ErrorPanel({ log }: { log: RunErrorLog }) {
   const fields: Array<[string, string | null | undefined]> = [
+    ["Error log", log.error_log],
     ["Runtime error", log.full_runtime_error || log.runtime_error],
     ["Compile error", log.full_compile_error || log.compile_error],
     ["Failing test case (input)", log.last_testcase],
