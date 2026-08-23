@@ -96,6 +96,17 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
     "php":        ("PHP",        "php"),
 }
 
+# The subset the perf harness can actually validate + measure — MUST track
+# perfarena_handler._LANG_MAP (the runner's authority). swift/scala are valid
+# LeetCode languages the sweep understands but the harness can't score yet, so
+# they are deliberately excluded here: a default sweep won't waste attempts on
+# them (they'd fail the correctness gate with "not measurable"). Pass them
+# explicitly via --languages only if you know support has landed.
+MEASURABLE_LANGUAGES: tuple[str, ...] = (
+    "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
+    "typescript", "golang", "kotlin", "ruby", "php",
+)
+
 
 def system_prompt(language: str) -> str:
     display, _ = LANGUAGE_DISPLAY.get(language, (language, language))

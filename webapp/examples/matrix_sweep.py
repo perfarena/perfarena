@@ -110,6 +110,7 @@ from threading import Event, Thread
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from submit_with_local_model import (                          # noqa: E402
     LANGUAGE_DISPLAY,
+    MEASURABLE_LANGUAGES,
     PROVIDERS, Provider,
     _looks_like,
     build_code_template_block, build_hints_block,
@@ -1023,13 +1024,22 @@ def _resolve_prompts(base: str, names_arg: str | None) -> list[dict]:
 
 
 def _resolve_languages(arg: str | None) -> list[str]:
+    # Default to the harness-measurable set only — dispatching swift/scala
+    # (valid LeetCode langs the harness can't score yet) just burns attempts on
+    # a guaranteed "not measurable" rejection. Explicit --languages may still
+    # name them for a deliberate run.
     if not arg:
-        return sorted(LANGUAGE_DISPLAY)
+        return sorted(MEASURABLE_LANGUAGES)
     out = [l.strip() for l in arg.split(",") if l.strip()]
     bad = [l for l in out if l not in LANGUAGE_DISPLAY]
     if bad:
         raise SystemExit(f"unsupported languages: {bad}. "
                          f"Supported: {sorted(LANGUAGE_DISPLAY)}")
+    not_measurable = [l for l in out if l not in MEASURABLE_LANGUAGES]
+    if not_measurable:
+        print(f"WARNING: {not_measurable} are not measurable by the perf "
+              f"harness yet — those attempts will fail the correctness gate.",
+              file=sys.stderr)
     return out
 
 
@@ -1164,7 +1174,7 @@ def main() -> None:
     ap.add_argument("--prompts",   default=None, metavar="NAME[,NAME]",
                     help="comma-separated registry prompt names. Default: all.")
     ap.add_argument("--languages", default=None, metavar="SLUG[,SLUG]",
-                    help="comma-separated language slugs. Default: all 14 supported.")
+                    help="comma-separated language slugs. Default: the 12 harness-measurable languages (excludes swift/scala).")
     ap.add_argument("--slugs",     default=None, metavar="SLUG[,SLUG]",
                     help="comma-separated problem slugs. Default: every problem "
                          "in the chosen --competition.")

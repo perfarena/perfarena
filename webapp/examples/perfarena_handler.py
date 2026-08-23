@@ -102,6 +102,7 @@ def _log(msg: str) -> None:
 _LANG_MAP: dict[str, tuple[str, str]] = {
     "python3":    ("Python",     ".py"),
     "cpp":        ("C++",        ".cpp"),
+    "c":          ("C",          ".c"),
     "java":       ("Java",       ".java"),
     "csharp":     ("CSharp",     ".cs"),
     "javascript": ("JavaScript", ".js"),
@@ -113,6 +114,7 @@ _LANG_MAP: dict[str, tuple[str, str]] = {
     "rust":       ("Rust",       ".rs"),
     "ruby":       ("Ruby",       ".rb"),
     "php":        ("PHP",        ".php"),
+    "kotlin":     ("Kotlin",     ".kt"),
 }
 
 
@@ -121,10 +123,10 @@ _LANG_MAP: dict[str, tuple[str, str]] = {
 # shared inputs / harness key it under "golang" too — kept explicit so a new
 # arena language that diverges from the harness name is a one-line add here.
 _HARNESS_LANG: dict[str, str] = {
-    "python3": "python3", "cpp": "cpp", "java": "java", "csharp": "csharp",
+    "python3": "python3", "cpp": "cpp", "c": "c", "java": "java", "csharp": "csharp",
     "javascript": "javascript", "typescript": "typescript",
     "go": "golang", "golang": "golang", "rust": "rust", "ruby": "ruby",
-    "php": "php",
+    "php": "php", "kotlin": "kotlin",
 }
 
 
@@ -776,12 +778,61 @@ _RUST_STRUCT_SOLUTION_RE = re.compile(
     r"(?m)^[ \t]*(?:pub\s+)?struct\s+Solution\s*;[ \t]*\r?\n?")
 
 
+def _strip_kotlin_class(code: str, name: str) -> str:
+    """Remove a top-level `class <name>( ... ) { ... }` from Kotlin source
+    (paren + brace matched). The JVM harness provides public TreeNode/ListNode;
+    a model that also declares its own would clash (two classes, same name)."""
+    out = code
+    pat = re.compile(r"(?m)^[ \t]*(?:open\s+|data\s+|sealed\s+|final\s+)*class\s+"
+                     + re.escape(name) + r"\b")
+    while True:
+        m = pat.search(out)
+        if not m:
+            return out
+        i, k, n = m.start(), m.end(), len(out)
+        while k < n and out[k] in " \t":
+            k += 1
+        if k < n and out[k] == "(":            # skip primary-constructor params
+            d = 0
+            while k < n:
+                if out[k] == "(":
+                    d += 1
+                elif out[k] == ")":
+                    d -= 1
+                    if d == 0:
+                        k += 1
+                        break
+                k += 1
+        while k < n and out[k] in " \t":
+            k += 1
+        if k < n and out[k] == "{":             # skip the class body
+            d = 0
+            while k < n:
+                if out[k] == "{":
+                    d += 1
+                elif out[k] == "}":
+                    d -= 1
+                    if d == 0:
+                        k += 1
+                        break
+                k += 1
+            end = k
+        else:                                   # bodyless class -> to end of line
+            nl = out.find("\n", k)
+            end = nl if nl != -1 else n
+        if end < n and out[end] == "\n":
+            end += 1
+        out = out[:i] + out[end:]
+
+
 def _normalize_solution_code(language: str, code: str) -> str:
     """Best-effort fixups so common model-output quirks still compile."""
     if language == "java":
         return _JAVA_PUBLIC_TYPE_RE.sub(r"\1\2", code)
     if language == "rust":
         return _RUST_STRUCT_SOLUTION_RE.sub("", code)
+    if language == "kotlin":
+        return _strip_kotlin_class(_strip_kotlin_class(code, "TreeNode"), "ListNode")
     return code
 
 

@@ -266,12 +266,46 @@ _TRANSIENT_STATUSES = frozenset({
 })
 
 
+def _unwrap_ruby_class_for_leetcode(code: str) -> str:
+    """LeetCode's Ruby judge calls the solution method at TOP LEVEL (its driver
+    does `ret = some_method(param)`), so a method the model tucked inside
+    `class Solution ... end` is invisible and raises
+    `undefined method '...' for main:Object`. Models routinely wrap non-design
+    solutions in a class (the system prompt asks for the "Solution shape"),
+    which is semantically fine but fails LeetCode's harness — while our own
+    arena harness.rb accepts it via `Solution.new`. Lift the body of a single
+    wrapping class to top level so the method is callable on both oracles.
+
+    DESIGN problems (LeetCode instantiates the class itself) are left alone; a
+    `def initialize` constructor is the tell."""
+    lines = code.split("\n")
+    def _indent(l): return len(l) - len(l.lstrip())
+    ci = next((i for i, l in enumerate(lines)
+               if l.lstrip().startswith("class ") and l.lstrip()[6:7].isupper()), None)
+    if ci is None:
+        return code                                   # already top-level
+    if any(l.lstrip().startswith("def initialize") for l in lines):
+        return code                                   # design class -> keep
+    indent = _indent(lines[ci])
+    ei = next((i for i in range(len(lines) - 1, ci, -1)
+               if lines[i].strip() == "end" and _indent(lines[i]) == indent), None)
+    if ei is None:
+        return code
+    body = lines[ci + 1:ei]
+    dents = [_indent(l) for l in body if l.strip()]
+    d = min(dents) if dents else 0
+    body = [l[d:] if len(l) >= d else l for l in body]
+    return "\n".join(lines[:ci] + body + lines[ei + 1:]).strip() + "\n"
+
+
 def _leetbot_validate(problem: "Problem", language: str, code: str,
                       session: "Session") -> dict:
     """Correctness-only LeetCode check: ONE leetbot submission, return just the
     verdict. Perf fields are discarded — performance comes from the perf
     harness. This is the LeetCode side of the oracle-independent correctness
     gate (arena-local uses its HTTP /validate endpoint instead)."""
+    if language == "ruby":
+        code = _unwrap_ruby_class_for_leetcode(code)
     try:
         runs = _real_dispatch_repeated(problem, language, code, repeats=1,
                                        session=session)
