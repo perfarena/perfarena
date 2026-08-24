@@ -3,10 +3,11 @@
 # setup-harness-host.sh — prepare a machine to host the PerfArena benchmark
 # harness (the arena-local performance/correctness oracle).
 #
-# Installs the ten language toolchains the harness compiles and runs
-# (C++, C#, Go, Java, JavaScript, PHP, Python, Ruby, Rust, TypeScript), the
-# energy-measurement stack (perf + RAPL on Linux, powermetrics on macOS), and
-# a Python venv with codecarbon + psutil for the arena-local runner.
+# Installs the fourteen language toolchains the harness compiles and runs
+# (C, C++, C#, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Scala,
+# Swift, TypeScript), the energy-measurement stack (perf + RAPL on Linux,
+# powermetrics on macOS), and a Python venv with codecarbon + psutil for the
+# arena-local runner.
 #
 # Bare-metal only, no container. A container adds cgroup and namespace layers
 # that perturb RAPL package-energy accounting and add scheduling overhead, so
@@ -35,6 +36,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HARNESS_DIR="$REPO_ROOT/Energy-Languages"
 VENV="${HOME}/.venvs/perfrunner"
 DOTNET_CHANNEL="10.0"
+KOTLIN_VERSION="${KOTLIN_VERSION:-}"   # empty => resolve the latest release tag
 DO_TUNE=0; SKIP_TOOLCHAINS=0; SKIP_ENERGY=0; DRY_RUN=0
 
 while [ $# -gt 0 ]; do
@@ -89,7 +91,7 @@ install_toolchains() {
   case "$PKG" in
     apt)
       run "$SUDO apt-get update -y"
-      pm_install ca-certificates curl wget git make pkg-config build-essential
+      pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip
       pm_install gcc g++ clang
       pm_install openjdk-21-jdk-headless
       pm_install nodejs npm
@@ -99,7 +101,7 @@ install_toolchains() {
       pm_install python3 python3-pip python3-venv python3-dev
       ;;
     dnf)
-      pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang
+      pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip
       pm_install java-21-openjdk-devel
       pm_install nodejs npm
       pm_install php-cli
@@ -138,6 +140,73 @@ install_toolchains() {
   else
     log ".NET SDK $DOTNET_CHANNEL already present"
   fi
+
+  # JVM + native newcomers (Kotlin, Scala, Swift). Each is installed to a
+  # stable path and symlinked into /usr/local/bin so the arena runner's
+  # subprocess PATH sees them (the #1 cause of "kotlinc: not found").
+  install_kotlin
+  install_scala
+  install_swift
+}
+
+# Kotlin — JVM. Official compiler zip from JetBrains releases (needs a JRE,
+# provided by openjdk above) + unzip. Symlinks kotlinc/kotlin into PATH.
+install_kotlin() {
+  command -v kotlinc >/dev/null 2>&1 && { log "kotlin already present"; return; }
+  if [ "$PKG" = "brew" ]; then pm_install kotlin; return; fi
+  local ver="$KOTLIN_VERSION"
+  [ -n "$ver" ] || ver="$(curl -fsSL https://api.github.com/repos/JetBrains/kotlin/releases/latest 2>/dev/null \
+        | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$ver" ] || ver="2.1.20"   # fallback pin if the API is unreachable
+  info "installing Kotlin compiler $ver -> /opt/kotlinc"
+  run "curl -fsSL -o /tmp/kotlin-compiler.zip https://github.com/JetBrains/kotlin/releases/download/v${ver}/kotlin-compiler-${ver}.zip" \
+    && run "$SUDO rm -rf /opt/kotlinc" \
+    && run "$SUDO unzip -q /tmp/kotlin-compiler.zip -d /opt" \
+    && run "$SUDO ln -sf /opt/kotlinc/bin/kotlinc /usr/local/bin/kotlinc" \
+    && run "$SUDO ln -sf /opt/kotlinc/bin/kotlin  /usr/local/bin/kotlin" \
+    && log "kotlin $ver installed" || warn "kotlin install failed — kotlin cells will not compile"
+}
+
+# Scala — JVM (Scala 3). Coursier installs the scala + scalac launchers; the
+# harness runs compiled classes via `java` (libs discovered from the toolchain)
+# or falls back to `scala run`, so either layout works. Symlinked into PATH.
+install_scala() {
+  command -v scalac >/dev/null 2>&1 && { log "scala already present"; return; }
+  if [ "$PKG" = "brew" ]; then pm_install scala; return; fi
+  local csa="x86_64"; [ "$ARCH" = "aarch64" ] && csa="aarch64"
+  info "installing Scala (coursier) -> $HOME/.local/bin"
+  run "mkdir -p \"$HOME/.local/bin\"" \
+    && run "curl -fsSL https://github.com/coursier/launchers/raw/master/cs-${csa}-pc-linux.gz | gzip -d > /tmp/cs && chmod +x /tmp/cs" \
+    && run "/tmp/cs install --install-dir \"$HOME/.local/bin\" scala scalac" \
+    && run "$SUDO ln -sf \"$HOME/.local/bin/scala\"  /usr/local/bin/scala" \
+    && run "$SUDO ln -sf \"$HOME/.local/bin/scalac\" /usr/local/bin/scalac" \
+    && log "scala installed" || warn "scala install failed — scala cells will not compile"
+}
+
+# Swift — native (Linux). swiftly is Swift.org's official toolchain manager: it
+# detects the distro, pulls the toolchain, and exposes proxy binaries under
+# ~/.local/share/swiftly/bin. Symlink swiftc into PATH for the runner.
+install_swift() {
+  command -v swiftc >/dev/null 2>&1 && { log "swift already present"; return; }
+  if [ "$PKG" = "brew" ]; then warn "macOS Swift ships with Xcode CLT (xcode-select --install)"; return; fi
+  # link-time deps the Swift toolchain needs. Installed one-per-call because the
+  # exact names drift across distro versions and apt aborts the whole batch on a
+  # single unknown package; swiftly also resolves most of these itself.
+  local p
+  case "$PKG" in
+    apt) for p in binutils libc6-dev libcurl4-openssl-dev libedit2 libncurses-dev \
+                  libpython3-dev libxml2-dev libz3-dev tzdata zlib1g-dev; do pm_install "$p"; done ;;
+    dnf) for p in binutils gcc-c++ libcurl-devel libedit-devel libuuid-devel \
+                  libxml2-devel ncurses-devel python3-devel sqlite; do pm_install "$p"; done ;;
+  esac
+  local sa="x86_64"; [ "$ARCH" = "aarch64" ] && sa="aarch64"
+  info "installing Swift via swiftly"
+  run "curl -fsSL -o /tmp/swiftly.tar.gz https://download.swift.org/swiftly/linux/swiftly-${sa}.tar.gz" \
+    && run "rm -rf /tmp/swiftly-x && mkdir -p /tmp/swiftly-x && tar -xzf /tmp/swiftly.tar.gz -C /tmp/swiftly-x" \
+    && run "SWIFTLY_ASSUME_YES=1 /tmp/swiftly-x/swiftly init --assume-yes --quiet-shell-followup" \
+    && run "set +u; . \"$HOME/.local/share/swiftly/env.sh\" 2>/dev/null || true; swiftly install latest --assume-yes; set -u" \
+    && run "$SUDO ln -sf \"$HOME/.local/share/swiftly/bin/swiftc\" /usr/local/bin/swiftc" \
+    && log "swift installed" || warn "swift install failed — swift cells will not compile"
 }
 
 # ---------------------------------------------------------------- python venv
@@ -201,7 +270,8 @@ write_versions() {
     for probe in \
       'gcc --version' 'g++ --version' 'clang --version' 'python3 --version' \
       'node --version' 'tsc --version' 'javac -version' 'dotnet --version' \
-      'php --version' 'ruby --version' 'go version' 'rustc --version' 'cargo --version'; do
+      'php --version' 'ruby --version' 'go version' 'rustc --version' 'cargo --version' \
+      'kotlinc -version' 'scalac -version' 'swiftc --version'; do
       printf '%-20s ' "${probe%% *}:"
       eval "$probe" 2>&1 | head -1 || echo "MISSING"
     done
@@ -235,6 +305,11 @@ cat <<NEXT
 $(c '1;32')Done.$(c 0) Add the toolchains to your PATH (append to ~/.bashrc or ~/.zshrc):
 
     export PATH="\$HOME/.cargo/bin:\$HOME/.dotnet:\$PATH"
+
+Kotlin, Scala and Swift are symlinked into /usr/local/bin (already on PATH), so
+the runner's subprocesses find kotlinc/scalac/swiftc without extra setup. Confirm
+all three appear in harness-host-versions.txt below; if kotlinc is still "not
+found" for the runner, restart it so it inherits the updated PATH.
 
 Launch the arena-local runner from the measurement venv so it can measure energy:
 
