@@ -103,6 +103,8 @@ _LANG_MAP: dict[str, tuple[str, str]] = {
     "python3":    ("Python",     ".py"),
     "cpp":        ("C++",        ".cpp"),
     "c":          ("C",          ".c"),
+    "swift":      ("Swift",      ".swift"),
+    "scala":      ("Scala",      ".scala"),
     "java":       ("Java",       ".java"),
     "csharp":     ("CSharp",     ".cs"),
     "javascript": ("JavaScript", ".js"),
@@ -124,6 +126,7 @@ _LANG_MAP: dict[str, tuple[str, str]] = {
 # arena language that diverges from the harness name is a one-line add here.
 _HARNESS_LANG: dict[str, str] = {
     "python3": "python3", "cpp": "cpp", "c": "c", "java": "java", "csharp": "csharp",
+    "swift": "swift", "scala": "scala",
     "javascript": "javascript", "typescript": "typescript",
     "go": "golang", "golang": "golang", "rust": "rust", "ruby": "ruby",
     "php": "php", "kotlin": "kotlin",

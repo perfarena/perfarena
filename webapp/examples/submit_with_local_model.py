@@ -104,7 +104,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
 # explicitly via --languages only if you know support has landed.
 MEASURABLE_LANGUAGES: tuple[str, ...] = (
     "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
-    "typescript", "golang", "kotlin", "ruby", "php",
+    "typescript", "golang", "kotlin", "swift", "scala", "ruby", "php",
 )
 
 
