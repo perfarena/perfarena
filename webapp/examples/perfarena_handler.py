@@ -1278,6 +1278,36 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         else None
     )
 
+    raw_response = dict(
+        stage="curated-looped",
+        requested_metrics=sorted(requested),
+        energy_source=looped.get("energy_source"),
+        budget_s=float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
+        n_cases=looped.get("n_cases"),
+        iterations=looped.get("iterations"),
+        energy_j_per_op=e_op,
+        time_us_per_op=t_us,
+        peak_rss_kb=looped.get("peak_rss_kb"),
+        any_nonzero_exit=looped.get("any_nonzero_exit"),
+        measure_wall_s=looped_wall_s,
+        per_case=looped.get("per_case"),
+        energy_tool=energy_tool_out,
+        machine=machine,
+        cell=str(cell),
+    )
+    # On a measure-time Runtime Error the real harness error lives in each
+    # per-case `stderr_tail`, under keys _build_error_log doesn't grep. Lift it
+    # to a top-level `error_log` (an _ERROR_FIELDS key) so the UI shows WHY the
+    # perf run crashed instead of a blank panel.
+    if status == "Runtime Error":
+        tails = [f"[case {c.get('name') or c.get('idx')}] {c.get('stderr_tail')}"
+                 for c in (looped.get("per_case") or [])
+                 if c.get("exit_code") not in (0, None) and c.get("stderr_tail")]
+        raw_response["note"] = "perf harness runtime error during measurement"
+        raw_response["error_log"] = ("\n".join(tails) if tails else
+            "measurement produced no per-op metric (harness exited non-zero or "
+            "emitted no CASE line); no stderr captured.")
+
     return dict(
         status_msg=status,
         runtime_ms=runtime_ms,
@@ -1289,23 +1319,7 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         energy_tool=energy_tool_out,
         machine=machine,
         config=_measure_config(),
-        raw_response=dict(
-            stage="curated-looped",
-            requested_metrics=sorted(requested),
-            energy_source=looped.get("energy_source"),
-            budget_s=float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
-            n_cases=looped.get("n_cases"),
-            iterations=looped.get("iterations"),
-            energy_j_per_op=e_op,
-            time_us_per_op=t_us,
-            peak_rss_kb=looped.get("peak_rss_kb"),
-            any_nonzero_exit=looped.get("any_nonzero_exit"),
-            measure_wall_s=looped_wall_s,
-            per_case=looped.get("per_case"),
-            energy_tool=energy_tool_out,
-            machine=machine,
-            cell=str(cell),
-        ),
+        raw_response=raw_response,
     )
 
 
