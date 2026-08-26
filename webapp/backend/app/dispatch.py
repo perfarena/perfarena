@@ -298,6 +298,31 @@ def _unwrap_ruby_class_for_leetcode(code: str) -> str:
     return "\n".join(lines[:ci] + body + lines[ei + 1:]).strip() + "\n"
 
 
+def _strip_c_main_for_leetcode(code: str) -> str:
+    """LeetCode's C judge appends its OWN main()-bearing driver to solution.c, so
+    a model-added `int main(...) { ... }` (test scaffolding) collides with it ->
+    "redefinition of 'main' [solution.c]". LeetCode C solutions are function-only,
+    so strip every top-level main via brace matching (mirrors harness_c's
+    arena-side strip, which runs too late here because the leetcode gate rejects
+    before the arena harness is ever reached)."""
+    import re as _re
+    while True:
+        m = _re.search(r'\b(?:int|void)\s+main\s*\([^)]*\)\s*\{', code)
+        if not m:
+            break
+        depth, j = 0, m.end() - 1
+        while j < len(code):
+            if code[j] == '{':
+                depth += 1
+            elif code[j] == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        code = code[:m.start()] + code[j + 1:]
+    return code.strip() + "\n"
+
+
 def _leetbot_validate(problem: "Problem", language: str, code: str,
                       session: "Session") -> dict:
     """Correctness-only LeetCode check: ONE leetbot submission, return just the
@@ -306,6 +331,8 @@ def _leetbot_validate(problem: "Problem", language: str, code: str,
     gate (arena-local uses its HTTP /validate endpoint instead)."""
     if language == "ruby":
         code = _unwrap_ruby_class_for_leetcode(code)
+    elif language == "c":
+        code = _strip_c_main_for_leetcode(code)
     try:
         runs = _real_dispatch_repeated(problem, language, code, repeats=1,
                                        session=session)

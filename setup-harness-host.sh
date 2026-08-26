@@ -94,7 +94,7 @@ install_toolchains() {
       pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip
       pm_install gcc g++ clang
       pm_install openjdk-21-jdk-headless
-      pm_install nodejs npm
+      install_node
       pm_install php-cli
       pm_install ruby
       pm_install golang-go
@@ -103,7 +103,7 @@ install_toolchains() {
     dnf)
       pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip
       pm_install java-21-openjdk-devel
-      pm_install nodejs npm
+      install_node
       pm_install php-cli
       pm_install ruby
       pm_install golang
@@ -147,6 +147,28 @@ install_toolchains() {
   install_kotlin
   install_scala
   install_swift
+}
+
+# Node.js — Debian/Ubuntu apt ships an ANCIENT Node (12 on 20.04) that can't
+# even PARSE the JS harnesses (nullish coalescing `??`, etc.), so every JS/TS
+# measure run dies at module-load time. Install a current LTS from NodeSource.
+install_node() {
+  local major
+  major="$(node --version 2>/dev/null | sed -n 's/^v\([0-9]*\).*/\1/p')"
+  if [ -n "$major" ] && [ "$major" -ge 18 ] 2>/dev/null; then
+    log "node $(node --version) already current"; return
+  fi
+  case "$PKG" in
+    apt)
+      info "installing Node.js 20 LTS (NodeSource; apt node is too old for the harnesses)"
+      run "curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO -E bash -"
+      pm_install nodejs ;;
+    dnf)
+      info "installing Node.js 20 LTS (NodeSource)"
+      run "curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO bash -"
+      pm_install nodejs ;;
+    brew) pm_install node ;;
+  esac
 }
 
 # Kotlin — JVM. Official compiler zip from JetBrains releases (needs a JRE,
