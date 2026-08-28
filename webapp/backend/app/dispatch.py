@@ -323,6 +323,44 @@ def _strip_c_main_for_leetcode(code: str) -> str:
     return code.strip() + "\n"
 
 
+def _unwrap_ts_class_for_leetcode(code: str) -> str:
+    """LeetCode TypeScript expects a TOP-LEVEL `function name(...)`, but models
+    wrap the solution in `class Solution { name(...) {...} }` (the "Solution
+    class" prompt) -> LeetCode's driver can't find the function
+    (`TS2304: Cannot find name '...'`). Lift the class body to top level,
+    converting each method to a function. Design classes (they have a
+    `constructor`) are left alone."""
+    import re as _re
+    lines = code.split("\n")
+    ci = next((i for i, l in enumerate(lines)
+               if _re.match(r'\s*(?:export\s+)?class\s+Solution\b', l)), None)
+    if ci is None:
+        return code
+    if any(_re.match(r'\s*constructor\s*\(', l) for l in lines):
+        return code                                   # design class -> keep
+    indent = len(lines[ci]) - len(lines[ci].lstrip())
+    ei = next((i for i in range(len(lines) - 1, ci, -1)
+               if lines[i].strip() == "}" and (len(lines[i]) - len(lines[i].lstrip())) == indent), None)
+    if ei is None:
+        return code
+    body = lines[ci + 1:ei]
+    dents = [len(l) - len(l.lstrip()) for l in body if l.strip()]
+    d = min(dents) if dents else 0
+    body = [l[d:] if len(l) >= d else l for l in body]
+    out = []
+    for l in body:                                    # dedented -> methods sit at col 0
+        m = _re.match(r'^(?:public |private |protected |static |async |readonly )*'
+                      r'([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(', l)
+        if m and not l.lstrip().startswith(("function ", "//", "/*", "*",
+                                            "return", "if", "for", "while", "switch")):
+            l = "function " + l[m.start(1):]
+        # sibling-method calls used `this.` inside the class; now that the
+        # methods are top-level functions (a non-design solution has no instance
+        # state), `this.` just resolves to the function name.
+        out.append(l.replace("this.", ""))
+    return "\n".join(lines[:ci] + out + lines[ei + 1:]).strip() + "\n"
+
+
 def _leetbot_validate(problem: "Problem", language: str, code: str,
                       session: "Session") -> dict:
     """Correctness-only LeetCode check: ONE leetbot submission, return just the
@@ -333,6 +371,8 @@ def _leetbot_validate(problem: "Problem", language: str, code: str,
         code = _unwrap_ruby_class_for_leetcode(code)
     elif language == "c":
         code = _strip_c_main_for_leetcode(code)
+    elif language == "typescript":
+        code = _unwrap_ts_class_for_leetcode(code)
     try:
         runs = _real_dispatch_repeated(problem, language, code, repeats=1,
                                        session=session)
