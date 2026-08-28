@@ -361,18 +361,25 @@ def _unwrap_ts_class_for_leetcode(code: str) -> str:
     return "\n".join(lines[:ci] + out + lines[ei + 1:]).strip() + "\n"
 
 
+def _normalize_for_leetcode(language: str, code: str) -> str:
+    """Per-language LeetCode-judge shape fixes, one dispatch point."""
+    if language == "ruby":
+        return _unwrap_ruby_class_for_leetcode(code)
+    if language == "c":
+        return _strip_c_main_for_leetcode(code)
+    if language == "typescript":
+        return _unwrap_ts_class_for_leetcode(code)
+    return code
+
+
 def _leetbot_validate(problem: "Problem", language: str, code: str,
                       session: "Session") -> dict:
     """Correctness-only LeetCode check: ONE leetbot submission, return just the
     verdict. Perf fields are discarded — performance comes from the perf
     harness. This is the LeetCode side of the oracle-independent correctness
     gate (arena-local uses its HTTP /validate endpoint instead)."""
-    if language == "ruby":
-        code = _unwrap_ruby_class_for_leetcode(code)
-    elif language == "c":
-        code = _strip_c_main_for_leetcode(code)
-    elif language == "typescript":
-        code = _unwrap_ts_class_for_leetcode(code)
+    # normalization now happens centrally in _real_dispatch_repeated, so every
+    # leetbot submission (this gate + the direct measure path) is covered.
     try:
         runs = _real_dispatch_repeated(problem, language, code, repeats=1,
                                        session=session)
@@ -1027,6 +1034,12 @@ def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats:
         title_slug, code = _resolve_dispatch_target(problem, code, session)
     else:
         title_slug = problem.title_slug
+    # LeetCode-judge shape fixes, applied at THE choke point so every leetbot
+    # submission is covered (correctness gate AND the direct measure path), not
+    # just _leetbot_validate. Ruby/C/TS use top-level defs; models wrap them in
+    # `class Solution` / add a `main` (the "Solution class" prompt), which the
+    # judge rejects.
+    code = _normalize_for_leetcode(language, code)
     # Per-subprocess env override for account pinning. We copy os.environ
     # so the parent process's env isn't mutated mid-flight (the API and
     # the dispatcher run on different threads — a shared mutation would

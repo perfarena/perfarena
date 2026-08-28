@@ -256,7 +256,9 @@ function HarnessForm({
 {
   "endpoint":    "http://runner.internal:8787",  // required for remote dispatch
   "auth_token":  "<shared-secret>",              // sent as Bearer on every request
-  "timeout_s":   300                             // per-attempt HTTP timeout
+  "timeout_s":   300,                            // per-attempt HTTP timeout
+  "repeats":     7                               // perf measure runs per attempt
+                                                 //   (overrides ARENA_DISPATCH_REPEATS)
 }
 See webapp/examples/harness_runner_server.py for the reference server.`}
                   style={{ fontFamily: "var(--mono, monospace)" }} />
