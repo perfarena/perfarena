@@ -121,6 +121,54 @@ def system_prompt(language: str) -> str:
     )
 
 
+def _is_clbg_statement(statement: str) -> bool:
+    """A CLBG benchmark problem ships a self-describing statement with an
+    `## Invocation` section and a `Default N:` line (see
+    app.seed_clbg_competition._render_content) — markers no LeetCode problem
+    carries. Detecting them lets the client swap the LeetCode `Solution`-shape
+    instruction for the standalone-program one these benchmarks need."""
+    s = statement or ""
+    return "## Invocation" in s and "Default N:" in s
+
+
+def clbg_system_prompt(language: str) -> str:
+    """System prompt for CLBG benchmarks. Unlike LeetCode, each benchmark is a
+    whole program: it reads its argument from the command line (or stdin) and
+    must print an exact, byte-for-byte output that a reference diff checks. A
+    `class Solution` method has no entry point and produces no stdout, so it
+    fails compile or correctness for every language — hence the explicit
+    'complete program, no Solution class' contract here."""
+    display, fence = LANGUAGE_DISPLAY.get(language, (language, language))
+    return (
+        f"You are an expert performance engineer. Write a COMPLETE, "
+        f"self-contained {display} program that solves the benchmark below. "
+        f"This is NOT a LeetCode problem: do NOT define a `class Solution` or "
+        f"any method wrapper. The program must have a normal entry point that "
+        f"reads its input exactly as the Input/Invocation sections describe (a "
+        f"command-line argument, or standard input) and prints EXACTLY the "
+        f"bytes shown under Output to standard output — no labels, prompts, or "
+        f"debug lines, and nothing extra before or after. Match the output "
+        f"format character-for-character. Think step by step, then return the "
+        f"final program in a single ```{fence} code block with nothing else "
+        f"outside it."
+    )
+
+
+def _apply_clbg_shape(sys_p: str, user_prompt: str, statement: str,
+                      language: str) -> tuple[str, str]:
+    """When the target is a CLBG benchmark, replace the LeetCode `Solution`-
+    shape instruction baked into every registry/inline prompt with the
+    standalone-program contract, and drop the 'LeetCode problem' framing from
+    the user prompt. No-op for LeetCode problems, so it is safe to call on
+    every generation path."""
+    if not _is_clbg_statement(statement):
+        return sys_p, user_prompt
+    sys_p = clbg_system_prompt(language)
+    user_prompt = user_prompt.replace(
+        "Solve this LeetCode problem", "Solve this benchmark problem")
+    return sys_p, user_prompt
+
+
 def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -926,6 +974,9 @@ class OpenAIProvider(Provider):
             user_prompt = (
                 f"Solve this LeetCode problem `{slug}` in {display}.\n\n{statement}"
             )
+        # CLBG benchmarks need a standalone program, not a LeetCode `Solution`
+        # class — swap the shape instruction when the statement is a benchmark.
+        sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language)
         # The OpenAI schema is messages-based, same as Ollama. Temperature
         # and friends ride in the top-level body, not under `options`.
         body: dict = {
@@ -1261,6 +1312,9 @@ def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str
         user_prompt = (
             f"Solve this LeetCode problem `{slug}` in {display}.\n\n{statement}"
         )
+    # CLBG benchmarks need a standalone program, not a LeetCode `Solution`
+    # class — swap the shape instruction when the statement is a benchmark.
+    sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language)
     payload = {
         "model": model,
         "messages": [
