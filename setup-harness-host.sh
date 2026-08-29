@@ -93,6 +93,7 @@ install_toolchains() {
       run "$SUDO apt-get update -y"
       pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip
       pm_install gcc g++ clang
+      pm_install libboost-dev libgmp-dev   # C++ pidigits (Boost.Multiprecision) + Python gmpy2 (GMP)
       pm_install openjdk-21-jdk-headless
       install_node
       pm_install php-cli
@@ -102,6 +103,7 @@ install_toolchains() {
       ;;
     dnf)
       pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip
+      pm_install boost-devel gmp-devel
       pm_install java-21-openjdk-devel
       install_node
       pm_install php-cli
@@ -110,7 +112,7 @@ install_toolchains() {
       pm_install python3 python3-pip python3-devel
       ;;
     brew)
-      pm_install gcc llvm openjdk@21 node php ruby go python@3.12
+      pm_install gcc llvm openjdk@21 node php ruby go python@3.12 boost gmp
       warn "macOS: C/C++ uses Apple clang from Xcode CLT (xcode-select --install)"
       ;;
   esac
@@ -118,7 +120,10 @@ install_toolchains() {
   # TypeScript compiler — harness_ts.js resolves it via 'npm root -g'.
   if command -v npm >/dev/null 2>&1; then
     info "installing TypeScript (global npm)"
-    run "$SUDO npm install -g typescript || npm install -g typescript"
+    # Pin CLASSIC TypeScript (5.x). The default/`next` tag can pull the native
+    # preview compiler (tsgo), whose lib/tsc.js is an ESM shim needing a native
+    # platform package (@typescript/typescript-<plat>) that breaks tsc here.
+    run "$SUDO npm install -g typescript@5 || npm install -g typescript@5"
   else
     warn "npm not found; TypeScript cells will fail until 'npm install -g typescript'"
   fi
@@ -236,7 +241,7 @@ install_venv() {
   info "creating measurement venv at $VENV (codecarbon + psutil)"
   run "python3 -m venv \"$VENV\""
   run "\"$VENV/bin/pip\" install --upgrade pip"
-  run "\"$VENV/bin/pip\" install codecarbon psutil"
+  run "\"$VENV/bin/pip\" install codecarbon psutil gmpy2"   # gmpy2 for CLBG Python pidigits
   # If the perfarena package ships a pyproject, install it too (CLI + runners).
   if [ -f "$HARNESS_DIR/pyproject.toml" ]; then
     run "\"$VENV/bin/pip\" install \"$HARNESS_DIR\""

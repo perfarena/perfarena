@@ -361,6 +361,32 @@ def _unwrap_ts_class_for_leetcode(code: str) -> str:
     return "\n".join(lines[:ci] + out + lines[ei + 1:]).strip() + "\n"
 
 
+def _strip_ts_node_defs(code: str) -> str:
+    """LeetCode's TS judge pre-defines TreeNode / ListNode; a model that ALSO
+    defines them triggers `TS2300: Duplicate identifier`. Strip each top-level
+    `class <Name> { ... }` (brace-matched). The model's own references
+    (`root: TreeNode | null`) still resolve against the judge's definitions.
+    `Node` is deliberately NOT stripped — it's problem-specific (a model may
+    define its own helper `Node` the judge doesn't provide)."""
+    import re as _re
+    for name in ("TreeNode", "ListNode"):
+        m = _re.search(r'^[ \t]*class\s+' + name + r'\b', code, _re.M)
+        if not m:
+            continue
+        bpos = code.index("{", m.start())
+        depth, j = 0, bpos
+        while j < len(code):
+            if code[j] == "{":
+                depth += 1
+            elif code[j] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        code = (code[:m.start()] + code[j + 1:])
+    return code
+
+
 def _normalize_for_leetcode(language: str, code: str) -> str:
     """Per-language LeetCode-judge shape fixes, one dispatch point."""
     if language == "ruby":
@@ -368,7 +394,7 @@ def _normalize_for_leetcode(language: str, code: str) -> str:
     if language == "c":
         return _strip_c_main_for_leetcode(code)
     if language == "typescript":
-        return _unwrap_ts_class_for_leetcode(code)
+        return _unwrap_ts_class_for_leetcode(_strip_ts_node_defs(code))
     return code
 
 
