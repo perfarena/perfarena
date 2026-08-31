@@ -94,6 +94,13 @@ def _log(msg: str) -> None:
         print(f"[clbg {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
 
 
+def _log_always(msg: str) -> None:
+    """Progress logging that ignores PERFARENA_LOG. Reserved for low-volume,
+    user-facing milestones (e.g. per test-suite-run timing) that should show
+    even when verbose handler logging is off."""
+    print(f"[clbg {time.strftime('%H:%M:%S')}] {msg}", file=sys.stderr, flush=True)
+
+
 # Arena language slug (matches the "language" column on Attempt rows)
 # -> (folder name in Energy-Languages fork, file extension). Only the
 # languages CLBG-Energy-Languages actually ships with — attempts in
@@ -368,6 +375,25 @@ class _RaplEnergy(_EnergyBackend):
         return delta_uj / 1_000_000.0 if delta_uj >= 0 else None
 
 
+def _new_tracker(cls: Any) -> Any:
+    """Construct a codecarbon EmissionsTracker with a SHORT power-sampling
+    interval. codecarbon's default `measure_power_secs` is 15s — far longer
+    than our ~1s measured window (PERFARENA_BUDGET_S*0.7), so with the default
+    a measurement can span zero scheduled power samples and under-read energy.
+    We set it low (default 0.5s ⇒ ~2 samples/window) so the window is actually
+    sampled; a value that is too small would add codecarbon-thread overhead
+    during the measured loop, so 0.5s is a balance (tune via
+    PERFARENA_MEASURE_POWER_SECS). Falls back to the default interval if the
+    installed codecarbon predates the kwarg."""
+    kw = dict(project_name="perfarena-curated", log_level="error",
+              save_to_file=False, save_to_api=False, save_to_logger=False)
+    mps = float(os.environ.get("PERFARENA_MEASURE_POWER_SECS", "0.5"))
+    try:
+        return cls(measure_power_secs=mps, **kw)
+    except TypeError:
+        return cls(**kw)
+
+
 class _CodecarbonEnergy(_EnergyBackend):
     """One codecarbon EmissionsTracker reused across cases via the task API
     (`start_task`/`stop_task`), so the expensive constructor runs ONCE per
@@ -381,9 +407,7 @@ class _CodecarbonEnergy(_EnergyBackend):
         self._has_tasks = False
         self._fresh = None
         try:
-            self._tracker = tracker_cls(
-                project_name="perfarena-curated", log_level="error",
-                save_to_file=False, save_to_api=False, save_to_logger=False)
+            self._tracker = _new_tracker(tracker_cls)
             self._has_tasks = (hasattr(self._tracker, "start_task")
                                and hasattr(self._tracker, "stop_task"))
             if self._has_tasks:
@@ -401,9 +425,7 @@ class _CodecarbonEnergy(_EnergyBackend):
                 self._has_tasks = False
         # Fallback: a fresh per-case tracker (old, slow, but correct).
         try:
-            self._fresh = self._cls(
-                project_name="perfarena-curated", log_level="error",
-                save_to_file=False, save_to_api=False, save_to_logger=False)
+            self._fresh = _new_tracker(self._cls)
             self._fresh.start()
         except Exception:  # noqa: BLE001
             self._fresh = None
@@ -570,9 +592,16 @@ def _run_harness_measured(
     }
 
 
+# Sentinel: when passed as `energy_backend`, _measure_curated_looped builds and
+# owns its own backend (legacy per-call behaviour). Any other value (including
+# None) is a caller-owned backend reused across calls and NOT closed here.
+_MAKE_OWN_BACKEND: Any = object()
+
+
 def _measure_curated_looped(
     cell: Path, arena_lang: str, slug: str, budget: float, per_case_timeout: float,
     *, measure_energy: bool = True, measure_memory: bool = False,
+    energy_backend: Any = _MAKE_OWN_BACKEND,
 ) -> dict[str, Any]:
     """Run every curated case and aggregate to weighted PER-OP metrics.
 
@@ -600,9 +629,14 @@ def _measure_curated_looped(
     # so the memory pass uses a short budget to keep the extra run cheap.
     mem_budget = float(os.environ.get("PERFARENA_MEM_BUDGET_S", "0.5"))
 
-    # Build the energy backend ONCE for the whole submission (RAPL powercap or
-    # a reused codecarbon tracker), not per case — that was the 2-min overhead.
-    energy_backend = _make_energy_backend() if measure_energy else None
+    # Energy backend (RAPL powercap or a reused codecarbon tracker) is
+    # expensive to build. By default this call owns it (builds + closes), but
+    # measure_once passes a shared backend so it is built ONCE per submission
+    # instead of once per repeat — the codecarbon tracker start/stop is the
+    # dominant fixed cost otherwise.
+    own_backend = energy_backend is _MAKE_OWN_BACKEND
+    if own_backend:
+        energy_backend = _make_energy_backend() if measure_energy else None
 
     for (idx, w, name) in cases:
         row: dict[str, Any] = {
@@ -655,7 +689,7 @@ def _measure_curated_looped(
              f"exit={row.get('exit_code')}")
         per_case.append(row)
 
-    if energy_backend is not None:
+    if own_backend and energy_backend is not None:
         energy_backend.close()
 
     valid_t = [c for c in per_case if c["time_us_per_op"] is not None]
@@ -1143,6 +1177,21 @@ def _full_suite_validate(cell: Path, arena_lang: str,
     return _run(["bash", str(script), harness_lang], cwd=cell, timeout=timeout)
 
 
+def _is_clbg_cell(cell: Path, title_slug: str) -> bool:
+    """True when (language, title_slug) is a CLBG benchmark rather than a
+    LeetCode problem. CLBG cells live under `<Lang>/clbg/<slug>/` and are
+    validated by the golden-output `make validate` path — never the LeetCode
+    full-suite validator, which needs a `reference/leetcode/workloads/<slug>.json`
+    that CLBG problems don't have (harness_cpp.py raises FileNotFoundError on
+    them, exiting 1 instead of the rc-2 the fallback expects). Detected by the
+    cell path or the presence of a CLBG reference so it works for both the
+    `<Lang>/clbg/<slug>` and legacy `<Lang>/<slug>` layouts."""
+    if "clbg" in cell.parts:
+        return True
+    out = _root() / "reference" / "clbg" / "outputs"
+    return (out / title_slug / "cases.txt").exists() or (out / f"{title_slug}.txt").exists()
+
+
 def validate_once(
     title_slug: str, language: str, code: str,
 ) -> dict[str, Any]:
@@ -1172,19 +1221,29 @@ def validate_once(
             return {"status_msg": fd["status_msg"],
                     "error_log":  fd["error_log"],
                     "raw_response": fd["raw_response"]}
-        # Full-suite correctness: run the solution against EVERY reference case
-        # and diff each result. Falls back to the legacy single-case
-        # `make validate` for languages whose validator isn't built yet (rc 2).
-        vr = _full_suite_validate(cell, language)
+        # Correctness. CLBG benchmarks are validated by the golden-output
+        # `make validate` path (multi-case diff via clbg_validate.sh) — they have
+        # no LeetCode workload, so the full-suite LeetCode validator crashes on
+        # them instead of cleanly signalling rc 2. Route CLBG straight to
+        # `make validate`; LeetCode problems use the full-suite validator with
+        # its rc-2 fallback to the legacy single-case `make validate`.
         total_correct = total_testcases = None
-        if vr.returncode == 2:
+        if _is_clbg_cell(cell, title_slug):
             vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
             status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
-        else:
-            status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
-            # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
-            # before the verdict (== LeetCode total_correct), N total.
+            # clbg_validate.sh emits `passed=<K> ncases=<N>` — same shape the
+            # full-suite parser reads, so the per-run breakdown is populated too.
             total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
+        else:
+            vr = _full_suite_validate(cell, language)
+            if vr.returncode == 2:
+                vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+                status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+            else:
+                status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+                # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
+                # before the verdict (== LeetCode total_correct), N total.
+                total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         if status != "Accepted":
             fd = _fail_dict("validate", status, vr)
             return {"status_msg": fd["status_msg"],
@@ -1240,10 +1299,14 @@ def _resolve_metrics(metrics: Any) -> frozenset[str]:
 
 
 def _run_one_measurement(cell, language: str, title_slug: str,
-                         requested, do_measure: bool, do_mem: bool) -> dict[str, Any]:
+                         requested, do_measure: bool, do_mem: bool,
+                         energy_backend: Any = _MAKE_OWN_BACKEND) -> dict[str, Any]:
     """ONE measurement pass (the curated per-op loop + result dict).
     measure_once calls this N times AFTER a single compile — it never
-    recompiles, so a compiled language pays the build cost once per batch."""
+    recompiles, so a compiled language pays the build cost once per batch.
+    `energy_backend` is the shared per-submission backend (built once by
+    measure_once and reused across repeats); the default sentinel makes this
+    call build + own its own, preserving standalone behaviour."""
     looped: dict[str, Any] = {}
     looped_wall_s: float | None = None
     if do_measure or do_mem:
@@ -1252,7 +1315,8 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         t0 = time.perf_counter()
         looped = _measure_curated_looped(
             cell, language, title_slug, budget, per_case_timeout,
-            measure_energy=do_measure, measure_memory=do_mem)
+            measure_energy=do_measure, measure_memory=do_mem,
+            energy_backend=energy_backend)
         looped_wall_s = time.perf_counter() - t0
         _log(f"curated measure total {looped_wall_s:.2f}s")
 
@@ -1394,24 +1458,60 @@ def measure_once(
         # correctness is the correctness oracle's job, not the perf harness's.
         if do_validate:
             _tv = time.perf_counter()
-            vr = _full_suite_validate(cell, language)
-            if vr.returncode == 2:
+            # CLBG benchmarks validate via the golden-output `make validate`
+            # path; only LeetCode problems go through the full-suite validator
+            # (which has no workload for CLBG and would crash). See _is_clbg_cell.
+            if _is_clbg_cell(cell, title_slug):
                 vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
                 _vstatus = "Accepted" if vr.returncode == 0 else "Wrong Answer"
             else:
-                _vstatus = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+                vr = _full_suite_validate(cell, language)
+                if vr.returncode == 2:
+                    vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+                    _vstatus = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+                else:
+                    _vstatus = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
             _log(f"validate {_vstatus} in {time.perf_counter() - _tv:.2f}s")
             if _vstatus != "Accepted":
                 return [_fail_dict("validate", _vstatus, vr)]
 
         # 3. Measure N times against the single compiled artifact — the compile
         # above ran at most ONCE (never per repeat). Each pass is an independent
-        # per-op measurement; together they give the run-to-run spread.
-        return [
-            _run_one_measurement(cell, language, title_slug, requested,
-                                 do_measure, do_mem)
-            for _ in range(max(1, int(repeats)))
-        ]
+        # per-op measurement; together they give the run-to-run spread. Each
+        # "test suite run" logs its iteration number and elapsed time on
+        # completion so the local perf server shows measurement progress.
+        n_runs = max(1, int(repeats))
+        # Peak RSS is deterministic run-to-run, so memory needs far fewer
+        # samples than energy/time. When energy/time is the primary metric,
+        # only the first PERFARENA_MEM_REPEATS repeats also run the separate
+        # memory pass; the rest measure energy/time only. A memory-only
+        # request (do_measure False) keeps memory on every pass so the
+        # requested sample count is honoured.
+        mem_cap = max(1, int(os.environ.get("PERFARENA_MEM_REPEATS", "3")))
+        # Build the energy backend ONCE for the whole submission and reuse it
+        # across every repeat — the codecarbon tracker start/stop is the
+        # dominant fixed per-repeat cost. None when energy isn't requested.
+        shared_backend = _make_energy_backend() if do_measure else None
+        results: list[dict[str, Any]] = []
+        try:
+            for i in range(n_runs):
+                run_mem = do_mem and (not do_measure or i < mem_cap)
+                _t_run = time.perf_counter()
+                results.append(
+                    _run_one_measurement(cell, language, title_slug, requested,
+                                         do_measure, run_mem,
+                                         energy_backend=shared_backend))
+                # Always-on progress line (independent of PERFARENA_LOG) so the
+                # local perf server reports every test-suite run's iteration and
+                # elapsed time — the primary signal for how long a submission takes.
+                _log_always(f"test-suite run {i + 1}/{n_runs} done for "
+                            f"{title_slug} ({language}) in "
+                            f"{time.perf_counter() - _t_run:.2f}s"
+                            f"{' (+mem)' if run_mem else ''}")
+        finally:
+            if shared_backend is not None:
+                shared_backend.close()
+        return results
     finally:
         # Always restore the canonical source, even on exception, so
         # the fork stays byte-identical to git between attempts.
