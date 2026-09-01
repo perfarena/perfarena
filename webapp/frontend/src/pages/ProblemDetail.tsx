@@ -198,7 +198,7 @@ function BestPerLanguage({ p }: { p: ProblemDetail }) {
             <th>Lang</th><th>Model</th><th>Submitter</th>
             <th>Status</th>
             <th title="LeetCode-reported runtime (ms)">Runtime</th>
-            <th title="Peak (max resident) memory (MB). Peak on both oracles, never per-op">Peak mem</th>
+            <th title="Peak (max resident) memory (MB). Peak on both oracles, never per function call">Peak mem</th>
             {showEnergy && <th title="Runtime energy (Joules). Reported by execution-instrumented harnesses (e.g. arena-local). Lower = less energy consumed executing this solution.">Energy</th>}
             <th title="Runtime percentile in that language">RT %ile</th>
             <th title="Memory percentile in that language">Mem %ile</th>
@@ -276,7 +276,7 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
                 <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
                 <th>Status</th>
                 <th title="Best LeetCode runtime across the 5 dispatch repeats (min ms); the mean is shown in parens. Lower is better.">Runtime (best · avg)</th>
-                <th title="Best peak (max resident) memory across the 5 dispatch repeats (min MB); the mean is shown in parens. Peak on both oracles, never per-op. Lower is better.">Peak mem (best · avg)</th>
+                <th title="Best peak (max resident) memory across the 5 dispatch repeats (min MB); the mean is shown in parens. Peak on both oracles, never per function call. Lower is better.">Peak mem (best · avg)</th>
                 {showEnergy && <th title="Runtime energy in Joules. Best (least energy) across dispatch repeats, mean in parens. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Energy (best · avg)</th>}
                 <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats; the mean is shown in parens. Higher = faster than more of the LeetCode population AT THE TIME OF SUBMISSION (LC's percentile field is itself noisy; see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>
                 <th title="Highest LeetCode memory percentile across the 5 dispatch repeats; mean in parens.">Mem %ile (best · avg)</th>

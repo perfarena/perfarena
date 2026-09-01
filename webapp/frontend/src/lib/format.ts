@@ -73,8 +73,8 @@ export function formatEnergy(j: number | null | undefined): string {
   return `${scaled.toFixed(dp)} ${unit}`;
 }
 
-/** Per-op time is reported in MICROSECONDS. Reuse formatRuntime's SI-scaler
- *  (which expects ms) by converting µs → ms, so tiny per-op times render as
+/** Per-function-call time is reported in MICROSECONDS. Reuse formatRuntime's SI-scaler
+ *  (which expects ms) by converting µs → ms, so tiny per function call times render as
  *  ns / µs and larger ones as ms with the same adaptive precision. e.g.
  *  50 → "50 µs", 1200 → "1.20 ms". Returns DASH for null. */
 export function formatMicros(us: number | null | undefined): string {

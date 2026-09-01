@@ -136,8 +136,8 @@ export default function SubmissionDetailPage() {
   if (err) return <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>;
   if (!d) return <div className="empty">Loading…</div>;
   const { submission: s } = d;
-  // Locally-measured (arena-local / per-op) iff a machine or energy tool is
-  // attached. Only then is runtime measured per single solve (per-op); on
+  // Locally-measured (arena-local / per function call) iff a machine or energy tool is
+  // attached. Only then is runtime measured per function call; on
   // LeetCode-scored submissions runtime is whole-run wall time. Memory is
   // peak on both oracles, so it is never gated on this.
   const locallyMeasured = s.energy_tool != null || s.machine_name != null;
@@ -194,19 +194,19 @@ export default function SubmissionDetailPage() {
                 tip="Sum of generation energy across all attempts (Joules). Reported only when the submit client has a power probe; omitted when no data."
                 value={formatEnergy(s.total_generation_energy_j)} />
         )}
-        <Stat label={locallyMeasured ? "avg runtime / op" : "avg runtime"}
+        <Stat label={locallyMeasured ? "avg runtime / call" : "avg runtime"}
               tip={locallyMeasured
-                ? "Time per single solve (per-op) under the looped curated methodology. This submission was measured locally."
+                ? "Time per function call under the looped curated methodology. This submission was measured locally."
                 : undefined}
               value={formatRuntime(s.avg_runtime_ms)} />
-        <Stat label={locallyMeasured ? "best runtime / op" : "best runtime"}
+        <Stat label={locallyMeasured ? "best runtime / call" : "best runtime"}
               tip={locallyMeasured
-                ? "Fastest per-op (per single solve) time. This submission was measured locally."
+                ? "Fastest per function call time. This submission was measured locally."
                 : undefined}
               value={formatRuntime(s.best_runtime_ms)} />
         {s.avg_memory_mb != null && (
           <Stat label="peak mem"
-                tip="Peak (max resident) memory. Peak on both oracles, never per-op."
+                tip="Peak (max resident) memory. Peak on both oracles, never per function call."
                 value={formatMemory(s.avg_memory_mb)} />
         )}
         {s.best_memory_mb != null && (
@@ -223,18 +223,18 @@ export default function SubmissionDetailPage() {
                 value={formatEnergy(s.best_runtime_energy_j)} />
         )}
         {s.avg_energy_j_per_op != null && (
-          <Stat label="energy / op"
-                tip="Per-op runtime energy: Joules per single solve under the looped curated methodology. The cross-language-comparable energy figure. Lower is better."
+          <Stat label="energy / call"
+                tip="Runtime energy per function call under the looped curated methodology — the cross-language-comparable energy figure. Lower is better."
                 value={formatEnergy(s.avg_energy_j_per_op)} />
         )}
         {s.avg_time_us_per_op != null && (
-          <Stat label="time / op"
-                tip="Per-op runtime: time per single solve under the looped curated methodology. The fair per-op time, normalized across languages."
+          <Stat label="time / call"
+                tip="Runtime per function call under the looped curated methodology — the fair time, normalized across languages."
                 value={formatMicros(s.avg_time_us_per_op)} />
         )}
         {s.avg_iterations != null && (
-          <Stat label="iters / measurement"
-                tip="Mean number of solves behind each measurement, the confidence count. More iterations mean a tighter per-op estimate."
+          <Stat label="calls / measurement"
+                tip="Mean number of function calls behind each measurement — the confidence count. More calls mean a tighter per-function-call estimate."
                 value={Math.round(s.avg_iterations).toLocaleString()} />
         )}
         <Stat label="avg runtime %ile" value={formatPercentile(s.avg_runtime_percentile)} />

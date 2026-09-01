@@ -202,6 +202,17 @@ _OLLAMA_INITIAL_RETRY_DELAY = float(os.environ.get("ARENA_OLLAMA_RETRY_DELAY", "
 _OLLAMA_RETRY_CAP_S = 60.0
 
 
+def _inference_timeout() -> int:
+    """Per-request timeout (seconds) for ONE model inference call, read at call
+    time so a CLI flag can set it. Slow local models can exceed the 600s
+    default; override with --inference-timeout (matrix_sweep /
+    submit_with_local_model) or the ARENA_INFERENCE_TIMEOUT_S env var."""
+    try:
+        return max(1, int(os.environ.get("ARENA_INFERENCE_TIMEOUT_S", "600")))
+    except ValueError:
+        return 600
+
+
 def _ollama_post(url: str, body: dict, timeout: int) -> tuple[int, object]:
     """POST to Ollama. Return (status, parsed_json_or_text) WITHOUT raising on
     HTTP errors, so the caller can react to e.g. 'does not support thinking'.
@@ -1022,7 +1033,7 @@ class OpenAIProvider(Provider):
         else:
             endpoint = self.base_url + "/chat/completions"
             gen_t0 = time.perf_counter()
-            status, resp = _openai_post(endpoint, self.api_key, body, timeout=600)
+            status, resp = _openai_post(endpoint, self.api_key, body, timeout=_inference_timeout())
             gen_ms = int((time.perf_counter() - gen_t0) * 1000)
             if status != 200 or not isinstance(resp, dict):
                 raise SystemExit(f"OpenAI HTTP {status}: {resp}")
@@ -1136,7 +1147,7 @@ class OpenAIProvider(Provider):
             body["max_output_tokens"] = params["max_completion_tokens"]
         endpoint = self.base_url + "/responses"
         gen_t0 = time.perf_counter()
-        status, resp = _openai_post(endpoint, self.api_key, body, timeout=600)
+        status, resp = _openai_post(endpoint, self.api_key, body, timeout=_inference_timeout())
         gen_ms = int((time.perf_counter() - gen_t0) * 1000)
         if status != 200 or not isinstance(resp, dict):
             raise SystemExit(f"OpenAI HTTP {status}: {resp}")
@@ -1331,13 +1342,13 @@ def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str
     # actually waited; persisted to the attempt as wall_clock_ms and summed into
     # the submission's total_generation_ms.
     gen_t0 = time.perf_counter()
-    status, resp = _ollama_post(endpoint, payload, timeout=600)
+    status, resp = _ollama_post(endpoint, payload, timeout=_inference_timeout())
     # Non-thinking models reject `think`; retry once without it.
     if status == 400 and "thinking" in json.dumps(resp).lower():
         print("  (model has no thinking channel — retrying without think)",
               file=sys.stderr)
         payload.pop("think", None)
-        status, resp = _ollama_post(endpoint, payload, timeout=600)
+        status, resp = _ollama_post(endpoint, payload, timeout=_inference_timeout())
     gen_ms = int((time.perf_counter() - gen_t0) * 1000)
     if status != 200 or not isinstance(resp, dict):
         raise SystemExit(f"Ollama HTTP {status}: {resp}")
@@ -1457,7 +1468,13 @@ def main() -> None:
                          "experiment-system-with-shape that reference the "
                          "placeholder.")
     ap.add_argument("--poll-seconds", type=int, default=60)
+    ap.add_argument("--inference-timeout", type=int, default=None, metavar="SEC",
+                    help="Per-request timeout (seconds) for ONE model inference "
+                         "call (default 600). Raise it for slow local models; "
+                         "lower it to fail fast.")
     args = ap.parse_args()
+    if args.inference_timeout is not None:
+        os.environ["ARENA_INFERENCE_TIMEOUT_S"] = str(args.inference_timeout)
 
     if args.gen_key:
         gen_key(args.gen_key)

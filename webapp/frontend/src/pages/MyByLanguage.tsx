@@ -98,7 +98,7 @@ export default function MyByLanguage() {
               <th>Problem</th><th>Level</th><th>Status</th>
               <th title="How many of your attempts on this problem (across all your submissions in this language)">Tries</th>
               <th title="Best accepted attempt's avg runtime, or a placeholder if no accepted attempt">Best avg runtime</th>
-              <th title="Best accepted attempt's peak (max resident) memory. Peak on both oracles, never per-op">Peak mem</th>
+              <th title="Best accepted attempt's peak (max resident) memory. Peak on both oracles, never per function call">Peak mem</th>
               <th>From</th>
             </tr></thead>
             <tbody>

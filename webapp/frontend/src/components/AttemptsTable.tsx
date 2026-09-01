@@ -19,12 +19,12 @@ import { RunsChart } from "./RunsChart";
 export type StatusFilter = "all" | "accepted" | "rejected" | "queued";
 
 /* Subtle "/op" marker appended to runtime cells when the submission was
- * measured locally (arena-local per-op methodology). Runtime is then time
- * per single solve, not whole-run wall time — so the qualifier is correct
+ * measured locally (arena-local per function call methodology). Runtime is then time
+ * per function call, not whole-run wall time — so the qualifier is correct
  * only for those rows. Memory is peak on both oracles and never gets it. */
 function OpMark({ show }: { show: boolean }) {
   return show
-    ? <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/op</sup>
+    ? <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/call</sup>
     : null;
 }
 
@@ -374,7 +374,7 @@ export default function AttemptsTable(
           <th title="accepted runs / total dispatch runs">Runs ✓</th>
           <th title="mean over accepted runs">Avg runtime</th>
           <th title="fastest single run">Best runtime</th>
-          {showMemory && <th title="mean peak (max resident) memory over accepted runs, peak on both oracles, never per-op">Peak mem</th>}
+          {showMemory && <th title="mean peak (max resident) memory over accepted runs, peak on both oracles, never per function call">Peak mem</th>}
           {showMemory && <th title="leanest single run's peak memory">Best peak mem</th>}
           {showRuntimeEnergy && (
             <th title="Runtime energy (Joules): execution energy consumed while running this solution. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Avg energy</th>

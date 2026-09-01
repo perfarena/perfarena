@@ -328,8 +328,8 @@ class SubmissionPublic(BaseModel):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
-    # Submission-level per-op rollup (B3): avg_runtime_ms IS per-op time and
-    # avg_runtime_energy_j IS per-op energy under the looped methodology; these
+    # Submission-level per function call rollup (B3): avg_runtime_ms IS per function call time and
+    # avg_runtime_energy_j IS per function call energy under the looped methodology; these
     # expose them explicitly (µs / J) plus the solve count behind each
     # measurement. NULL on LeetCode-scored submissions.
     avg_time_us_per_op: float | None = None
@@ -511,7 +511,7 @@ class RunPublic(BaseModel):
     # stays null on every LC-scored run.
     runtime_energy_j: float | None = None
     runtime_energy_percentile: float | None = None
-    # Per-op metrics from the looped curated methodology: iterations solved
+    # Per function call metrics from the looped curated methodology: iterations solved
     # in the measured window, and energy / time normalized to a single solve
     # (the cross-language-comparable numbers). Null on LeetCode-scored runs
     # and on legacy runs measured before the looped methodology.
@@ -1144,9 +1144,9 @@ class AttemptRunDetail(BaseModel):
     memory_mb: float | None
     runtime_percentile: float | None
     memory_percentile: float | None
-    # Execution energy + per-op metrics — populated only by execution-
+    # Execution energy + per function call metrics — populated only by execution-
     # instrumented harnesses (arena-local); None on LeetCode-scored runs. Let
-    # the per-run charts/tables plot energy and per-op time in native units.
+    # the per-run charts/tables plot energy and per function call time in native units.
     runtime_energy_j: float | None = None
     energy_j_per_op: float | None = None
     time_us_per_op: float | None = None

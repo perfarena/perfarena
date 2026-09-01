@@ -547,7 +547,7 @@ export interface SubmissionPublic {
   best_runtime_energy_j: number | null;
   avg_runtime_energy_percentile: number | null;
   best_runtime_energy_percentile: number | null;
-  /** Submission-level per-op rollup (looped curated methodology): energy /
+  /** Submission-level per function call rollup (looped curated methodology): energy /
    *  time normalized to a single solve (µs / J — the cross-language-comparable
    *  figures) plus the mean solve count behind each measurement (confidence).
    *  Null on LeetCode-scored submissions. */
@@ -1262,7 +1262,7 @@ export interface RunPublic {
   memory_mb: number | null;
   runtime_percentile: number | null;
   memory_percentile: number | null;
-  /** Per-op metrics from the looped curated methodology: solves in the
+  /** Per-function-call metrics from the looped curated methodology: calls in the
    *  measured window (confidence), and energy / time normalized to a single
    *  solve (the cross-language-comparable numbers). Null on LeetCode-scored
    *  runs and on legacy runs measured before the looped methodology. */

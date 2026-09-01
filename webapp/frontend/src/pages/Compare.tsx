@@ -387,7 +387,7 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
             <th title="Best pass@full (any-of-k)">pass@full</th>
             <th title="Mean per-problem avg runtime">Avg rt</th>
             <th title="Mean per-problem best runtime">Best rt</th>
-            <th title="Mean per-problem mean PEAK memory. Peak (max resident) on both oracles, never per-op.">Peak mem</th>
+            <th title="Mean per-problem mean PEAK memory. Peak (max resident) on both oracles, never per function call.">Peak mem</th>
             <th title="Mean per-problem best (min) peak memory">Best peak mem</th>
             <th title="Mean LeetCode runtime percentile">RT %ile</th>
             <th title="Mean LeetCode memory percentile">Mem %ile</th>

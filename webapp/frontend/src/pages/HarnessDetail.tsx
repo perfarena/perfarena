@@ -90,7 +90,7 @@ export default function HarnessDetailPage() {
               <th title="Best pass@1 this model achieved on any submission scored by this harness.">pass@1</th>
               <th title="Best pass@k across this model's submissions on this harness.">pass@k</th>
               <th title="Average runtime across accepted attempts scored by this harness.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Peak on both oracles, never per-op.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Peak on both oracles, never per function call.">Peak mem</th>
               <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
               <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
               <th title="Total submissions this model has on this harness.">subs</th>

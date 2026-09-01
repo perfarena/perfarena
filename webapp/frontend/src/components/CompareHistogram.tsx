@@ -50,7 +50,7 @@ const METRICS: MetricSpec[] = [
   },
   {
     key: "memory", label: "Peak mem", unit: "MB",
-    unitTip: "Mean peak (max resident) memory of the best accepted attempt (MB), peak on both oracles, never per-op. Lower MB is better. Same scaling as runtime: the LEANEST model (lowest MB) fills the track; others scale by ratio. BIGGER bar is better.",
+    unitTip: "Mean peak (max resident) memory of the best accepted attempt (MB), peak on both oracles, never per function call. Lower MB is better. Same scaling as runtime: the LEANEST model (lowest MB) fills the track; others scale by ratio. BIGGER bar is better.",
     raw: c => c.memory_mb,
   },
   {

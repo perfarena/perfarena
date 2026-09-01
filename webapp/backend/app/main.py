@@ -4350,7 +4350,7 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         best_runtime_energy_j=s.best_runtime_energy_j,
         avg_runtime_energy_percentile=s.avg_runtime_energy_percentile,
         best_runtime_energy_percentile=s.best_runtime_energy_percentile,
-        # Per-op rollup (B3): time/energy per-op ARE the aliased avg_runtime_*
+        # Per function call rollup (B3): time/energy per function call ARE the aliased avg_runtime_*
         # columns; expose them explicitly (µs / J) + the solve count.
         avg_time_us_per_op=(s.avg_runtime_ms * 1000.0
                             if s.avg_runtime_ms is not None else None),

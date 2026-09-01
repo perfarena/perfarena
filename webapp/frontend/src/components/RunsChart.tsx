@@ -130,7 +130,7 @@ export function RunsChart({ runs, perOp = false }: { runs: AttemptRunDetail[]; p
 
   const sorted = [...runs].sort((a, b) => a.run_index - b.run_index);
 
-  // Time: per-op time (µs, arena-local) when available, else wall runtime (ms).
+  // Time: per function call time (µs, arena-local) when available, else wall runtime (ms).
   // Normalised to ms so the adaptive formatter picks ONE unit (ns/µs/ms) for
   // the whole series instead of the fixed "ms" the old chart hard-coded.
   const usePerOpTime = perOp && sorted.some(r => r.time_us_per_op != null);
@@ -139,16 +139,16 @@ export function RunsChart({ runs, perOp = false }: { runs: AttemptRunDetail[]; p
       ? (r.time_us_per_op != null ? r.time_us_per_op * 1e-3 : null)   // µs → ms
       : r.runtime_ms,
   );
-  const timeLabel = usePerOpTime ? "Time per op" : "Runtime per run";
+  const timeLabel = usePerOpTime ? "Time per call" : "Runtime per run";
   const fmtTime = timeSeriesFormatterMs(timeVals);
 
-  // Energy (J): per-op energy (arena-local) when available, else whole-run.
+  // Energy (J): per function call energy (arena-local) when available, else whole-run.
   const usePerOpEnergy = perOp && sorted.some(r => r.energy_j_per_op != null);
   const energyVals = sorted.map(r =>
     usePerOpEnergy ? r.energy_j_per_op : r.runtime_energy_j,
   );
   const hasEnergy = energyVals.some(v => v != null);
-  const energyLabel = usePerOpEnergy ? "Energy per op" : "Energy per run";
+  const energyLabel = usePerOpEnergy ? "Energy per call" : "Energy per run";
   const fmtEnergy = energySeriesFormatter(energyVals);
 
   const memories = sorted.map(r => r.memory_mb);

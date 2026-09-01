@@ -345,7 +345,7 @@ export default function Rankings() {
                 <Th label="Attempts" tip="Total number of attempts submitted (one Attempt = one code + trace POST). Equals k × total problems for a complete submission." sortKey="n_attempts" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Avg runtime" tip="Each problem is submitted 5× to smooth LeetCode's noise. Per problem we take the MEAN of its accepted runs; this column is the mean of those per-problem means across all accepted problems." sortKey="avg_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Best runtime" tip="Per problem we take the FASTEST of its 5 runs; this column is the mean of those per-problem bests across all accepted problems." sortKey="best_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Peak mem" tip="Mean of per-problem mean PEAK memory (5 runs each) across all accepted problems. Memory is peak (max resident) on both oracles, never per-op." sortKey="avg_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Peak mem" tip="Mean of per-problem mean PEAK memory (5 runs each) across all accepted problems. Memory is peak (max resident) on both oracles, never per function call." sortKey="avg_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Best peak mem" tip="Mean of per-problem minimum PEAK memory (5 runs each) across all accepted problems." sortKey="best_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Runtime %ile" tip="Mean of the per-problem LeetCode runtime percentile, averaged across accepted attempts. Higher = LC ranked the run as faster than more of the LC population AT THE TIME. The per-run percentile is noisy (~4 pp spread within a single attempt's 5 runs; see docs/leetcode-percentile-semantics.md); the ~500-sample mean shown here smooths most of that out." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Memory %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Same noise caveat as Runtime %ile, but memory %ile tends to be much less noisy than runtime %ile in practice." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -423,13 +423,13 @@ export default function Rankings() {
                     <td className="metric" style={rawCellStyle}>
                       {formatRuntime(r.avg_runtime_ms)}
                       {(r.machine_name != null || r.energy_tool != null) && r.avg_runtime_ms != null && (
-                        <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/op</sup>
+                        <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/call</sup>
                       )}
                     </td>
                     <td className="metric" style={rawCellStyle}>
                       {formatRuntime(r.best_runtime_ms)}
                       {(r.machine_name != null || r.energy_tool != null) && r.best_runtime_ms != null && (
-                        <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/op</sup>
+                        <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/call</sup>
                       )}
                     </td>
                     <td className="metric" style={rawCellStyle}>{formatMemory(r.avg_memory_mb)}</td>

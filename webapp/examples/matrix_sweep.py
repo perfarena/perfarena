@@ -192,22 +192,37 @@ def _cache_dir(output_path: Path) -> Path:
     return output_path.parent / "sweep_cache"
 
 
-def _cache_key_filename(tuple_key: str) -> str:
-    """Stable 16-hex-char filename for a tuple_key. Collision risk in the
-    16-char prefix is negligible at any realistic sweep size."""
-    h = hashlib.sha256(tuple_key.encode("utf-8")).hexdigest()
+def _cache_salt(args) -> str:
+    """Generation-affecting knobs that are NOT part of tuple_key
+    (model|prompt_name|language|slug) but DO change the produced code. Folded
+    into the cache FILENAME hash so a run with different knobs never reuses a
+    mismatched generation. Kept out of the human-readable tuple_key so the
+    progress log stays legible."""
+    return "|".join([
+        f"target={getattr(args, 'target', None) or ''}",
+        f"hints={int(bool(getattr(args, 'hints', False)))}",
+        f"temp={getattr(args, 'temperature', None)}",
+        f"rounds={getattr(args, 'rounds', None)}",
+    ])
+
+
+def _cache_key_filename(tuple_key: str, salt: str = "") -> str:
+    """Stable 16-hex-char filename for a tuple_key plus a generation-knob salt
+    (see _cache_salt). Collision risk in the 16-char prefix is negligible at any
+    realistic sweep size."""
+    h = hashlib.sha256((tuple_key + "\x1f" + salt).encode("utf-8")).hexdigest()
     return f"{h[:16]}.json"
 
 
 def _save_cached_code(output_path: Path, tuple_key: str,
-                      code: str, trace: dict) -> None:
+                      code: str, trace: dict, salt: str = "") -> None:
     """Persist the freshly-generated code for a tuple so the next resume
     can skip the LLM call. Atomic via tmp + rename. Silent on failure —
     a cache write loss costs an LLM call but never blocks the sweep."""
     cdir = _cache_dir(output_path)
     try:
         cdir.mkdir(parents=True, exist_ok=True)
-        path = cdir / _cache_key_filename(tuple_key)
+        path = cdir / _cache_key_filename(tuple_key, salt)
         payload = {
             "tuple_key": tuple_key,
             "code": code,
@@ -223,12 +238,12 @@ def _save_cached_code(output_path: Path, tuple_key: str,
 
 
 def _load_cached_code(output_path: Path,
-                      tuple_key: str) -> tuple[str, dict] | None:
+                      tuple_key: str, salt: str = "") -> tuple[str, dict] | None:
     """Return (code, trace) from the cache for this tuple_key, or None
     when no usable cache entry exists. A malformed cache file is treated
     as a miss — we never want a bad cache to block a sweep."""
     cdir = _cache_dir(output_path)
-    path = cdir / _cache_key_filename(tuple_key)
+    path = cdir / _cache_key_filename(tuple_key, salt)
     if not path.exists():
         return None
     try:
@@ -242,11 +257,11 @@ def _load_cached_code(output_path: Path,
         return None
 
 
-def _drop_cached_code(output_path: Path, tuple_key: str) -> None:
+def _drop_cached_code(output_path: Path, tuple_key: str, salt: str = "") -> None:
     """Delete the cached code for a tuple — called when a verdict has
     landed and the code is no longer needed."""
     cdir = _cache_dir(output_path)
-    path = cdir / _cache_key_filename(tuple_key)
+    path = cdir / _cache_key_filename(tuple_key, salt)
     try:
         path.unlink(missing_ok=True)
     except OSError as e:
@@ -958,7 +973,7 @@ class _Prefetcher:
         # like the target language is dropped — could happen if the
         # cache survives across a --languages change).
         cached = _load_cached_code(self._args.output, _tuple_key(
-            model, prompt["name"], language, slug))
+            model, prompt["name"], language, slug), _cache_salt(self._args))
         if cached is not None:
             code, trace = cached
             if _looks_like(code, language):
@@ -969,7 +984,12 @@ class _Prefetcher:
                                    code=code, trace=trace, status="ok")
             else:
                 _drop_cached_code(self._args.output, _tuple_key(
-                    model, prompt["name"], language, slug))
+                    model, prompt["name"], language, slug), _cache_salt(self._args))
+        # --submit-from-cache: never call the model. A cache miss (or a cache
+        # entry that failed the language fingerprint above) becomes a skip, so
+        # the submit phase only ships what was generated earlier.
+        if getattr(self._args, "submit_from_cache", False):
+            return _Prefetched(tup=tup, problem=problem, status="cache_miss")
         extras = {
             "{{optimization_directive}}": build_optimization_directive(self._args.target),
             "{{hints_block}}":            build_hints_block(self._args.hints, problem.get("hints")),
@@ -1001,7 +1021,7 @@ class _Prefetcher:
         # restarts the sweep.
         _save_cached_code(self._args.output,
                           _tuple_key(model, prompt["name"], language, slug),
-                          code, trace)
+                          code, trace, _cache_salt(self._args))
         return _Prefetched(tup=tup, problem=problem, code=code, trace=trace,
                            status="ok")
 
@@ -1316,7 +1336,27 @@ def main() -> None:
                          "0 disables the pipeline (sequential, like before).")
     ap.add_argument("--dry-run", action="store_true",
                     help="enumerate the matrix and report; no model calls, no submits.")
+    ap.add_argument("--generate-only", action="store_true",
+                    help="Generate model responses and CACHE them under "
+                         "<output-dir>/sweep_cache/, but do NOT submit to the "
+                         "platform. Made for slow local models: generate once "
+                         "(e.g. overnight), then submit later. Keeps the cache "
+                         "(never drops it). Submit the cached generations with "
+                         "the SAME args plus --submit-from-cache.")
+    ap.add_argument("--submit-from-cache", action="store_true",
+                    help="Submit cached generations WITHOUT calling the model. "
+                         "A tuple with no cache entry is skipped, never "
+                         "regenerated. The cache is kept after submit so the "
+                         "same generations can be re-submitted (e.g. to a "
+                         "different --harness / --correctness-oracle).")
+    ap.add_argument("--inference-timeout", type=int, default=None, metavar="SEC",
+                    help="Per-request timeout (seconds) for ONE model inference "
+                         "call (default 600). Raise it for slow local models that "
+                         "take minutes per response; lower it to fail fast. Sets "
+                         "ARENA_INFERENCE_TIMEOUT_S for the run.")
     args = ap.parse_args()
+    if args.inference_timeout is not None:
+        os.environ["ARENA_INFERENCE_TIMEOUT_S"] = str(args.inference_timeout)
     # --correctness-oracle is required UNLESS --skip-correctness. Skipping sends
     # no oracle, so the dispatcher's correctness gate stays off for the run.
     if args.skip_correctness:
@@ -1586,6 +1626,28 @@ def main() -> None:
         print(f"  prefetcher: disabled (--prefetch 0, sequential)")
     prefetcher.start()
 
+    # --generate-only: pull every tuple through the prefetcher (which generates
+    # + caches, or reuses an existing cache entry) but never submit. This is the
+    # slow half for local models; run it once, then submit with --submit-from-cache.
+    if args.generate_only:
+        n_gen = n_other = 0
+        while True:
+            item = prefetcher.next()
+            if item is None:
+                break
+            _m, _p, _l, _s = item.tup
+            if item.status == "ok":
+                n_gen += 1
+                print(f"  ✓ cached {_l}/{_s}")
+            else:
+                n_other += 1
+                print(f"  · skip {_l}/{_s} ({item.status})")
+        print(f"\ngenerate-only: {n_gen} generation(s) cached under "
+              f"{_cache_dir(args.output)}; {n_other} skipped, nothing submitted.")
+        print("Submit them with the SAME command plus --submit-from-cache "
+              "(no model calls, cache kept for re-submission).")
+        return
+
     n_ok = n_fail = n_skip = 0
     sweep_start = time.time()
     prev_pair: tuple[str, str] | None = None   # (slug, language) — pacing boundary
@@ -1655,6 +1717,15 @@ def main() -> None:
                              "at": _now_iso()}
             _save_progress(args.output, progress)
             n_fail += 1
+            continue
+        if item.status == "cache_miss":
+            print(f"  skip: --submit-from-cache and no cached generation for "
+                  f"{language}/{slug} (no model call, no LC contact)")
+            progress[key] = {"status": "skipped",
+                             "reason": "no_cached_generation",
+                             "at": _now_iso()}
+            _save_progress(args.output, progress)
+            n_skip += 1
             continue
 
         # We're past the no-op branches — this tuple WILL contact LeetCode
@@ -2024,8 +2095,10 @@ def main() -> None:
         # LC returned a verdict for this tuple — the cached code we
         # may have written during prefetch is now obsolete. Drop it
         # so the next sweep's cache directory doesn't accumulate
-        # forever-stale entries.
-        _drop_cached_code(args.output, key)
+        # forever-stale entries. Exception: --submit-from-cache keeps the
+        # cache so the same generations can be re-submitted elsewhere.
+        if not args.submit_from_cache:
+            _drop_cached_code(args.output, key, _cache_salt(args))
         n_ok += 1
 
         # Pacing happens at the START of the next iteration via the

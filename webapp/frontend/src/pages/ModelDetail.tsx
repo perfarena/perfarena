@@ -57,7 +57,7 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
             <th>Lang</th><th>Submissions</th>
             <th>Best pass@1</th>
             <th title="Lowest avg runtime across this model's submissions in the language">Best avg runtime</th>
-            <th title="Lowest mean peak memory across this model's submissions in the language. Memory is peak (max resident) on both oracles, never per-op.">Best peak mem</th>
+            <th title="Lowest mean peak memory across this model's submissions in the language. Memory is peak (max resident) on both oracles, never per function call.">Best peak mem</th>
             <th title="Highest avg runtime percentile reached">RT %ile</th>
             <th title="Highest avg memory percentile reached">Mem %ile</th>
             <th>Fully accepted</th>

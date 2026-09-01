@@ -87,7 +87,7 @@ export default function CompetitionDetailPage() {
               <th title="pass@k across this competition's problems: n_accepted / n_attempted. Differs from pass@1 when the model didn't attempt every problem in the set.">pass@k</th>
               <th title="Problems solved out of total in this competition.">Solved</th>
               <th title="Average LeetCode-reported runtime across the model's accepted attempts on this competition's problems only.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts. Peak on both oracles, never per-op.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts. Peak on both oracles, never per function call.">Peak mem</th>
               <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
               <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
               <th title="Total submissions this model has against this competition.">subs</th>

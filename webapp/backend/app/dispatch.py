@@ -522,7 +522,7 @@ _CORRECTNESS_GATE_RETRIES = max(0, int(os.environ.get("ARENA_CORRECTNESS_RETRIES
 
 def _repeats_for_harness(h: "Harness | None") -> int:
     """Perf repeats for THIS harness. arena-local already averages within each
-    measure (the per-op loop), so a harness may lower the count via
+    measure (the per function call loop), so a harness may lower the count via
     config['repeats']; LeetCode keeps the global count (each repeat is a
     separate submission)."""
     if h is not None:
@@ -1260,7 +1260,7 @@ def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -
     a.best_runtime_energy_j = min(en) if en else None
     a.avg_runtime_energy_percentile = _mean(enp)
     a.best_runtime_energy_percentile = max(enp) if enp else None
-    # Per-op solve count (B3) — mean iterations across accepted runs.
+    # Per function call solve count (B3) — mean iterations across accepted runs.
     its = [r["iterations"] for r in accepted if r.get("iterations") is not None]
     a.avg_iterations = _mean(its)
 
@@ -1615,7 +1615,7 @@ def dispatch_submission(submission_id: int) -> None:
                                 memory_percentile=result.get("memory_percentile"),
                                 runtime_energy_j=result.get("runtime_energy_j"),
                                 runtime_energy_percentile=result.get("runtime_energy_percentile"),
-                                # Per-op metrics (Part 4) — looped curated methodology.
+                                # Per function call metrics (Part 4) — looped curated methodology.
                                 iterations=result.get("iterations"),
                                 energy_j_per_op=result.get("energy_j_per_op"),
                                 time_us_per_op=result.get("time_us_per_op"),
@@ -2007,7 +2007,7 @@ def dispatch_submission(submission_id: int) -> None:
         # Runtime-energy accumulators — populated only when the harness that
         # judged this attempt measured execution energy (LeetCode never does).
         avg_en, best_en, avg_enp, best_enp = [], [], [], []
-        avg_it: list[float] = []       # per-op solve counts (B3)
+        avg_it: list[float] = []       # per function call solve counts (B3)
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
         # Per-submission pass metrics:
         #   pass@1    — Chen unbiased estimator with k=1, i.e. c/n per problem,

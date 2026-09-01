@@ -92,7 +92,7 @@ export default function CorrectnessOracleDetailPage() {
               <th title="Best pass@1 this model achieved on any submission scored by this correctness oracle.">pass@1</th>
               <th title="Best pass@k across this model's submissions on this correctness oracle.">pass@k</th>
               <th title="Average runtime across accepted attempts scored by this correctness oracle.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts scored by this correctness oracle. Peak on both oracles, never per-op.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts scored by this correctness oracle. Peak on both oracles, never per function call.">Peak mem</th>
               <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
               <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
               <th title="Total submissions this model has on this correctness oracle.">subs</th>

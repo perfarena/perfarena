@@ -144,9 +144,9 @@ class Submission(SQLModel, table=True):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
-    # Submission-level per-op rollup (B3): average solves/measurement across the
-    # chosen attempts. The per-op TIME and ENERGY are already available as
-    # avg_runtime_ms / avg_runtime_energy_j (those columns ARE the per-op
+    # Submission-level per function call rollup (B3): average solves/measurement across the
+    # chosen attempts. The per function call TIME and ENERGY are already available as
+    # avg_runtime_ms / avg_runtime_energy_j (those columns ARE the per function call
     # values under the looped methodology); avg_iterations adds the solve
     # count behind each measurement (confidence). NULL on LeetCode-scored subs.
     avg_iterations: float | None = None
@@ -332,7 +332,7 @@ class Attempt(SQLModel, table=True):
     best_runtime_energy_j: float | None = None
     avg_runtime_energy_percentile: float | None = None
     best_runtime_energy_percentile: float | None = None
-    # Mean iterations (solves) per accepted run — the per-op measurement's
+    # Mean iterations (solves) per accepted run — the per function call measurement's
     # confidence (B3). NULL on LeetCode-scored attempts.
     avg_iterations: float | None = None
 
@@ -392,7 +392,7 @@ class Run(SQLModel, table=True):
     # the same way runtime_ms rolls into avg_runtime_ms.
     runtime_energy_j: float | None = None
     runtime_energy_percentile: float | None = None
-    # Per-op metrics (looped shared-input methodology): iterations completed in
+    # Per function call metrics (looped shared-input methodology): iterations completed in
     # the measured window, and energy / time normalized per single solve.
     iterations: int | None = None
     energy_j_per_op: float | None = None

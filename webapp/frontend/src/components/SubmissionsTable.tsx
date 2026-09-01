@@ -32,7 +32,7 @@ export default function SubmissionsTable({ rows }: { rows: SubmissionPublic[] })
           <th>Solved</th>
           <th title="Total attempts submitted (one Attempt = one code POST). Re-submissions for the same problem count.">Attempts</th>
           <th title="Mean LeetCode-reported runtime">Avg runtime</th>
-          <th title="Mean peak memory (MB) across runs. Peak (max resident), not per-op, correct on both oracles.">Peak mem</th>
+          <th title="Mean peak memory (MB) across runs. Peak (max resident), not per function call, correct on both oracles.">Peak mem</th>
           <th title="Avg LeetCode runtime percentile">Runtime %ile</th>
           <th title="Avg LeetCode memory percentile">Memory %ile</th>
           {showRuntimeEnergy && <th title="Avg runtime energy (Joules): mean of per-problem mean execution energy across accepted attempts. Reported only when the harness that scored this submission measures execution energy (an in-house runner with RAPL / NVML). Lower is better.">Avg energy</th>}
@@ -121,7 +121,7 @@ export default function SubmissionsTable({ rows }: { rows: SubmissionPublic[] })
               <td className="metric">
                 {formatRuntime(s.avg_runtime_ms)}
                 {(s.machine_name != null || s.energy_tool != null) && s.avg_runtime_ms != null && (
-                  <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/op</sup>
+                  <sup className="muted" style={{ fontSize: "0.68em", marginLeft: 1 }}>/call</sup>
                 )}
               </td>
               <td className="metric">{formatMemory(s.avg_memory_mb)}</td>

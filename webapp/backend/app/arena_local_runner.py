@@ -241,7 +241,7 @@ def _normalise_run(row: dict) -> dict:
         "total_correct":             _i(row.get("total_correct")),
         "total_testcases":           _i(row.get("total_testcases")),
         "submission_id_external":    row.get("submission_id_external"),
-        # Per-op metrics from the looped curated methodology (None on
+        # Per function call metrics from the looped curated methodology (None on
         # runners that don't emit them).
         "iterations":                _i(row.get("iterations")),
         "energy_j_per_op":           _f(row.get("energy_j_per_op")),
