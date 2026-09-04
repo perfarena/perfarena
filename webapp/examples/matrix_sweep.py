@@ -972,6 +972,13 @@ class _Prefetcher:
         # code's language fingerprint (a cached blob that doesn't look
         # like the target language is dropped — could happen if the
         # cache survives across a --languages change).
+        if getattr(self._args, "refresh_cache", False):
+            # --refresh-cache: purge any prior generation for this tuple BEFORE
+            # loading, so the load below misses and the model is re-called. This
+            # regenerates fresh code (and re-caches it) instead of reusing stale
+            # cached output for the run's model.
+            _drop_cached_code(self._args.output, _tuple_key(
+                model, prompt["name"], language, slug), _cache_salt(self._args))
         cached = _load_cached_code(self._args.output, _tuple_key(
             model, prompt["name"], language, slug), _cache_salt(self._args))
         if cached is not None:
@@ -1349,6 +1356,17 @@ def main() -> None:
                          "regenerated. The cache is kept after submit so the "
                          "same generations can be re-submitted (e.g. to a "
                          "different --harness / --correctness-oracle).")
+    ap.add_argument("--refresh-cache", action="store_true",
+                    help="Force REGENERATION: drop each tuple's cached "
+                         "generation before use, so the model is always "
+                         "re-called, then submit the fresh code. The cache key "
+                         "includes the model, so this purges only the run's "
+                         "--model/--models cached solutions for the selected "
+                         "languages / prompts / slugs. NOTE: tuples already "
+                         "recorded 'complete' in the progress log are still "
+                         "skipped by the resume filter — add --no-resume (or "
+                         "--retry-failed) to re-generate AND re-submit those "
+                         "too. Mutually exclusive with --submit-from-cache.")
     ap.add_argument("--inference-timeout", type=int, default=None, metavar="SEC",
                     help="Per-request timeout (seconds) for ONE model inference "
                          "call (default 600). Raise it for slow local models that "
@@ -1357,6 +1375,9 @@ def main() -> None:
     args = ap.parse_args()
     if args.inference_timeout is not None:
         os.environ["ARENA_INFERENCE_TIMEOUT_S"] = str(args.inference_timeout)
+    if args.refresh_cache and args.submit_from_cache:
+        ap.error("--refresh-cache regenerates via the model, but "
+                 "--submit-from-cache never calls the model. Pass at most one.")
     # --correctness-oracle is required UNLESS --skip-correctness. Skipping sends
     # no oracle, so the dispatcher's correctness gate stays off for the run.
     if args.skip_correctness:

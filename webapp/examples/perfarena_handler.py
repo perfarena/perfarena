@@ -347,7 +347,13 @@ def _run_grouped(
             out, err = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
             _killpg(proc, pgid)
-            out, err = proc.communicate()  # drain/reap the now-dead group
+            try:
+                out, err = proc.communicate(timeout=5)  # drain the now-dead group
+            except subprocess.TimeoutExpired:
+                # A process OUTSIDE the group still holds the pipe open. The
+                # child itself is dead; do NOT block the single-threaded runner
+                # waiting for a straggler's EOF — give up the output and move on.
+                out, err = None, None
             raise
         return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     finally:
