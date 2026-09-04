@@ -154,8 +154,28 @@ _CLBG_ARGV_HINT: dict[str, str] = {
     "php":        "$argv[1]",
 }
 
+# Java is the ONLY CLBG language with a NAMED entry class: the harness runs
+# `java <name> N` (see each Java cell's Makefile RUN_CMD), so the model's main
+# class must be named EXACTLY this. The names are the canonical CLBG program
+# names and are irregular (reverse-complement -> revcomp, n-body -> nbody), so
+# the model cannot guess them and the client cannot derive them from the slug —
+# they must be stated. Every other language finds `main` by convention (a
+# binary, `dotnet run`, `node script.js`), so no name is imposed.
+_CLBG_JAVA_CLASS: dict[str, str] = {
+    "binary-trees":       "binarytrees",
+    "fannkuch-redux":     "fannkuchredux",
+    "fasta":              "fasta",
+    "k-nucleotide":       "knucleotide",
+    "mandelbrot":         "mandelbrot",
+    "n-body":             "nbody",
+    "pidigits":           "pidigits",
+    "regex-redux":        "regexredux",
+    "reverse-complement": "revcomp",
+    "spectral-norm":      "spectralnorm",
+}
 
-def clbg_system_prompt(language: str) -> str:
+
+def clbg_system_prompt(language: str, slug: str = "") -> str:
     """System prompt for CLBG benchmarks. Unlike LeetCode, each benchmark is a
     whole program: it reads N from the command line (and, for a few, a data
     stream from stdin) and must print an exact, byte-for-byte output that a
@@ -170,7 +190,7 @@ def clbg_system_prompt(language: str) -> str:
     extra label fails the diff even when its algorithm is correct."""
     display, fence = LANGUAGE_DISPLAY.get(language, (language, language))
     argv = _CLBG_ARGV_HINT.get(language, "the first command-line argument")
-    return (
+    base = (
         f"You are an expert performance engineer. Write a COMPLETE, "
         f"self-contained {display} program that solves the benchmark below. "
         f"This is NOT a LeetCode problem: do NOT define a `class Solution` or "
@@ -189,18 +209,32 @@ def clbg_system_prompt(language: str) -> str:
         f"Think step by step, then return the final program in a single "
         f"```{fence} code block with nothing else outside it."
     )
+    # Java runs a NAMED class (`java <name> N`); pin it so the program is
+    # actually found at run time (otherwise ClassNotFoundException).
+    cls = _CLBG_JAVA_CLASS.get(slug) if language == "java" else None
+    if cls:
+        base += (
+            f"\n\nJAVA ENTRY POINT — the harness runs `java {cls} N`, so your "
+            f"main class MUST be named EXACTLY `{cls}`: declare "
+            f"`public class {cls}` containing "
+            f"`public static void main(String[] args)`. Any helper classes must "
+            f"be non-public (Java allows one public top-level class per file). A "
+            f"class named anything else fails with ClassNotFoundException."
+        )
+    return base
 
 
 def _apply_clbg_shape(sys_p: str, user_prompt: str, statement: str,
-                      language: str) -> tuple[str, str]:
+                      language: str, slug: str = "") -> tuple[str, str]:
     """When the target is a CLBG benchmark, replace the LeetCode `Solution`-
     shape instruction baked into every registry/inline prompt with the
     standalone-program contract, and drop the 'LeetCode problem' framing from
-    the user prompt. No-op for LeetCode problems, so it is safe to call on
-    every generation path."""
+    the user prompt. `slug` lets the shape pin per-problem details (e.g. the
+    Java entry-class name). No-op for LeetCode problems, so it is safe to call
+    on every generation path."""
     if not _is_clbg_statement(statement):
         return sys_p, user_prompt
-    sys_p = clbg_system_prompt(language)
+    sys_p = clbg_system_prompt(language, slug)
     user_prompt = user_prompt.replace(
         "Solve this LeetCode problem", "Solve this benchmark problem")
     return sys_p, user_prompt
@@ -1024,7 +1058,7 @@ class OpenAIProvider(Provider):
             )
         # CLBG benchmarks need a standalone program, not a LeetCode `Solution`
         # class — swap the shape instruction when the statement is a benchmark.
-        sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language)
+        sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language, slug)
         # The OpenAI schema is messages-based, same as Ollama. Temperature
         # and friends ride in the top-level body, not under `options`.
         body: dict = {
@@ -1362,7 +1396,7 @@ def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str
         )
     # CLBG benchmarks need a standalone program, not a LeetCode `Solution`
     # class — swap the shape instruction when the statement is a benchmark.
-    sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language)
+    sys_p, user_prompt = _apply_clbg_shape(sys_p, user_prompt, statement, language, slug)
     payload = {
         "model": model,
         "messages": [
