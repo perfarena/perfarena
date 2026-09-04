@@ -113,6 +113,7 @@ from submit_with_local_model import (                          # noqa: E402
     MEASURABLE_LANGUAGES,
     PROVIDERS, Provider,
     _looks_like,
+    _is_clbg_statement,
     build_code_template_block, build_hints_block,
     build_optimization_directive,
     call_cost_usd, estimate_code_tokens,
@@ -957,7 +958,14 @@ class _Prefetcher:
         snippets = problem.get("code_snippets") or {}
         tpl_text = prompt["system_prompt"] + "\n" + prompt["user_prompt_template"]
         needs_template = "{{code_template}}" in tpl_text
-        if needs_template and not snippets.get(language):
+        # CLBG benchmarks ship no Solution-shape starter snippet — they are whole
+        # programs, not a method to fill in. The client swaps the WHOLE prompt to
+        # the standalone-program contract at generate time (_apply_clbg_shape),
+        # so {{code_template}} is never used for them. Don't skip a CLBG cell for
+        # a "missing" snippet it is never supposed to have; let it fall through
+        # and generate under the CLBG shape.
+        is_clbg = _is_clbg_statement(problem.get("content") or "")
+        if needs_template and not is_clbg and not snippets.get(language):
             return _Prefetched(tup=tup, problem=problem,
                                status="no_code_snippet")
         # Cache hit short-circuit: if we already generated code for this

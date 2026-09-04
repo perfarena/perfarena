@@ -131,26 +131,63 @@ def _is_clbg_statement(statement: str) -> bool:
     return "## Invocation" in s and "Default N:" in s
 
 
+# The FIRST command-line argument sits at a different index per language:
+# Java/C#/Ruby/Kotlin/Scala pass ONLY the user args (index 0); Node passes
+# [node, script, arg...] (index 2); the rest pass [program, arg...] (index 1).
+# The harness ALWAYS invokes the program as `<program> N`, so pinning the exact
+# accessor stops a model from reading the wrong slot (or from reading N off
+# stdin) — the input-normalization the CLBG oracle depends on.
+_CLBG_ARGV_HINT: dict[str, str] = {
+    "python3":    "sys.argv[1]",
+    "cpp":        "argv[1]",
+    "c":          "argv[1]",
+    "rust":       "std::env::args().nth(1)",
+    "java":       "args[0]",
+    "csharp":     "args[0]",
+    "javascript": "process.argv[2]",
+    "typescript": "process.argv[2]",
+    "golang":     "os.Args[1]",
+    "kotlin":     "args[0]",
+    "swift":      "CommandLine.arguments[1]",
+    "scala":      "args(0)",
+    "ruby":       "ARGV[0]",
+    "php":        "$argv[1]",
+}
+
+
 def clbg_system_prompt(language: str) -> str:
     """System prompt for CLBG benchmarks. Unlike LeetCode, each benchmark is a
-    whole program: it reads its argument from the command line (or stdin) and
-    must print an exact, byte-for-byte output that a reference diff checks. A
-    `class Solution` method has no entry point and produces no stdout, so it
-    fails compile or correctness for every language — hence the explicit
-    'complete program, no Solution class' contract here."""
+    whole program: it reads N from the command line (and, for a few, a data
+    stream from stdin) and must print an exact, byte-for-byte output that a
+    reference diff checks. A `class Solution` method has no entry point and
+    produces no stdout, so it fails compile or correctness for every language.
+
+    The prompt pins the INPUT CONTRACT explicitly — which argument slot holds N
+    (per-language, see `_CLBG_ARGV_HINT`), when to read stdin, and byte-exact
+    output — because the arena-local oracle diffs stdout against a reference
+    produced by invoking every language's program the SAME way (`<program> N`).
+    A model that reads N off stdin, from the wrong argv index, or prints an
+    extra label fails the diff even when its algorithm is correct."""
     display, fence = LANGUAGE_DISPLAY.get(language, (language, language))
+    argv = _CLBG_ARGV_HINT.get(language, "the first command-line argument")
     return (
         f"You are an expert performance engineer. Write a COMPLETE, "
         f"self-contained {display} program that solves the benchmark below. "
         f"This is NOT a LeetCode problem: do NOT define a `class Solution` or "
-        f"any method wrapper. The program must have a normal entry point that "
-        f"reads its input exactly as the Input/Invocation sections describe (a "
-        f"command-line argument, or standard input) and prints EXACTLY the "
-        f"bytes shown under Output to standard output — no labels, prompts, or "
-        f"debug lines, and nothing extra before or after. Match the output "
-        f"format character-for-character. Think step by step, then return the "
-        f"final program in a single ```{fence} code block with nothing else "
-        f"outside it."
+        f"any method wrapper; write a whole program with a normal entry point.\n\n"
+        f"INPUT/OUTPUT CONTRACT — follow it EXACTLY. The harness always invokes "
+        f"the program as `<program> N`:\n"
+        f"1. Read N as the FIRST command-line argument, i.e. `{argv}`, and parse "
+        f"it as an integer. N equals the Default N shown below. Do NOT read N "
+        f"from standard input and do NOT hardcode it.\n"
+        f"2. Read from standard input ONLY if the Input section below describes "
+        f"an input stream (for example FASTA data on stdin); otherwise read "
+        f"nothing from standard input.\n"
+        f"3. Print the result to standard output EXACTLY as the Output section "
+        f"shows: identical values, formatting, ordering, and whitespace, with no "
+        f"labels, prompts, debug lines, or anything before or after.\n\n"
+        f"Think step by step, then return the final program in a single "
+        f"```{fence} code block with nothing else outside it."
     )
 
 

@@ -1459,6 +1459,83 @@ def _run_one_measurement(cell, language: str, title_slug: str,
     )
 
 
+def _measure_clbg_once(
+    cell: Path, folder: str, title_slug: str,
+    requested, do_measure: bool, do_mem: bool, timeout: float,
+) -> dict[str, Any]:
+    """ONE measurement pass for a CLBG whole-program benchmark.
+
+    CLBG cells are entire programs, not LeetCode `Solution` methods: they carry
+    NO `test_suite.py` / curated per-op harness, so the per-op path
+    (_run_one_measurement -> run_harness.sh -> test_suite.py) fails with
+    "can't open test_suite.py". Measure them the way they are built instead:
+    `make measure` runs the program under the energy runner and appends
+    wall/energy rows to <Folder>.jsonl (read by _parse_metrics), and memory
+    uses the same separate `make run` pass as every language (_measure_mem).
+    Mirrors _run_one_measurement's result shape so measure_once treats CLBG and
+    LeetCode identically. CLBG numbers are whole-program (not per-op), so the
+    `*_per_op` fields stay None."""
+    runtime_ms = energy_j = memory_mb = None
+    energy_source: str | None = None
+    any_nonzero = False
+    if do_measure:
+        mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
+        if mr.returncode != 0:
+            return _fail_dict("measure", "Runtime Error", mr)
+        try:
+            m = _parse_metrics(cell, folder, title_slug)
+        except RuntimeError as e:
+            return {
+                "status_msg": "Runtime Error", "runtime_ms": None,
+                "memory_mb": None, "runtime_energy_j": None,
+                "machine": _machine_descriptor(), "config": _measure_config(),
+                "raw_response": {"stage": "clbg-make-measure",
+                                 "note": "CLBG `make measure` produced no metric",
+                                 "error_log": str(e), "cell": str(cell)},
+            }
+        runtime_ms = m.get("runtime_ms") if "time" in requested else None
+        energy_j = m.get("runtime_energy_j") if "energy" in requested else None
+        energy_source = m.get("energy_source")
+        any_nonzero = bool(m.get("any_nonzero_exit"))
+    if do_mem:
+        memory_mb, _diag = _measure_mem(cell, timeout)
+
+    if do_measure:
+        status = "Accepted" if (runtime_ms is not None or energy_j is not None) else "Runtime Error"
+    elif do_mem:
+        status = "Accepted" if memory_mb is not None else "Runtime Error"
+    else:
+        status = "Accepted"
+
+    machine = _machine_descriptor()
+    energy_tool_out = (energy_source if (energy_j is not None and energy_source
+                       and energy_source not in ("none", "codecarbon-error"))
+                       else None)
+    raw_response = dict(
+        stage="clbg-make-measure",
+        requested_metrics=sorted(requested),
+        energy_source=energy_source,
+        runtime_ms=runtime_ms,
+        peak_rss_mb=memory_mb,
+        any_nonzero_exit=any_nonzero,
+        machine=machine,
+        cell=str(cell),
+    )
+    return dict(
+        status_msg=status,
+        runtime_ms=runtime_ms,
+        memory_mb=memory_mb,
+        runtime_energy_j=energy_j,
+        iterations=None,
+        energy_j_per_op=None,
+        time_us_per_op=None,
+        energy_tool=energy_tool_out,
+        machine=machine,
+        config=_measure_config(),
+        raw_response=raw_response,
+    )
+
+
 def measure_once(
     title_slug: str, language: str, code: str,
     metrics: Any = None, repeats: int = 1, do_compile: bool = False,
@@ -1567,19 +1644,29 @@ def measure_once(
         # request (do_measure False) keeps memory on every pass so the
         # requested sample count is honoured.
         mem_cap = max(1, int(os.environ.get("PERFARENA_MEM_REPEATS", "3")))
+        # CLBG benchmarks are whole programs measured via `make measure` (no
+        # per-op test_suite.py); LeetCode uses the curated per-op harness. The
+        # shared codecarbon backend is only for the per-op path — `make measure`
+        # runs its own energy runner — so skip building it for CLBG.
+        is_clbg = _is_clbg_cell(cell, title_slug)
         # Build the energy backend ONCE for the whole submission and reuse it
         # across every repeat — the codecarbon tracker start/stop is the
         # dominant fixed per-repeat cost. None when energy isn't requested.
-        shared_backend = _make_energy_backend() if do_measure else None
+        shared_backend = _make_energy_backend() if (do_measure and not is_clbg) else None
         results: list[dict[str, Any]] = []
         try:
             for i in range(n_runs):
                 run_mem = do_mem and (not do_measure or i < mem_cap)
                 _t_run = time.perf_counter()
-                results.append(
-                    _run_one_measurement(cell, language, title_slug, requested,
-                                         do_measure, run_mem,
-                                         energy_backend=shared_backend))
+                if is_clbg:
+                    results.append(_measure_clbg_once(
+                        cell, folder, title_slug, requested,
+                        do_measure, run_mem, timeout_s))
+                else:
+                    results.append(
+                        _run_one_measurement(cell, language, title_slug, requested,
+                                             do_measure, run_mem,
+                                             energy_backend=shared_backend))
                 # Always-on progress line (independent of PERFARENA_LOG) so the
                 # local perf server reports every test-suite run's iteration and
                 # elapsed time — the primary signal for how long a submission takes.
