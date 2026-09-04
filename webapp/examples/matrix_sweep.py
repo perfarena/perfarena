@@ -1786,10 +1786,25 @@ def main() -> None:
             # cap at 1.5× the per-account gap so a fully-cool pool can
             # tolerate small clock skew between accounts).
             ceiling = max(floor, 1.5 * 120.0)
-            wait_s, reason = _pacing_wait_until_account_ready(
-                base, args.api_key,
-                floor_seconds=floor, ceiling_seconds=ceiling,
+            # The pool-driven pacing exists to respect LeetCode's per-account
+            # rate limits. It only applies when this run actually submits to
+            # LeetCode — i.e. the correctness oracle is `leetcode` (or a
+            # leetcode-kind perf harness). For an arena-local run (correctness
+            # measured on the runner, or --skip-correctness) there is NO account
+            # pool to pace against, and querying it blocks on an unrelated
+            # LeetCode cooldown — up to the 30-min pool-recheck loop — between
+            # every submission. Honour only the local IP-throttle floor there.
+            touches_leetcode = (
+                args.correctness_oracle == "leetcode"
+                or "leetcode" in (args.harness or "").lower()
             )
+            if touches_leetcode:
+                wait_s, reason = _pacing_wait_until_account_ready(
+                    base, args.api_key,
+                    floor_seconds=floor, ceiling_seconds=ceiling,
+                )
+            else:
+                wait_s, reason = floor, "no LeetCode contact; floor only"
             if wait_s > 0:
                 tag = " (prefetcher generating next tuple)" if args.prefetch > 0 else ""
                 print(f"  … sleeping {wait_s:.0f}s "
