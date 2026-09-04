@@ -295,19 +295,63 @@ def _curated_cases(slug: str) -> list[tuple[int, float, str | None]]:
     return [(i, w / tot, nm) for i, w, nm in cases]
 
 
-def _killpg(proc: subprocess.Popen) -> None:
+def _killpg(proc: subprocess.Popen, pgid: int | None = None) -> None:
     """Kill the child's WHOLE process group. The child is launched
     start_new_session=True (it's the group leader), so a plain proc.kill()
     would only reap the `bash run_harness.sh` wrapper and orphan the real
     workers (javac/g++/rustc/the compiled binary) — which keep burning CPU
-    and skew the next measurement. SIGKILL the group instead."""
+    and skew the next measurement. SIGKILL the group instead.
+
+    Pass `pgid` (captured right after the spawn, while the child is still
+    alive) to reap stragglers AFTER the group leader has already exited: once
+    the leader is reaped, os.getpgid(proc.pid) raises and the orphans become
+    unreachable. An already-empty group is not an error."""
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        if pgid is None:
+            pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass  # group already gone — nothing left to reap
     except Exception:  # noqa: BLE001
         try:
             proc.kill()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _run_grouped(
+    cmd: list[str], cwd: Path, timeout: float,
+    env: "dict[str, str] | None" = None,
+) -> subprocess.CompletedProcess:
+    """Group-safe drop-in for `subprocess.run(capture_output=True, timeout=…)`.
+
+    Every heavy step on the runner (make -> compiler, `bash run_harness.sh` ->
+    the looping measurement binary/JVM) spawns grandchildren. Plain
+    subprocess.run kills only the DIRECT child on timeout and reaps nothing on
+    normal exit, so a compiled benchmark that outlives `make`/`bash` keeps
+    burning CPU after the request returns — the box fans stay maxed until the
+    whole server is killed. Launch the child as a session leader and SIGKILL
+    the WHOLE process group both on timeout and in a finally, so no descendant
+    survives the call. Contract matches subprocess.run: returns a
+    CompletedProcess and re-raises subprocess.TimeoutExpired on timeout."""
+    proc = subprocess.Popen(
+        cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True, env=env,
+    )
+    try:
+        pgid = os.getpgid(proc.pid)
+    except Exception:  # noqa: BLE001
+        pgid = None
+    try:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _killpg(proc, pgid)
+            out, err = proc.communicate()  # drain/reap the now-dead group
+            raise
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    finally:
+        _killpg(proc, pgid)
 
 
 class _EnergyBackend:
@@ -509,6 +553,12 @@ def _run_harness_measured(
         cmd, cwd=str(cell), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         text=True, start_new_session=True, env=env,
     )
+    # Capture the group id NOW, while the leader is alive, so we can reap
+    # stragglers even after it exits (see the _killpg below).
+    try:
+        pgid = os.getpgid(proc.pid)
+    except Exception:  # noqa: BLE001
+        pgid = None
 
     # Drain stderr on a background thread. The harness emits one small line,
     # but a crashing solution or a chatty compiler can exceed the ~64 KB pipe
@@ -558,6 +608,11 @@ def _run_harness_measured(
         time.sleep(cadence)
     wall_s = time.monotonic() - t0
     reader.join(timeout=5)
+    # Reap any straggler still in the harness group — a build daemon or a
+    # detached measurement binary that outlived `bash run_harness.sh`. On the
+    # normal path the leader has already exited so this is a no-op; on timeout
+    # the group was already killed above. Either way nothing survives the call.
+    _killpg(proc, pgid)
     stderr = "".join(stderr_chunks)
     _log(f"case idx={idx} exit={proc.returncode if not timed_out else 'KILLED'} "
          f"wall={wall_s:.2f}s")
@@ -915,9 +970,14 @@ def _measure_mem(cell: Path, timeout: float) -> tuple[float | None, dict[str, An
     prev_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{root}:{prev_pp}" if prev_pp else str(root)
     try:
-        rc = subprocess.run(
+        # Group-safe: the helper spawns `make run` -> the measurement binary,
+        # all inside the helper's process group. _run_grouped SIGKILLs that
+        # whole group on timeout and on return, so an overrunning `make run`
+        # (or the helper's own inner make-timeout, which orphans the binary
+        # within the group) leaves nothing burning CPU behind.
+        rc = _run_grouped(
             [sys.executable, "-c", _MEM_HELPER, str(cell), str(timeout)],
-            capture_output=True, text=True, timeout=timeout + 10.0, env=env,
+            cwd=cell, timeout=timeout + 10.0, env=env,
         )
     except subprocess.TimeoutExpired as e:
         return None, {"note": f"mem helper timeout: {e}"}
@@ -1042,11 +1102,10 @@ def _run(cmd: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProce
     # is already launched from a shell that has the venv activated.
     py_bin_dir = str(Path(sys.executable).parent)
     env["PATH"] = f"{py_bin_dir}:{env.get('PATH', '')}"
-    return subprocess.run(
-        cmd, cwd=str(cwd),
-        capture_output=True, text=True, timeout=timeout,
-        env=env,
-    )
+    # Group-safe: `make`/`bash run_harness.sh` spawn compilers and the looping
+    # measurement binary as grandchildren; _run_grouped SIGKILLs the whole
+    # group on timeout and on return so none of them outlive this call.
+    return _run_grouped(cmd, cwd, timeout, env=env)
 
 
 def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
@@ -1210,7 +1269,14 @@ def validate_once(
     source = _discover_source(cell)
     backup = source.with_suffix(source.suffix + ".perfarena_backup")
     try:
-        shutil.copy2(source, backup)
+        # Back up the source only if it exists — a fresh cell (no committed
+        # solution.*, e.g. a just-generated or cleared cell) has none, and we
+        # overwrite it with the model's code here anyway. Without this guard
+        # copy2 raised FileNotFoundError and such a cell could NEVER bootstrap
+        # (write never ran). The finally leaves the written file when there was
+        # no backup, so the next attempt has a source and restores normally.
+        if source.exists():
+            shutil.copy2(source, backup)
         source.write_text(_normalize_solution_code(language, code))
 
         rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
@@ -1440,7 +1506,14 @@ def measure_once(
     pre_bytes = jsonl_path.stat().st_size if jsonl_path.exists() else 0
 
     try:
-        shutil.copy2(source, backup)
+        # Back up the source only if it exists — a fresh cell (no committed
+        # solution.*, e.g. a just-generated or cleared cell) has none, and we
+        # overwrite it with the model's code here anyway. Without this guard
+        # copy2 raised FileNotFoundError and such a cell could NEVER bootstrap
+        # (write never ran). The finally leaves the written file when there was
+        # no backup, so the next attempt has a source and restores normally.
+        if source.exists():
+            shutil.copy2(source, backup)
         source.write_text(_normalize_solution_code(language, code))
 
         # 1. compile — ONCE, only when explicitly requested. Default /measure
