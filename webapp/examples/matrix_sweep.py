@@ -1300,9 +1300,12 @@ def main() -> None:
                          "account is consistently in cooldown. Stacks on top "
                          "of ARENA_DISPATCH_INTER_DELAY (which only applies "
                          "WITHIN one submission's dispatch).")
-    ap.add_argument("--poll-seconds", type=int, default=300, metavar="SEC",
+    ap.add_argument("--poll-seconds", type=int, default=None, metavar="SEC",
                     help="how long to wait for each tuple's dispatch to settle "
-                         "before giving up and moving to the next tuple. On "
+                         "before giving up and moving to the next tuple. "
+                         "Default depends on the run: 300s for LeetCode, 900s "
+                         "for arena-local (whole-program CLBG measures can take "
+                         "a few minutes per attempt). On "
                          "timeout the tuple is logged as `status=poll_timeout` "
                          "(auto-retried by the resume classifier next run; no "
                          "operator action required) and the sweep continues. "
@@ -1392,6 +1395,17 @@ def main() -> None:
         args.correctness_oracle = None
     elif not args.correctness_oracle:
         ap.error("--correctness-oracle is required unless --skip-correctness is passed")
+
+    # Poll-timeout default by run type. LeetCode's judge settles a verdict in
+    # ~12s/repeat, so 300s is ample. Arena-local measurement (CLBG whole-program
+    # benchmarks × WARMUP+MEASURE iterations) can take a few minutes per attempt
+    # — after the CLBG input-size reductions the slowest fits well under 15 min,
+    # so default those to 900s and avoid the spurious `poll timeout after 300s
+    # ... recording as in-progress`. An explicit --poll-seconds always wins.
+    if args.poll_seconds is None:
+        _touches_lc = (args.correctness_oracle == "leetcode"
+                       or "leetcode" in (args.harness or "").lower())
+        args.poll_seconds = 300 if _touches_lc else 900
 
     if not args.dry_run and not args.api_key:
         raise SystemExit("set --api-key or ARENA_API_KEY (skip with --dry-run)")
@@ -1530,18 +1544,29 @@ def main() -> None:
     # `(1 / pass@1) × single-shot` per cell, but the budget call has to
     # assume the worst case.
     rounds_factor = max(1, int(args.rounds))
+    # A no-LeetCode run applies NO client pacing (see the pacing block below),
+    # and the server's INTER_DELAY is leetcode-only — so zero those out of the
+    # estimate and banner instead of quoting delays that never fire.
+    touches_leetcode = (args.correctness_oracle == "leetcode"
+                        or "leetcode" in (args.harness or "").lower())
+    tuple_delay = args.inter_tuple_delay if touches_leetcode else 0.0
+    problem_delay = args.inter_problem_delay if touches_leetcode else 0.0
     est_seconds = (
         len(todo) * 12 * repeats * rounds_factor
-        + same_pair_hops * args.inter_tuple_delay
-        + problem_hops * args.inter_problem_delay
+        + same_pair_hops * tuple_delay
+        + problem_hops * problem_delay
     )
     print(f"\nestimated wall time: ~{est_seconds / 3600:.1f}h (worst case if every cell uses all {rounds_factor} round(s))")
-    print(f"  REPEATS={repeats}  ·  rounds={args.rounds}  ·  inter-tuple={args.inter_tuple_delay}s  "
-          f"·  inter-problem={args.inter_problem_delay}s")
-    print(f"  (problem,language) hops: {problem_hops}  ·  "
-          f"same-pair hops (model/prompt only): {same_pair_hops}")
-    print(f"  (server INTER_DELAY={inter_delay_server}s also applies WITHIN "
-          f"one submission's dispatch.)")
+    if touches_leetcode:
+        print(f"  REPEATS={repeats}  ·  rounds={args.rounds}  ·  inter-tuple={args.inter_tuple_delay}s  "
+              f"·  inter-problem={args.inter_problem_delay}s")
+        print(f"  (problem,language) hops: {problem_hops}  ·  "
+              f"same-pair hops (model/prompt only): {same_pair_hops}")
+        print(f"  (server INTER_DELAY={inter_delay_server}s also applies WITHIN "
+              f"one submission's dispatch.)")
+    else:
+        print(f"  REPEATS={repeats}  ·  rounds={args.rounds}  ·  "
+              f"no LeetCode pacing (arena-local): no inter-submission delays")
     print(f"output log:          {args.output}")
     print()
 
@@ -1793,7 +1818,12 @@ def main() -> None:
             # measured on the runner, or --skip-correctness) there is NO account
             # pool to pace against, and querying it blocks on an unrelated
             # LeetCode cooldown — up to the 30-min pool-recheck loop — between
-            # every submission. Honour only the local IP-throttle floor there.
+            # every submission. A run that never touches LeetCode (arena-local
+            # correctness AND a non-leetcode perf harness) has NO rate limit to
+            # respect, and matrix_sweep already self-paces by polling each
+            # submission's verdict before the next — so it gets NO inter-
+            # submission delay at all: not the account-cooldown wait, and not
+            # even the IP-throttle floor (`--inter-problem/tuple-delay`).
             touches_leetcode = (
                 args.correctness_oracle == "leetcode"
                 or "leetcode" in (args.harness or "").lower()
@@ -1804,7 +1834,7 @@ def main() -> None:
                     floor_seconds=floor, ceiling_seconds=ceiling,
                 )
             else:
-                wait_s, reason = floor, "no LeetCode contact; floor only"
+                wait_s, reason = 0.0, "no LeetCode contact; no delay"
             if wait_s > 0:
                 tag = " (prefetcher generating next tuple)" if args.prefetch > 0 else ""
                 print(f"  … sleeping {wait_s:.0f}s "

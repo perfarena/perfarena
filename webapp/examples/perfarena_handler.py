@@ -1028,6 +1028,27 @@ def _first_meaningful_line(text: str, cap: int = 240) -> str:
     return ""
 
 
+def _first_error_line(*texts: str, cap: int = 240) -> str:
+    """One-line failure summary that SKIPS make's own `make: *** […] Error N`
+    wrapper (that line is just the exit code, not the cause) and prefers a real
+    compiler/validator error line. Compilers disagree on the stream — gcc/g++/
+    rustc write errors to stderr, but `dotnet` and `tsc` write them to STDOUT —
+    so search every provided text. Falls back to the first non-make line."""
+    def _lines(t: str):
+        for ln in (t or "").splitlines():
+            s = ln.strip()
+            if s and not s.startswith("make:"):
+                yield s
+    for t in texts:                         # 1) an explicit error line
+        for s in _lines(t):
+            if "error" in s.lower():
+                return s[:cap] + ("…" if len(s) > cap else "")
+    for t in texts:                         # 2) first meaningful non-make line
+        for s in _lines(t):
+            return s[:cap] + ("…" if len(s) > cap else "")
+    return ""
+
+
 def _fail_dict(
     stage: str, status_msg: str, rc: subprocess.CompletedProcess,
 ) -> dict[str, Any]:
@@ -1048,11 +1069,17 @@ def _fail_dict(
     """
     stderr_tail = rc.stderr[-4000:] if rc.stderr else ""
     stdout_tail = rc.stdout[-4000:] if rc.stdout else ""
+    # The USEFUL error can be on either stream (g++ -> stderr; dotnet/tsc ->
+    # stdout) and make's stderr always carries a useless `make: *** Error N`
+    # wrapper — search both and skip that wrapper.
     summary = (
-        _first_meaningful_line(rc.stderr)
-        or _first_meaningful_line(rc.stdout)
+        _first_error_line(rc.stderr, rc.stdout)
         or f"(no output; exit code {rc.returncode})"
     )
+    # Keep BOTH streams for the full log — `stderr or stdout` dropped the
+    # compiler's real message (in stdout) whenever the make wrapper wrote to
+    # stderr, which is always.
+    both_tail = "\n".join(t for t in (stdout_tail, stderr_tail) if t)
     error_log_str = (
         f"{stage} failed (exit={rc.returncode}): {summary}"
         + (f"\n\n--- stderr tail ---\n{stderr_tail}" if stderr_tail else "")
@@ -1068,14 +1095,14 @@ def _fail_dict(
     }
     if stage == "compile":
         raw["compile_error"]      = summary
-        raw["full_compile_error"] = stderr_tail or stdout_tail
+        raw["full_compile_error"] = both_tail
     else:
         # validate + measure — both are runtime failures from the SPA's
         # POV. The stdout may carry the actual model output for wrong-
         # answer cases; surface it as std_output so the SPA renders it
         # in the "your output was" panel.
         raw["runtime_error"]      = summary
-        raw["full_runtime_error"] = stderr_tail or stdout_tail
+        raw["full_runtime_error"] = both_tail
         if status_msg == "Wrong Answer" and stdout_tail:
             raw["std_output"] = stdout_tail
     return dict(
