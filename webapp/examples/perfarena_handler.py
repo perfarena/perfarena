@@ -926,7 +926,21 @@ def _strip_kotlin_class(code: str, name: str) -> str:
 def _normalize_solution_code(language: str, code: str) -> str:
     """Best-effort fixups so common model-output quirks still compile."""
     if language == "java":
-        return _JAVA_PUBLIC_TYPE_RE.sub(r"\1\2", code)
+        code = _JAVA_PUBLIC_TYPE_RE.sub(r"\1\2", code)
+        # LeetCode's judge implicitly imports the common java.util / stream /
+        # math classes, so models write bare `List`, `Map`, `IntStream`,
+        # `BigInteger` with NO import lines. javac compiles solution.java as its
+        # own unit (Harness.java's imports do NOT apply to it), so those symbols
+        # fail with "cannot find symbol: class List". Add the ones the model
+        # didn't already bring in — wildcard/unused imports are harmless.
+        imports = ["import java.util.*;", "import java.util.stream.*;",
+                   "import java.math.*;"]
+        missing = [imp for imp in imports if imp not in code]
+        if missing:
+            block = "\n".join(missing) + "\n"
+            m = re.match(r"\s*package\s+[\w.]+\s*;", code)  # imports go AFTER a package stmt
+            code = (code[:m.end()] + "\n" + block + code[m.end():]) if m else block + code
+        return code
     if language == "rust":
         return _RUST_STRUCT_SOLUTION_RE.sub("", code)
     if language == "kotlin":

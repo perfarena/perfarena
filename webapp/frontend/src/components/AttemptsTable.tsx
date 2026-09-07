@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
-import { AttemptResultPayload, AttemptRunDetail } from "../lib/api";
+import { AttemptResultPayload, AttemptRunDetail, api } from "../lib/api";
 import { formatDuration, formatEnergy, formatMemory, formatPercentile, formatRuntime } from "../lib/format";
 import { ErrorPanel, LogEntryPanel, ProvenancePanel, hasErrorLog } from "./AuditPanels";
 import { RunsChart } from "./RunsChart";
@@ -170,7 +170,7 @@ function RoundChainBadge({
 }
 
 function AttemptRow({
-  a, showEnergy, showRuntimeEnergy, showMemory, chainSize, perOp,
+  a, showEnergy, showRuntimeEnergy, showMemory, chainSize, perOp, admin, onChanged,
 }: {
   a: AttemptResultPayload;
   showEnergy: boolean;
@@ -178,8 +178,16 @@ function AttemptRow({
   showMemory: boolean;
   chainSize: number;
   perOp: boolean;
+  admin: boolean;
+  onChanged?: () => void;
 }) {
   const [open, setOpen] = useState<AttemptPanel>(null);
+  async function del() {
+    if (!confirm(`Delete attempt #${a.attempt_id} — ${a.problem_slug} (${a.status})?\n`
+      + `This permanently removes the attempt and its runs; re-submit to re-measure.`)) return;
+    try { await api.deleteAttempt(a.attempt_id); onChanged?.(); }
+    catch (e) { alert(`Delete failed: ${(e as Error).message}`); }
+  }
   // "Error log" at the attempt level surfaces the LAST run's error (the most
   // recent dispatch). Per-run errors are still reachable through the runs
   // expander's own RunRow buttons.
@@ -240,6 +248,12 @@ function AttemptRow({
         )}
         <td>
           <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {admin && (
+              <button className="secondary"
+                      style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
+                      title="Admin: permanently delete this attempt and its runs"
+                      onClick={del}>🗑 Delete</button>
+            )}
             {a.runs.length > 0 && (
               <button className="secondary" onClick={() => toggle("runs")}>
                 {open === "runs" ? "Hide runs" : `${a.runs.length} runs`}
@@ -302,7 +316,9 @@ function AttemptRow({
 }
 
 export default function AttemptsTable(
-  { rows, perOp = false }: { rows: AttemptResultPayload[]; perOp?: boolean },
+  { rows, perOp = false, admin = false, onChanged }:
+    { rows: AttemptResultPayload[]; perOp?: boolean;
+      admin?: boolean; onChanged?: () => void },
 ) {
   if (rows.length === 0) return <div className="empty">No attempts to show.</div>;
   // Generation-energy column (LLM-side) — only rendered when at least one
@@ -396,7 +412,8 @@ export default function AttemptsTable(
                         showRuntimeEnergy={showRuntimeEnergy}
                         showMemory={showMemory}
                         perOp={perOp}
-                        chainSize={chainSize[a.problem_slug] ?? 1} />
+                        chainSize={chainSize[a.problem_slug] ?? 1}
+                        admin={admin} onChanged={onChanged} />
           ))}
         </tbody>
       </table>

@@ -6527,6 +6527,31 @@ def admin_purge_failed_attempts(
     }
 
 
+@app.delete("/api/admin/attempts/{attempt_id}", status_code=status.HTTP_200_OK)
+def admin_delete_attempt(
+    attempt_id: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Admin-only hard delete of a SINGLE attempt and its Run rows.
+
+    Unlike purge-failed (which only clears system-failure phantoms and
+    preserves real verdicts), this removes whatever attempt the operator points
+    at — e.g. a solution that failed on a since-fixed harness bug — so a re-run
+    re-measures the problem cleanly. Deleting an Accepted attempt is allowed;
+    it is the operator's call. SQLite has no cascade, so the Run rows go first."""
+    att = session.get(Attempt, attempt_id)
+    if att is None:
+        raise HTTPException(404, "attempt not found")
+    n_runs = 0
+    for r in session.exec(select(Run).where(Run.attempt_id == attempt_id)).all():
+        session.delete(r)
+        n_runs += 1
+    session.delete(att)
+    session.commit()
+    return {"deleted_attempt_id": attempt_id, "deleted_runs": n_runs}
+
+
 @app.post("/api/admin/attempts/mark-stale", status_code=status.HTTP_200_OK)
 def admin_mark_stale_attempts(
     _: User = Depends(current_admin),

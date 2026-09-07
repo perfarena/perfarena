@@ -10,6 +10,7 @@ export default function AttemptResults() {
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [q, setQ] = useState("");
+  const [admin, setAdmin] = useState(false);
 
   async function refresh() {
     try {
@@ -23,6 +24,11 @@ export default function AttemptResults() {
     }
   }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [id]);
+  useEffect(() => {
+    // Admin gate for the per-attempt delete controls. Silent on failure
+    // (not signed in / not admin) — the delete buttons just stay hidden.
+    api.me().then(m => setAdmin(m.role === "admin")).catch(() => setAdmin(false));
+  }, []);
 
   const counts = useMemo(() => {
     const c = { accepted: 0, rejected: 0, queued: 0 };
@@ -85,7 +91,8 @@ export default function AttemptResults() {
       {visible.length === 0
         ? <div className="empty">No attempts match.</div>
         : <AttemptsTable rows={visible}
-                         perOp={s?.energy_tool != null || s?.machine_name != null} />}
+                         perOp={s?.energy_tool != null || s?.machine_name != null}
+                         admin={admin} onChanged={refresh} />}
     </div>
   );
 }

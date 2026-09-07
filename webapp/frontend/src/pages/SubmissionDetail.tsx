@@ -365,7 +365,9 @@ export default function SubmissionDetailPage() {
 
       {attempts === null
         ? <div className="empty">Loading attempts…</div>
-        : <AttemptsTable rows={attempts} perOp={locallyMeasured} />}
+        : <AttemptsTable rows={attempts} perOp={locallyMeasured}
+                         admin={me?.role === "admin"}
+                         onChanged={() => api.submissionAttempts(id).then(setAttempts).catch(() => {})} />}
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
         Each row is one attempt. Click <b>N runs</b> to see the per-run

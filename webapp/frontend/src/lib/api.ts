@@ -126,6 +126,11 @@ export const api = {
   submissionDetail: (id: number | string) => request<SubmissionDetail>(`/api/submissions/${id}`),
   deleteSubmission: (id: number | string) =>
     request<null>(`/api/submissions/${id}`, { method: "DELETE" }),
+  /** Admin-only: hard-delete a single attempt + its runs (e.g. to clear a
+   * failure caused by a since-fixed harness bug so a re-run re-measures it). */
+  deleteAttempt: (id: number) =>
+    request<{ deleted_attempt_id: number; deleted_runs: number }>(
+      `/api/admin/attempts/${id}`, { method: "DELETE" }),
   me: () => request<MePayload>(`/api/me`),
   mySubmissions: () => request<SubmissionPublic[]>(`/api/me/submissions`),
   modelDetail: (name: string) => request<ModelDetail>(`/api/models/${encodeURIComponent(name)}`),
