@@ -296,22 +296,36 @@ def _curated_cases(slug: str) -> list[tuple[int, float, str | None]]:
 
 
 def _killpg(proc: subprocess.Popen, pgid: int | None = None) -> None:
-    """Kill the child's WHOLE process group. The child is launched
+    """SIGKILL the child's WHOLE process group. The child is launched
     start_new_session=True (it's the group leader), so a plain proc.kill()
     would only reap the `bash run_harness.sh` wrapper and orphan the real
-    workers (javac/g++/rustc/the compiled binary) — which keep burning CPU
+    workers (javac/g++/rustc/php/the compiled binary) — which keep burning CPU
     and skew the next measurement. SIGKILL the group instead.
 
-    Pass `pgid` (captured right after the spawn, while the child is still
-    alive) to reap stragglers AFTER the group leader has already exited: once
-    the leader is reaped, os.getpgid(proc.pid) raises and the orphans become
-    unreachable. An already-empty group is not an error."""
+    The group id to kill is `proc.pid` itself: with start_new_session the child
+    is a session+group leader whose pgid EQUALS its pid. We deliberately do NOT
+    use os.getpgid(proc.pid) — right after Popen the child may not have finished
+    setsid() (so getpgid transiently returns the RUNNER's own group), and after
+    the pid is reaped it may be recycled; killpg'ing either takes the server
+    down with it. Targeting proc.pid can only ever hit the child's own group
+    (or nothing). As a hard backstop we still refuse to signal our own group."""
+    if pgid is None:
+        pgid = proc.pid
     try:
-        if pgid is None:
-            pgid = os.getpgid(proc.pid)
+        own_pgid = os.getpgid(0)          # the runner's OWN process group
+    except Exception:  # noqa: BLE001
+        own_pgid = -1
+    if pgid is None or pgid <= 0 or pgid == own_pgid:
+        # Never SIGKILL the server's own group — fall back to the direct child.
+        try:
+            proc.kill()
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    try:
         os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError:
-        pass  # group already gone — nothing left to reap
+        pass  # group already gone / not yet created — nothing to reap
     except Exception:  # noqa: BLE001
         try:
             proc.kill()
@@ -338,10 +352,9 @@ def _run_grouped(
         cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, start_new_session=True, env=env,
     )
-    try:
-        pgid = os.getpgid(proc.pid)
-    except Exception:  # noqa: BLE001
-        pgid = None
+    # The child's group id IS its pid (start_new_session). Use proc.pid rather
+    # than os.getpgid — see _killpg for why (never risk killing our own group).
+    pgid = proc.pid
     try:
         try:
             out, err = proc.communicate(timeout=timeout)
@@ -559,12 +572,10 @@ def _run_harness_measured(
         cmd, cwd=str(cell), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         text=True, start_new_session=True, env=env,
     )
-    # Capture the group id NOW, while the leader is alive, so we can reap
-    # stragglers even after it exits (see the _killpg below).
-    try:
-        pgid = os.getpgid(proc.pid)
-    except Exception:  # noqa: BLE001
-        pgid = None
+    # The child's group id IS its pid (start_new_session); use proc.pid, never
+    # os.getpgid (which can transiently return the RUNNER's own group). Lets us
+    # reap stragglers after the leader exits without risking a self-kill.
+    pgid = proc.pid
 
     # Drain stderr on a background thread. The harness emits one small line,
     # but a crashing solution or a chatty compiler can exceed the ~64 KB pipe
