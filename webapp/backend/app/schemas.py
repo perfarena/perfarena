@@ -120,7 +120,7 @@ class ProblemDetail(ProblemPublic):
 class AttemptIn(BaseModel):
     title_slug: str
     code: str
-    inference_trace: str = Field(min_length=20, description="Human-readable reasoning summary; min 20 chars")
+    inference_trace: str = Field(min_length=1, description="Human-readable reasoning summary; must be non-empty. A terse reasoning (e.g. a model that just says 'Simple.') is valid provenance and must not be rejected; the 20-char minimum used to drop such solutions.")
     trace: dict | None = Field(
         default=None,
         description=(

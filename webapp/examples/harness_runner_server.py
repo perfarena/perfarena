@@ -153,6 +153,81 @@ _VALIDATE_HANDLER: Callable[[str, str, str], dict] | None = None
 _CORRECTNESS_LABEL: str = ""
 _REJECT_WHEN_BUSY: bool = False
 _VERBOSE: bool = False
+# Hard wall-clock cap for ONE /measure or /validate request. When a request
+# exceeds it, the runner SIGKILLs every test-suite subprocess it spawned (the
+# whole child process tree) and lets the handler return promptly. Set this at or
+# just below the client's poll timeout so a run the client has already given up
+# on stops burning CPU and frees the runner for the next submission instead of
+# holding _RUN_LOCK. 0 disables the cap. Configured by main() from
+# --request-timeout / PERFARENA_REQUEST_TIMEOUT_S.
+_REQUEST_TIMEOUT_S: float = float(os.environ.get("PERFARENA_REQUEST_TIMEOUT_S", "0") or 0)
+
+
+def _kill_own_children() -> int:
+    """SIGKILL every descendant process of this runner (the in-flight test
+    suites). The server is serial (one job under _RUN_LOCK), so its children ARE
+    the current /validate or /measure subprocess tree. Returns the count killed.
+
+    Each DIRECT child is spawned start_new_session=True by the handler, so it is
+    a process-group leader whose pgid EQUALS its pid; `killpg(child.pid)` reaps
+    that child AND its whole subtree — including BACKGROUNDED grandchildren that
+    a per-pid kill misses (they reparent to init the moment their parent dies).
+    A recursive per-pid sweep mops up any straggler outside those groups. The
+    runner's own group is never targeted (a child's pgid can't equal it)."""
+    killed = 0
+    try:
+        import psutil  # type: ignore
+        me = psutil.Process()
+        # SNAPSHOT the whole descendant tree + the direct-child group ids FIRST,
+        # before killing anything: a group kill reparents survivors to init, so a
+        # sweep done AFTER would no longer see them as our descendants and miss
+        # them. With the pids captured up front, we can kill by group and by pid.
+        direct_pgids = [c.pid for c in me.children(recursive=False)]
+        all_pids = [c.pid for c in me.children(recursive=True)]
+        for pgid in direct_pgids:                 # whole session group per child
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            except Exception:  # noqa: BLE001
+                pass
+        for pid in all_pids:                      # per-pid backstop (backgrounded, reparented)
+            try:
+                os.kill(pid, signal.SIGKILL)
+                killed += 1
+            except (ProcessLookupError, PermissionError):
+                pass
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        pass
+    return killed
+
+
+def _run_with_watchdog(fn: "Callable[[], Any]", label: str) -> Any:
+    """Run `fn` (a handler invocation) under the request watchdog. If it exceeds
+    _REQUEST_TIMEOUT_S, a timer thread SIGKILLs the runner's child processes —
+    unblocking the handler's subprocess.communicate/poll so it returns quickly —
+    while `fn` keeps running to build its (now-failed) response. No-op when the
+    cap is 0/unset."""
+    if _REQUEST_TIMEOUT_S <= 0:
+        return fn()
+    fired = {"v": False}
+
+    def _fire() -> None:
+        fired["v"] = True
+        n = _kill_own_children()
+        print(f"[runner] request watchdog: {label} exceeded "
+              f"{_REQUEST_TIMEOUT_S:.0f}s — SIGKILLed {n} test-suite "
+              f"process(es)", file=sys.stderr, flush=True)
+
+    t = threading.Timer(_REQUEST_TIMEOUT_S, _fire)
+    t.daemon = True
+    t.start()
+    try:
+        return fn()
+    finally:
+        t.cancel()
 
 
 # ---------- reference measurement backend ----------------------------------
@@ -444,20 +519,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 batch_ok = False
             if batch_ok:
                 # Batch handler: ONE call, returns a list of `repeats` results.
-                try:
-                    batch = _MEASURE_HANDLER(
+                def _run_batch() -> Any:
+                    return _MEASURE_HANDLER(
                         body["title_slug"], body["language"], body["code"],
                         **{**metrics_kw, "repeats": repeats, "do_compile": compile_flag},
                     )
+                try:
+                    batch = _run_with_watchdog(_run_batch, "measure")
                 except Exception as e:                               # noqa: BLE001
                     batch = [{"status_msg": "Runtime Error",
                               "raw_response": {"note": f"handler raised: "
                                                        f"{type(e).__name__}: {e}"}}]
             else:
                 # Back-compat handler (no batch support): loop the per-call shape.
-                batch = [self._call_handler(_MEASURE_HANDLER, body,
-                                            extra_kwargs=metrics_kw)
-                         for _ in range(repeats)]
+                batch = _run_with_watchdog(
+                    lambda: [self._call_handler(_MEASURE_HANDLER, body,
+                                                extra_kwargs=metrics_kw)
+                             for _ in range(repeats)],
+                    "measure")
             if isinstance(batch, dict):
                 batch = [batch]
             batch = [b for b in batch if isinstance(b, dict) and "status_msg" in b]
@@ -488,7 +567,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not self._acquire_or_reject(meta):
             return
         try:
-            r = self._call_handler(_VALIDATE_HANDLER, body)
+            r = _run_with_watchdog(
+                lambda: self._call_handler(_VALIDATE_HANDLER, body), "validate")
         finally:
             self._release()
         # Correctness responses carry status_msg + raw_response + a
@@ -554,7 +634,7 @@ def main() -> None:
     global _AUTH_TOKEN
     global _MEASURE_HANDLER, _MEASUREMENT_LABEL
     global _VALIDATE_HANDLER, _CORRECTNESS_LABEL
-    global _REJECT_WHEN_BUSY, _VERBOSE
+    global _REJECT_WHEN_BUSY, _VERBOSE, _REQUEST_TIMEOUT_S
 
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -587,6 +667,15 @@ def main() -> None:
     ap.add_argument("--verbose", action="store_true",
                     help="log request lines to stderr. Off by default so stderr "
                          "isn't written during a measurement.")
+    ap.add_argument("--request-timeout", type=float,
+                    default=float(os.environ.get("PERFARENA_REQUEST_TIMEOUT_S", "0") or 0),
+                    metavar="SEC",
+                    help="hard wall-clock cap for ONE /measure or /validate "
+                         "request. On expiry the runner SIGKILLs the in-flight "
+                         "test-suite process tree and returns, freeing itself for "
+                         "the next submission. Set at/just below the client's "
+                         "poll timeout so a run the client abandoned stops "
+                         "burning CPU. 0 (default) disables the cap.")
     args = ap.parse_args()
 
     _AUTH_TOKEN = args.auth_token
@@ -609,6 +698,7 @@ def main() -> None:
     )
     _REJECT_WHEN_BUSY = args.reject_when_busy
     _VERBOSE = args.verbose
+    _REQUEST_TIMEOUT_S = float(args.request_timeout or 0)
 
     # SIGCHLD default-ignore so zombie subprocesses from the reference
     # measurement backend don't accumulate. We use subprocess.run which

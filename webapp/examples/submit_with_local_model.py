@@ -1704,6 +1704,12 @@ def main() -> None:
             # backstop with a self-describing message.
             summary = (f"client flagged {prefailed_reason}; the model's full "
                        "raw response is in trace.raw_response")
+        elif len(summary) < 20:
+            # A terse-but-valid reasoning ("Simple.") is real provenance, not a
+            # defect. Keep the model's words, append context so it stays
+            # meaningful AND clears the >=20-char server minimum.
+            summary = (f"{summary} [{args.slug}/{args.language}; "
+                       "full trace in trace.raw_response]")
         leaf = compute_trace_hash(code, summary, trace)
         print(f"  [{i}/{k}] trace leaf hash: {leaf}")
 

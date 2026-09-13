@@ -1695,7 +1695,13 @@ def main() -> None:
                 print(f"  ✓ cached {_l}/{_s}")
             else:
                 n_other += 1
-                print(f"  · skip {_l}/{_s} ({item.status})")
+                # Surface the ACTUAL reason (HTTP body / exception), not just the
+                # status label — a generation failure (bad base_url, 4xx, auth)
+                # is otherwise invisible in --generate-only and reads as a
+                # silent skip. `err` carries the provider's error text.
+                detail = getattr(item, "err", None)
+                print(f"  · skip {_l}/{_s} ({item.status})"
+                      + (f": {detail}" if detail else ""))
         print(f"\ngenerate-only: {n_gen} generation(s) cached under "
               f"{_cache_dir(args.output)}; {n_other} skipped, nothing submitted.")
         print("Submit them with the SAME command plus --submit-from-cache "
@@ -1916,6 +1922,12 @@ def main() -> None:
             if prefailed_reason and len(summary) < 20:
                 summary = (f"client flagged {prefailed_reason}; raw response is "
                            "in trace.raw_response")
+            elif len(summary) < 20:
+                # A terse-but-valid reasoning (e.g. a model that just says
+                # "Simple.") is real provenance, not a defect — but the server
+                # requires >=20 chars. Keep the model's words and append
+                # identifying context so the trace stays meaningful AND passes.
+                summary = f"{summary} [{model} · {language}/{slug}; full trace in trace.raw_response]"
             leaf = compute_trace_hash(code, summary, trace)
             # Token counts: pull from the provider's usage block when it
             # was returned (OpenAI does, Ollama-OAI mostly does, raw
