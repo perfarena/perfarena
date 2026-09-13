@@ -138,6 +138,13 @@ def _now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def _now_hms() -> str:
+    """Local wall-clock HH:MM:SS for the progress logs — lets the operator see
+    when each call actually happened (e.g. how long a slow local generation took
+    between two lines), not just the elapsed-since-start offset."""
+    return dt.datetime.now().strftime("%H:%M:%S")
+
+
 def _tuple_key(model: str, prompt_name: str, language: str, slug: str) -> str:
     return f"{model}|{prompt_name}|{language}|{slug}"
 
@@ -1692,7 +1699,7 @@ def main() -> None:
             _m, _p, _l, _s = item.tup
             if item.status == "ok":
                 n_gen += 1
-                print(f"  ✓ cached {_l}/{_s}")
+                print(f"  [{_now_hms()}] ✓ cached {_l}/{_s}")
             else:
                 n_other += 1
                 # Surface the ACTUAL reason (HTTP body / exception), not just the
@@ -1700,7 +1707,7 @@ def main() -> None:
                 # is otherwise invisible in --generate-only and reads as a
                 # silent skip. `err` carries the provider's error text.
                 detail = getattr(item, "err", None)
-                print(f"  · skip {_l}/{_s} ({item.status})"
+                print(f"  [{_now_hms()}] · skip {_l}/{_s} ({item.status})"
                       + (f": {detail}" if detail else ""))
         print(f"\ngenerate-only: {n_gen} generation(s) cached under "
               f"{_cache_dir(args.output)}; {n_other} skipped, nothing submitted.")
@@ -1727,7 +1734,7 @@ def main() -> None:
         # tuple we're about to handle. The sleep itself moves below the
         # skip checks so we don't burn 120s of pacing when this iteration
         # never touches LeetCode anyway.
-        print(f"\n[{i}/{len(todo)} · t+{elapsed_h:.2f}h] "
+        print(f"\n[{_now_hms()} · {i}/{len(todo)} · t+{elapsed_h:.2f}h] "
               f"model={model:<16} prompt={prompt['name']:<22} "
               f"lang={language:<8} slug={slug}")
 
