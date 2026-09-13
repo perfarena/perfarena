@@ -1198,9 +1198,10 @@ def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
             f"no `phase=measure` rows for ({folder}, {title_slug}) "
             f"in {jsonl_path}")
     # The runner appends every invocation — take only the trailing
-    # PERFARENA_MEASURE iterations (default 20) for this cell so a
-    # re-run doesn't get skewed by earlier measurements.
-    n_measure = int(os.environ.get("PERFARENA_MEASURE", "20"))
+    # PERFARENA_CLBG_MEASURE_RUNS rows (default 7; old name PERFARENA_MEASURE
+    # still honoured) for this cell so a re-run isn't skewed by earlier ones.
+    n_measure = int(os.environ.get("PERFARENA_CLBG_MEASURE_RUNS")
+                    or os.environ.get("PERFARENA_MEASURE") or "7")
     tail = rows[-n_measure:]
 
     walls = [float(r["wall_ms"]) for r in tail if "wall_ms" in r]
