@@ -1258,6 +1258,11 @@ def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
         runtime_energy_j=energy_j,
         energy_source=energy_source,
         n_iterations=len(tail),
+        # Per-sample series (one entry per measured run) so a caller can emit
+        # each MEASURE sample as its own result instead of only the mean — CLBG
+        # uses this to expose the run-to-run spread without an extra outer loop.
+        walls_ms=walls,
+        energies_j=energies_j,
         exit_codes=exits,
         any_nonzero_exit=any_nonzero_exit,
         jsonl_path=str(jsonl_path),
@@ -1512,81 +1517,78 @@ def _run_one_measurement(cell, language: str, title_slug: str,
     )
 
 
-def _measure_clbg_once(
+def _measure_clbg_samples(
     cell: Path, folder: str, title_slug: str,
     requested, do_measure: bool, do_mem: bool, timeout: float,
-) -> dict[str, Any]:
-    """ONE measurement pass for a CLBG whole-program benchmark.
+) -> "list[dict[str, Any]]":
+    """Measure a CLBG whole-program benchmark and return ONE result PER measured
+    sample.
 
     CLBG cells are entire programs, not LeetCode `Solution` methods: they carry
-    NO `test_suite.py` / curated per-op harness, so the per-op path
-    (_run_one_measurement -> run_harness.sh -> test_suite.py) fails with
-    "can't open test_suite.py". Measure them the way they are built instead:
-    `make measure` runs the program under the energy runner and appends
-    wall/energy rows to <Folder>.jsonl (read by _parse_metrics), and memory
-    uses the same separate `make run` pass as every language (_measure_mem).
-    Mirrors _run_one_measurement's result shape so measure_once treats CLBG and
-    LeetCode identically. CLBG numbers are whole-program (not per-op), so the
-    `*_per_op` fields stay None."""
-    runtime_ms = energy_j = memory_mb = None
-    energy_source: str | None = None
-    any_nonzero = False
-    if do_measure:
-        mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
-        if mr.returncode != 0:
-            return _fail_dict("measure", "Runtime Error", mr)
-        try:
-            m = _parse_metrics(cell, folder, title_slug)
-        except RuntimeError as e:
-            return {
-                "status_msg": "Runtime Error", "runtime_ms": None,
-                "memory_mb": None, "runtime_energy_j": None,
-                "machine": _machine_descriptor(), "config": _measure_config(),
-                "raw_response": {"stage": "clbg-make-measure",
-                                 "note": "CLBG `make measure` produced no metric",
-                                 "error_log": str(e), "cell": str(cell)},
-            }
-        runtime_ms = m.get("runtime_ms") if "time" in requested else None
-        energy_j = m.get("runtime_energy_j") if "energy" in requested else None
-        energy_source = m.get("energy_source")
-        any_nonzero = bool(m.get("any_nonzero_exit"))
+    NO `test_suite.py` / curated per-op harness. `make measure` runs the program
+    under the energy runner PERFARENA_CLBG_MEASURE_RUNS times (after
+    PERFARENA_CLBG_WARMUP_RUNS warmups), appending one JSONL row per measured
+    run. Those measured runs ARE the run-to-run samples — so we run `make
+    measure` ONCE and emit each sample as its own result. This is why CLBG must
+    NOT also be looped by the dispatch-level `repeats`: that would re-run the
+    whole MEASURE loop `repeats` times (repeats × MEASURE executions) for no
+    extra information. Memory (deterministic) is measured once and attached to
+    the first sample. CLBG numbers are whole-program, so `*_per_op` stay None."""
+    machine = _machine_descriptor()
+
+    def _one(runtime_ms, energy_j, energy_source, memory_mb, any_nonzero):
+        status = "Accepted" if (runtime_ms is not None or energy_j is not None
+                                or memory_mb is not None) else "Runtime Error"
+        energy_tool_out = (energy_source if (energy_j is not None and energy_source
+                           and energy_source not in ("none", "codecarbon-error"))
+                           else None)
+        return dict(
+            status_msg=status, runtime_ms=runtime_ms, memory_mb=memory_mb,
+            runtime_energy_j=energy_j, iterations=None, energy_j_per_op=None,
+            time_us_per_op=None, energy_tool=energy_tool_out, machine=machine,
+            config=_measure_config(),
+            raw_response=dict(stage="clbg-make-measure",
+                              requested_metrics=sorted(requested),
+                              energy_source=energy_source, runtime_ms=runtime_ms,
+                              peak_rss_mb=memory_mb, any_nonzero_exit=any_nonzero,
+                              machine=machine, cell=str(cell)))
+
+    memory_mb = None
     if do_mem:
         memory_mb, _diag = _measure_mem(cell, timeout)
 
-    if do_measure:
-        status = "Accepted" if (runtime_ms is not None or energy_j is not None) else "Runtime Error"
-    elif do_mem:
-        status = "Accepted" if memory_mb is not None else "Runtime Error"
-    else:
-        status = "Accepted"
+    if not do_measure:
+        # Memory-only request: one result carrying the single memory reading.
+        return [_one(None, None, None, memory_mb, False)]
 
-    machine = _machine_descriptor()
-    energy_tool_out = (energy_source if (energy_j is not None and energy_source
-                       and energy_source not in ("none", "codecarbon-error"))
-                       else None)
-    raw_response = dict(
-        stage="clbg-make-measure",
-        requested_metrics=sorted(requested),
-        energy_source=energy_source,
-        runtime_ms=runtime_ms,
-        peak_rss_mb=memory_mb,
-        any_nonzero_exit=any_nonzero,
-        machine=machine,
-        cell=str(cell),
-    )
-    return dict(
-        status_msg=status,
-        runtime_ms=runtime_ms,
-        memory_mb=memory_mb,
-        runtime_energy_j=energy_j,
-        iterations=None,
-        energy_j_per_op=None,
-        time_us_per_op=None,
-        energy_tool=energy_tool_out,
-        machine=machine,
-        config=_measure_config(),
-        raw_response=raw_response,
-    )
+    mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
+    if mr.returncode != 0:
+        return [_fail_dict("measure", "Runtime Error", mr)]
+    try:
+        m = _parse_metrics(cell, folder, title_slug)
+    except RuntimeError as e:
+        return [{
+            "status_msg": "Runtime Error", "runtime_ms": None,
+            "memory_mb": None, "runtime_energy_j": None,
+            "machine": machine, "config": _measure_config(),
+            "raw_response": {"stage": "clbg-make-measure",
+                             "note": "CLBG `make measure` produced no metric",
+                             "error_log": str(e), "cell": str(cell)}}]
+
+    want_t = "time" in requested
+    want_e = "energy" in requested
+    src = m.get("energy_source")
+    any_nonzero = bool(m.get("any_nonzero_exit"))
+    walls = m.get("walls_ms") or []
+    energies = m.get("energies_j") or []
+    n = max(len(walls), len(energies), 1)   # one result per measured sample
+    results: list[dict[str, Any]] = []
+    for i in range(n):
+        rt = (walls[i] if i < len(walls) else None) if want_t else None
+        en = (energies[i] if i < len(energies) else None) if want_e else None
+        # Attach the single memory reading to the first sample only.
+        results.append(_one(rt, en, src, memory_mb if i == 0 else None, any_nonzero))
+    return results
 
 
 def measure_once(
@@ -1708,25 +1710,34 @@ def measure_once(
         shared_backend = _make_energy_backend() if (do_measure and not is_clbg) else None
         results: list[dict[str, Any]] = []
         try:
-            for i in range(n_runs):
-                run_mem = do_mem and (not do_measure or i < mem_cap)
+            if is_clbg:
+                # CLBG: `make measure` already loops PERFARENA_CLBG_MEASURE_RUNS
+                # samples internally, so do it ONCE and emit one result per
+                # sample. Looping the dispatch-level `repeats` here would re-run
+                # the whole MEASURE loop repeats× (repeats × MEASURE executions)
+                # for no new information — the bug we're avoiding. `n_runs`
+                # (=repeats) does NOT gate CLBG execution count anymore.
                 _t_run = time.perf_counter()
-                if is_clbg:
-                    results.append(_measure_clbg_once(
-                        cell, folder, title_slug, requested,
-                        do_measure, run_mem, timeout_s))
-                else:
+                results = _measure_clbg_samples(
+                    cell, folder, title_slug, requested, do_measure, do_mem, timeout_s)
+                _log_always(f"clbg make-measure done for {title_slug} ({language}) "
+                            f"in {time.perf_counter() - _t_run:.2f}s → "
+                            f"{len(results)} sample(s)")
+            else:
+                for i in range(n_runs):
+                    run_mem = do_mem and (not do_measure or i < mem_cap)
+                    _t_run = time.perf_counter()
                     results.append(
                         _run_one_measurement(cell, language, title_slug, requested,
                                              do_measure, run_mem,
                                              energy_backend=shared_backend))
-                # Always-on progress line (independent of PERFARENA_LOG) so the
-                # local perf server reports every test-suite run's iteration and
-                # elapsed time — the primary signal for how long a submission takes.
-                _log_always(f"test-suite run {i + 1}/{n_runs} done for "
-                            f"{title_slug} ({language}) in "
-                            f"{time.perf_counter() - _t_run:.2f}s"
-                            f"{' (+mem)' if run_mem else ''}")
+                    # Always-on progress line (independent of PERFARENA_LOG) so the
+                    # local perf server reports every test-suite run's iteration and
+                    # elapsed time — the primary signal for how long a submission takes.
+                    _log_always(f"test-suite run {i + 1}/{n_runs} done for "
+                                f"{title_slug} ({language}) in "
+                                f"{time.perf_counter() - _t_run:.2f}s"
+                                f"{' (+mem)' if run_mem else ''}")
         finally:
             if shared_backend is not None:
                 shared_backend.close()
