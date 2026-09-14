@@ -235,17 +235,38 @@ def _machine_descriptor() -> dict[str, Any]:
     return _MACHINE_CACHE
 
 
+def _apply_compile_flags_env(meta: "dict[str, Any] | None") -> None:
+    """Export this request's compilation flags so every compile subprocess (make
+    compile / codegen-harness compilers) picks them up via os.environ.copy().
+    The runner is serial (one job under _RUN_LOCK), so a process-global env var
+    is safe. An empty string CLEARS any prior request's flags, so a run without
+    flags behaves exactly as before — and `_measure_config` omits the key when
+    empty, giving a config dict byte-identical to legacy runs (same config_hash
+    → same existing MeasurementProfile, no repopulation)."""
+    flags = ""
+    if isinstance(meta, dict):
+        flags = str(meta.get("compile_flags") or "").strip()
+    os.environ["PERFARENA_COMPILE_FLAGS"] = flags
+
+
 def _measure_config() -> dict[str, Any]:
     """The measurement parameters that affect the per-op numbers — the config
     half of a MeasurementProfile (machine x tool x config). The energy tool is
     tracked separately; this captures the loop/budget knobs so the arena can
     dedup a submission's runs to one profile."""
-    return {
+    cfg = {
         "budget_s": float(os.environ.get("PERFARENA_BUDGET_S", "1.5")),
         "mem_budget_s": float(os.environ.get("PERFARENA_MEM_BUDGET_S", "0.5")),
         "warmup_frac": 0.3,
         "skip_mem": bool(os.environ.get("PERFARENA_SKIP_MEM")),
     }
+    # Compile flags are part of the profile identity — different flags must not
+    # be pooled into one energy comparison. Included ONLY when non-empty so a
+    # default (no-flags) run hashes identically to all pre-existing runs.
+    flags = os.environ.get("PERFARENA_COMPILE_FLAGS", "").strip()
+    if flags:
+        cfg["compile_flags"] = flags
+    return cfg
 
 
 _ITERS_RE = re.compile(r"ITERS=(\d+)")
@@ -1166,6 +1187,35 @@ def _run(cmd: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProce
     return _run_grouped(cmd, cwd, timeout, env=env)
 
 
+def _compile_with_flag_fallback(
+    cmd: list[str], cell: Path, timeout: float,
+) -> "tuple[subprocess.CompletedProcess, dict[str, Any] | None]":
+    """Run a compile `cmd`, tolerating INVALID custom compile flags.
+
+    If `PERFARENA_COMPILE_FLAGS` is set and the compile fails, retry the SAME
+    compile with the flags cleared (language default):
+      * retry succeeds  -> the FLAGS were the problem. Fall back to defaults for
+        the rest of the run and return fallback info so the caller records it.
+        The env is left cleared, so `_measure_config` records the DEFAULT profile
+        (defaults are what actually ran) and the invalidity is metadata only.
+      * retry also fails -> it is the model's CODE. Return the default-flags
+        failure as the canonical Compile Error (no flag noise), no fallback.
+    Returns (CompletedProcess, fallback_info|None) where fallback_info =
+    {"compile_flags_invalid": <attempted>, "compile_flags_used": ""}."""
+    flags = os.environ.get("PERFARENA_COMPILE_FLAGS", "").strip()
+    rc = _run(cmd, cwd=cell, timeout=timeout)
+    if rc.returncode == 0 or not flags:
+        return rc, None
+    # Compile failed WITH flags — distinguish invalid-flags from broken-code by
+    # retrying on defaults.
+    os.environ["PERFARENA_COMPILE_FLAGS"] = ""
+    rc2 = _run(cmd, cwd=cell, timeout=timeout)
+    if rc2.returncode == 0:
+        _log(f"compile: custom flags {flags!r} invalid — fell back to default")
+        return rc2, {"compile_flags_invalid": flags, "compile_flags_used": ""}
+    return rc2, None   # real code error (fails even on defaults)
+
+
 def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
     """Parse the RAPL/codecarbon runner's JSONL output for THIS cell.
 
@@ -1317,6 +1367,7 @@ def _is_clbg_cell(cell: Path, title_slug: str) -> bool:
 
 def validate_once(
     title_slug: str, language: str, code: str,
+    meta: "dict[str, Any] | None" = None,
 ) -> dict[str, Any]:
     """Correctness-only adapter — matches the runner's /validate route.
 
@@ -1329,6 +1380,7 @@ def validate_once(
     Restores the canonical source in a `finally` so the fork stays
     git-clean between attempts.
     """
+    _apply_compile_flags_env(meta)   # export PERFARENA_COMPILE_FLAGS for compiles
     cell = _cell_dir(title_slug, language)
     source = _discover_source(cell)
     backup = source.with_suffix(source.suffix + ".perfarena_backup")
@@ -1343,7 +1395,8 @@ def validate_once(
             shutil.copy2(source, backup)
         source.write_text(_normalize_solution_code(language, code))
 
-        rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
+        rc, flag_fb = _compile_with_flag_fallback(
+            ["make", "-s", "clean", "compile"], cell, 60.0)
         if rc.returncode != 0:
             fd = _fail_dict("compile", "Compile Error", rc)
             # validate_once doesn't have perf fields — drop them so the
@@ -1376,19 +1429,21 @@ def validate_once(
                 total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         if status != "Accepted":
             fd = _fail_dict("validate", status, vr)
+            if flag_fb:
+                fd["raw_response"].update(flag_fb)
             return {"status_msg": fd["status_msg"],
                     "error_log":  fd["error_log"],
                     "total_correct": total_correct,
                     "total_testcases": total_testcases,
                     "raw_response": fd["raw_response"]}
+        raw = dict(stage="validate", validate=(vr.stderr or "")[-2000:])
+        if flag_fb:   # invalid custom flags → recorded, compiled on defaults
+            raw.update(flag_fb)
         return dict(
             status_msg="Accepted",
             total_correct=total_correct,
             total_testcases=total_testcases,
-            raw_response=dict(
-                stage="validate",
-                validate=(vr.stderr or "")[-2000:],
-            ),
+            raw_response=raw,
         )
     finally:
         try:
@@ -1594,6 +1649,7 @@ def _measure_clbg_samples(
 def measure_once(
     title_slug: str, language: str, code: str,
     metrics: Any = None, repeats: int = 1, do_compile: bool = False,
+    meta: "dict[str, Any] | None" = None,
 ) -> "list[dict[str, Any]]":
     """Adapter matching harness_runner_server.py's --measure-handler protocol.
 
@@ -1616,6 +1672,7 @@ def measure_once(
     require a second measure pass; memory always costs its own run
     (paper methodology).
     """
+    _apply_compile_flags_env(meta)   # export PERFARENA_COMPILE_FLAGS for compiles
     requested = _resolve_metrics(metrics)
     do_measure = bool(requested & {"time", "energy"})
     do_mem = "memory" in requested
@@ -1657,9 +1714,11 @@ def measure_once(
         # 1. compile — ONCE, only when explicitly requested. Default /measure
         # assumes the artifact is already built (compile once, then measure
         # many); it never recompiles per repeat.
+        measure_flag_fb: "dict[str, Any] | None" = None
         if do_compile:
             _tc = time.perf_counter()
-            rc = _run(["make", "-s", "clean", "compile"], cwd=cell, timeout=60.0)
+            rc, measure_flag_fb = _compile_with_flag_fallback(
+                ["make", "-s", "clean", "compile"], cell, 60.0)
             _log(f"compile rc={rc.returncode} in {time.perf_counter() - _tc:.2f}s")
             if rc.returncode != 0:
                 return [_fail_dict("compile", "Compile Error", rc)]
@@ -1741,6 +1800,14 @@ def measure_once(
         finally:
             if shared_backend is not None:
                 shared_backend.close()
+        # Record an invalid-flag fallback on every sample's raw_response (the
+        # run compiled on defaults; _measure_config already reflects the default
+        # profile since the env flags were cleared in the fallback).
+        if measure_flag_fb:
+            for r in results:
+                rr = r.get("raw_response")
+                if isinstance(rr, dict):
+                    rr.update(measure_flag_fb)
         return results
     finally:
         # Always restore the canonical source, even on exception, so

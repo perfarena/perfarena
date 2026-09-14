@@ -1,0 +1,71 @@
+# Local PerfArena stack: backend (frontend+API on :8000) + the bicho-like
+# harness runner (:8787), wired on one network so the backend dispatches
+# measurements to the runner at http://harness:8787.
+#
+#   docker compose -f docker-compose.local.yml build
+#   docker compose -f docker-compose.local.yml up -d
+#   # register the runner as a harness (once, after both are up):
+#   ./docker/harness-test/register-harness.sh
+#
+# The repo is MOUNTED into the harness so local harness edits apply with no
+# rebuild. Energy here is a codecarbon TDP estimate (no RAPL in a container) —
+# faithful for correctness/runtime/memory/logic, not for absolute Joules.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: perfarena-backend:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - perfarena-data:/data
+    environment:
+      ARENA_DB: /data/arena.db
+      # Pinned admin identity for local dev, supplied from the gitignored .env
+      # (never hardcode the key here — it would land in git history). On first
+      # boot the backend provisions this admin with this API key.
+      ARENA_BOOTSTRAP_ADMIN_EMAIL: ${ARENA_BOOTSTRAP_ADMIN_EMAIL:-}
+      ARENA_BOOTSTRAP_ADMIN_API_KEY: ${ARENA_BOOTSTRAP_ADMIN_API_KEY:-}
+    networks: [perfarena]
+    restart: unless-stopped
+
+  harness:
+    build:
+      context: ./docker/harness-test
+    image: perfarena-harness-test:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./:/work
+    working_dir: /work
+    environment:
+      # _root() in perfarena_handler.py requires this to locate the harness fork.
+      PERFARENA_ROOT: /work/Energy-Languages
+      PYTHONPATH: /work/Energy-Languages
+      PERFARENA_PROFILER: codecarbon
+      # CLBG whole-program measurement: discrete run counts (distinct from the
+      # LeetCode per-op budget path). 1 warmup run + 7 measured runs per cell.
+      PERFARENA_CLBG_WARMUP_RUNS: "1"
+      PERFARENA_CLBG_MEASURE_RUNS: "7"
+      PERFARENA_IDLE_S: "1"
+    command:
+      - python
+      - /work/webapp/examples/harness_runner_server.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8787"
+      - --measure-handler
+      - perfarena_handler:measure_once
+      - --validate-handler
+      - perfarena_handler:validate_once
+    networks: [perfarena]
+    restart: unless-stopped
+
+volumes:
+  perfarena-data:
+
+networks:
+  perfarena:

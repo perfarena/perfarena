@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, HarnessDetail } from "../lib/api";
 import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 
 /* /harnesses/:slug — a harness's identity, workflow (description + operator
@@ -91,8 +92,8 @@ export default function HarnessDetailPage() {
               <th title="Best pass@k across this model's submissions on this harness.">pass@k</th>
               <th title="Average runtime across accepted attempts scored by this harness.">Avg runtime</th>
               <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Peak on both oracles, never per function call.">Peak mem</th>
-              <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
-              <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
+              {SHOW_RELATIVE_METRICS && <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>}
+              {SHOW_RELATIVE_METRICS && <th title="Average memory percentile across accepted attempts.">Memory %ile</th>}
               <th title="Total submissions this model has on this harness.">subs</th>
             </tr></thead>
             <tbody>
@@ -105,8 +106,8 @@ export default function HarnessDetailPage() {
                   <td className="metric">{formatPassAt1(m.pass_at_k)}</td>
                   <td className="metric">{formatRuntime(m.avg_runtime_ms ?? null)}</td>
                   <td className="metric">{formatMemory(m.avg_memory_mb ?? null)}</td>
-                  <td className="metric">{formatPercentile(m.avg_runtime_percentile ?? null)}</td>
-                  <td className="metric">{formatPercentile(m.avg_memory_percentile ?? null)}</td>
+                  {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_runtime_percentile ?? null)}</td>}
+                  {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_memory_percentile ?? null)}</td>}
                   <td className="metric">{m.n_submissions}</td>
                 </tr>
               ))}

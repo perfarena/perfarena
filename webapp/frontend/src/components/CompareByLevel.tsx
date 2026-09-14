@@ -1,5 +1,6 @@
 import { CompareByLevelRow } from "../lib/api";
 import { MODEL_COLOURS } from "./CompareHistogram";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 
 /* Difficulty breakdown for the model comparison.
  *
@@ -140,7 +141,9 @@ export default function CompareByLevel({
         gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
         gap: 16,
       }}>
-        {METRICS.map(m => {
+        {METRICS
+          .filter(m => SHOW_RELATIVE_METRICS || !String(m.key).includes("percentile"))
+          .map(m => {
           // Hide the chart entirely when no cell has data. Prevents empty
           // "Avg memory" bars for arena-local imports (which don't yet
           // measure memory), and empty "Avg runtime energy" bars for LC-

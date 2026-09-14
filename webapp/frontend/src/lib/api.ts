@@ -170,6 +170,7 @@ export const api = {
   // by exactly one harness (submission override → competition default), and
   // the UI uses these endpoints to render the /harnesses index + detail
   // pages plus the harness filter on the leaderboard.
+  machines: () => request<MachinePublic[]>(`/api/machines`),
   harnesses: (includeRetired = false) =>
     request<HarnessPublic[]>(
       `/api/harnesses${includeRetired ? "?include_retired=true" : ""}`),
@@ -265,13 +266,14 @@ export const api = {
     request<null>(`/api/admin/prompts/${id}`, { method: "DELETE" }),
   compare: (params: {
     models: string[]; language?: string; problems?: string[];
-    promptId?: number;
+    promptId?: number; competition?: string;
   }) => {
     const qs = new URLSearchParams();
     params.models.forEach(m => qs.append("models", m));
     if (params.language) qs.set("language", params.language);
     if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
     if (params.promptId != null) qs.set("prompt_id", String(params.promptId));
+    if (params.competition) qs.set("competition", params.competition);
     return request<CompareResponse>(`/api/compare?${qs.toString()}`);
   },
   /** Same shape as compare(), but the comparison axis is specific
@@ -287,7 +289,7 @@ export const api = {
   },
   comparePrompts: (params: {
     modelName: string; modelVersion?: string; language?: string;
-    promptIds: number[]; problems?: string[];
+    promptIds: number[]; problems?: string[]; competition?: string;
   }) => {
     const qs = new URLSearchParams();
     qs.set("model_name", params.modelName);
@@ -295,6 +297,7 @@ export const api = {
     if (params.language) qs.set("language", params.language);
     params.promptIds.forEach(id => qs.append("prompt_ids", String(id)));
     if (params.problems && params.problems.length) qs.set("problems", params.problems.join(","));
+    if (params.competition) qs.set("competition", params.competition);
     return request<ComparePromptsResponse>(`/api/compare/prompts?${qs.toString()}`);
   },
   analysis: () => request<AnalysisResponse>("/api/analysis"),
@@ -773,6 +776,18 @@ export interface HarnessRef {
   name: string;
 }
 
+export interface MachinePublic {
+  id: number;
+  name: string;
+  hostname: string | null;
+  cpu_model: string | null;
+  cores: number | null;
+  energy_source: string | null;   // rapl | codecarbon | powermetrics | none
+  os: string | null;
+  notes: string | null;
+  created_at: string;
+  n_submissions: number;
+}
 export interface HarnessPublic {
   id: number;
   slug: string;

@@ -4,6 +4,7 @@ import { api, AttemptResultPayload, BaselineSummary, getApiKey, MePayload, Submi
 import {
   formatCoefficient, formatDuration, formatEnergy, formatMemory, formatMicros, formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 import AttemptsTable from "../components/AttemptsTable";
 import CompareByLevel from "../components/CompareByLevel";
@@ -237,8 +238,10 @@ export default function SubmissionDetailPage() {
                 tip="Mean number of function calls behind each measurement — the confidence count. More calls mean a tighter per-function-call estimate."
                 value={Math.round(s.avg_iterations).toLocaleString()} />
         )}
-        <Stat label="avg runtime %ile" value={formatPercentile(s.avg_runtime_percentile)} />
-        {s.avg_memory_percentile != null && (
+        {SHOW_RELATIVE_METRICS && (
+          <Stat label="avg runtime %ile" value={formatPercentile(s.avg_runtime_percentile)} />
+        )}
+        {SHOW_RELATIVE_METRICS && s.avg_memory_percentile != null && (
           <Stat label="avg memory %ile" value={formatPercentile(s.avg_memory_percentile)} />
         )}
       </div>
@@ -297,21 +300,25 @@ export default function SubmissionDetailPage() {
         across accepted problems.
       </p>
 
-      <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
-      <p className="muted" style={{ marginTop: 4 }}>
-        Ratio of the LeetCode population baseline to the model metric. <b>&gt; 1.0×</b> means
-        the model outperforms the cohort; <b>&lt; 1.0×</b> means it's worse. The cohort
-        is everyone who's submitted on LeetCode for that problem in the same language,
-        both humans <em>and</em> AI-assisted submissions, since LeetCode doesn't separate them.
-      </p>
-      <BaselineSourceChip summary={d.baselines} isAdmin={me?.role === "admin"}
-                          onRefreshed={loadDetail} />
-      <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
-        <Stat label="time vs LeetCode avg" value={formatCoefficient(s.time_human_avg)} />
-        <Stat label="time vs LeetCode expert" value={formatCoefficient(s.time_human_expert)} />
-        <Stat label="memory vs LeetCode avg" value={formatCoefficient(s.mem_human_avg)} />
-        <Stat label="memory vs LeetCode expert" value={formatCoefficient(s.mem_human_expert)} />
-      </div>
+      {SHOW_RELATIVE_METRICS && (
+        <>
+          <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
+          <p className="muted" style={{ marginTop: 4 }}>
+            Ratio of the LeetCode population baseline to the model metric. <b>&gt; 1.0×</b> means
+            the model outperforms the cohort; <b>&lt; 1.0×</b> means it's worse. The cohort
+            is everyone who's submitted on LeetCode for that problem in the same language,
+            both humans <em>and</em> AI-assisted submissions, since LeetCode doesn't separate them.
+          </p>
+          <BaselineSourceChip summary={d.baselines} isAdmin={me?.role === "admin"}
+                              onRefreshed={loadDetail} />
+          <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+            <Stat label="time vs LeetCode avg" value={formatCoefficient(s.time_human_avg)} />
+            <Stat label="time vs LeetCode expert" value={formatCoefficient(s.time_human_expert)} />
+            <Stat label="memory vs LeetCode avg" value={formatCoefficient(s.mem_human_avg)} />
+            <Stat label="memory vs LeetCode expert" value={formatCoefficient(s.mem_human_expert)} />
+          </div>
+        </>
+      )}
 
       <div className="card">
         <h2>Model parameters</h2>

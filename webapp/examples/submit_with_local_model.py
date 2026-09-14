@@ -619,6 +619,36 @@ def _extract_code(text: str, fence_lang: str | None = None) -> str:
     return (m.group(1) if m else text).strip()
 
 
+# The flags-choosing prompt asks the model to end with a marker line:
+#   PERFARENA-FLAGS: -O3 -march=native -std=c++17
+_FLAGS_MARKER_RE = re.compile(r"^[ \t>*-]*PERFARENA-FLAGS:[ \t]*(.+?)[ \t]*$",
+                              re.IGNORECASE | re.MULTILINE)
+
+
+def extract_compile_flags(text: str) -> str:
+    """Pull the model's chosen compilation flags from a `PERFARENA-FLAGS:` marker
+    line (the flags-choosing prompt's contract). Returns the flag string, or ""
+    when the model emitted none (caller then falls back to the operator's
+    --compile-flags or the language default). Uses the LAST match so a model that
+    restates the marker inside its reasoning doesn't shadow the final answer."""
+    hits = _FLAGS_MARKER_RE.findall(text or "")
+    return hits[-1].strip() if hits else ""
+
+
+# Guard: reject obviously unsafe / non-flag tokens so a hallucinated marker can't
+# inject shell/paths. The runner also falls back on a failed compile, but this
+# keeps clearly-bad values out of provenance. Flags look like `-O3`, `-march=x`,
+# `-C`, `opt-level=3`, `--release`, etc.
+_FLAG_TOKEN_RE = re.compile(r"^[A-Za-z0-9_+=./:-]+$")
+
+
+def sanitize_compile_flags(flags: str) -> str:
+    """Keep only token-shaped args (no shell metacharacters/spaces-in-token).
+    Returns the cleaned space-joined flags, or "" if nothing valid remains."""
+    out = [t for t in (flags or "").split() if _FLAG_TOKEN_RE.match(t)]
+    return " ".join(out)
+
+
 def _normalize_code_for_lc(code: str, language: str) -> str:
     """Per-language post-extraction cleanup for the few cases where
     LC's submission format diverges from how models naturally write

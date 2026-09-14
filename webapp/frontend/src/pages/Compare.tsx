@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   api, CompareResponse, CompareSummaryRow, CompareWinners,
   ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
-  ModelListEntry, ProblemPublic, PromptTemplatePublic,
+  CompetitionPublic, ModelListEntry, ProblemPublic, PromptTemplatePublic,
   SubmissionPublic,
 } from "../lib/api";
 import CompareBars, {
@@ -18,6 +18,7 @@ import {
   formatCoefficient, formatEnergy, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
   coefficientClass,
 } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import CorrectnessVsPerformance from "./CorrectnessVsPerformance";
 
 const LANGS = [
@@ -69,20 +70,32 @@ export default function Compare() {
         <TabBtn active={tab === "models"}             onClick={() => setTab("models")}>Models</TabBtn>
         <TabBtn active={tab === "submissions"}        onClick={() => setTab("submissions")}>Submissions</TabBtn>
         <TabBtn active={tab === "prompts"}            onClick={() => setTab("prompts")}>Prompt strategies</TabBtn>
-        <TabBtn active={tab === "perf-vs-correctness"} onClick={() => setTab("perf-vs-correctness")}>Correctness vs Performance</TabBtn>
+        {/* Relative-metric analysis (percentile axes). While relative metrics
+            are hidden the tab stays visible but greyed, and selecting it shows
+            a "coming soon" placeholder instead of the scatter. */}
+        <TabBtn active={tab === "perf-vs-correctness"}
+                onClick={() => setTab("perf-vs-correctness")}
+                muted={!SHOW_RELATIVE_METRICS}>
+          Correctness vs Performance{!SHOW_RELATIVE_METRICS && " · soon"}
+        </TabBtn>
       </div>
       {tab === "models"             && <CompareView />}
       {tab === "submissions"        && <SubmissionsCompareView />}
       {tab === "prompts"            && <PromptStrategiesView />}
-      {tab === "perf-vs-correctness" && <CorrectnessVsPerformance />}
+      {tab === "perf-vs-correctness" && (
+        SHOW_RELATIVE_METRICS ? <CorrectnessVsPerformance /> : <PerfVsCorrectnessComingSoon />
+      )}
     </div>
   );
 }
 
 function TabBtn({
-  active, onClick, children,
+  active, onClick, children, muted = false,
 }: {
   active: boolean; onClick: () => void; children: React.ReactNode;
+  // `muted` greys the tab to signal an unavailable / coming-soon view while
+  // keeping it clickable so the placeholder panel is still reachable.
+  muted?: boolean;
 }) {
   return (
     <button
@@ -96,6 +109,8 @@ function TabBtn({
         fontWeight: active ? 700 : 500,
         padding: "8px 16px",
         border: active ? undefined : "none",
+        opacity: muted ? 0.55 : 1,
+        fontStyle: muted ? "italic" : undefined,
       }}
     >
       {children}
@@ -103,13 +118,34 @@ function TabBtn({
   );
 }
 
+/* Placeholder shown when the Correctness-vs-Performance view is turned off
+ * (its axes are relative percentile metrics, currently hidden). Keeps the tab
+ * discoverable without exposing the not-yet-ready analysis. */
+function PerfVsCorrectnessComingSoon() {
+  return (
+    <div className="card" style={{ textAlign: "center", padding: "48px 24px" }}>
+      <h2 style={{ marginTop: 0 }}>Correctness vs Performance</h2>
+      <p className="muted" style={{ maxWidth: 520, margin: "0 auto" }}>
+        This view charts each model's correctness against its relative
+        performance. It relies on relative performance metrics that aren't
+        published yet, so the feature is <b>coming soon</b> — not available
+        right now.
+      </p>
+    </div>
+  );
+}
+
 function CompareView() {
   const [models, setModels] = useState<ModelListEntry[]>([]);
   const [problems, setProblems] = useState<ProblemPublic[]>([]);
   const [prompts, setPrompts] = useState<PromptTemplatePublic[]>([]);
+  const [comps, setComps] = useState<CompetitionPublic[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [modelQuery, setModelQuery] = useState<string>("");
   const [language, setLanguage] = useState<string>("");
+  // "" = every competition; a slug scopes the comparison to that competition's
+  // problem set, so pass@1 / solved denominators are comparable across models.
+  const [competition, setCompetition] = useState<string>("");
   // "" = any prompt; numeric string = a specific PromptTemplate id. Filters
   // the comparison to submissions made with that template only — useful for
   // an apples-to-apples model vs model when the same prompt was used.
@@ -123,6 +159,7 @@ function CompareView() {
     Promise.all([api.models(), api.problems(), api.prompts()])
       .then(([m, p, pr]) => { setModels(m); setProblems(p); setPrompts(pr); })
       .catch((e: unknown) => setErr(String(e)));
+    api.competitions().then(setComps).catch(() => setComps([]));
   }, []);
 
   async function run() {
@@ -133,6 +170,7 @@ function CompareView() {
         language: language || undefined,
         problems: problemFilter.length ? problemFilter : undefined,
         promptId: promptIdSel ? Number(promptIdSel) : undefined,
+        competition: competition || undefined,
       });
       setData(r);
     } catch (e: unknown) {
@@ -214,6 +252,16 @@ function CompareView() {
       <section className="col">
         <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label className="col" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>competition</span>
+            <select value={competition} onChange={e => setCompetition(e.target.value)}
+                    title="Restrict the comparison to one competition's problem set">
+              <option value="">all competitions</option>
+              {comps.map(c => (
+                <option key={c.slug} value={c.slug}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="col" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>language</span>
             <select value={language} onChange={e => setLanguage(e.target.value)}>
               <option value="">all languages (per-model max)</option>
@@ -233,8 +281,8 @@ function CompareView() {
           <button onClick={run} disabled={loading || picked.length < 2}>
             {loading ? "Comparing…" : `Compare ${picked.length || ""} model${picked.length === 1 ? "" : "s"}`}
           </button>
-          {(picked.length > 0 || promptIdSel) && (
-            <button className="secondary" onClick={() => { setPicked([]); setProblemFilter([]); setPromptIdSel(""); setData(null); }}>
+          {(picked.length > 0 || promptIdSel || competition) && (
+            <button className="secondary" onClick={() => { setPicked([]); setProblemFilter([]); setPromptIdSel(""); setCompetition(""); setData(null); }}>
               Clear
             </button>
           )}
@@ -284,7 +332,7 @@ function CompareView() {
             Raw avg / best runtime + memory are not directly comparable across
             languages, so the "fastest avg runtime" and "leanest peak mem"
             verdicts are suppressed below. The remaining winners (pass@1 / pass@k /
-            pass@full / problems solved / runtime + memory percentile) are
+            pass@full / problems solved) are
             language-fair. To show the raw-number winners, pick a language
             filter above.
           </div>
@@ -317,8 +365,10 @@ function WinnersBanner({ winners }: { winners: CompareWinners }) {
     ["Most problems solved", m.most_problems_solved],
     ["Fastest avg runtime", m.fastest_avg_runtime],
     ["Leanest peak mem", m.leanest_avg_memory],
-    ["Best runtime %ile", m.best_runtime_percentile],
-    ["Best memory %ile", m.best_memory_percentile],
+    ...(SHOW_RELATIVE_METRICS
+      ? ([["Best runtime %ile", m.best_runtime_percentile],
+          ["Best memory %ile", m.best_memory_percentile]] as Array<[string, string | null]>)
+      : []),
   ];
   const visible = rows.filter(([, v]) => v != null) as Array<[string, string]>;
   const wins = Object.entries(m.overall_wins_by_model).filter(([, n]) => n > 0);
@@ -389,12 +439,12 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
             <th title="Mean per-problem best runtime">Best rt</th>
             <th title="Mean per-problem mean PEAK memory. Peak (max resident) on both oracles, never per function call.">Peak mem</th>
             <th title="Mean per-problem best (min) peak memory">Best peak mem</th>
-            <th title="Mean LeetCode runtime percentile">RT %ile</th>
-            <th title="Mean LeetCode memory percentile">Mem %ile</th>
-            <th title="Speedup vs the average LeetCode submission (>1 = faster than avg)">t/avg</th>
-            <th title="Speedup vs the expert LeetCode cohort (>1 = matches top performers)">t/exp</th>
-            <th title="Memory ratio vs the average LeetCode submission (>1 = uses less)">m/avg</th>
-            <th title="Memory ratio vs the expert LeetCode cohort">m/exp</th>
+            {SHOW_RELATIVE_METRICS && <th title="Mean LeetCode runtime percentile">RT %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Mean LeetCode memory percentile">Mem %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Speedup vs the average LeetCode submission (>1 = faster than avg)">t/avg</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Speedup vs the expert LeetCode cohort (>1 = matches top performers)">t/exp</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Memory ratio vs the average LeetCode submission (>1 = uses less)">m/avg</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Memory ratio vs the expert LeetCode cohort">m/exp</th>}
             <th></th>
           </tr></thead>
           <tbody>
@@ -414,12 +464,12 @@ function SummaryTable({ rows, winners }: { rows: CompareSummaryRow[]; winners?: 
                 <td className="metric">{formatRuntime(r.best_runtime_ms)}</td>
                 <td className="metric" style={isWinner(r.model_name, "leanest_avg_memory") ? WIN_STYLE : undefined}>{formatMemory(r.avg_memory_mb)}</td>
                 <td className="metric">{formatMemory(r.best_memory_mb)}</td>
-                <td className="metric" style={isWinner(r.model_name, "best_runtime_percentile") ? WIN_STYLE : undefined}>{formatPercentile(r.avg_runtime_percentile)}</td>
-                <td className="metric" style={isWinner(r.model_name, "best_memory_percentile") ? WIN_STYLE : undefined}>{formatPercentile(r.avg_memory_percentile)}</td>
-                <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>
-                <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>
-                <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>
-                <td className={`metric ${coefficientClass(r.mem_human_expert)}`}>{formatCoefficient(r.mem_human_expert)}</td>
+                {SHOW_RELATIVE_METRICS && <td className="metric" style={isWinner(r.model_name, "best_runtime_percentile") ? WIN_STYLE : undefined}>{formatPercentile(r.avg_runtime_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className="metric" style={isWinner(r.model_name, "best_memory_percentile") ? WIN_STYLE : undefined}>{formatPercentile(r.avg_memory_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.mem_human_expert)}`}>{formatCoefficient(r.mem_human_expert)}</td>}
                 <td>
                   {r.leading_submission_id != null && (
                     <Link to={`/submissions/${r.leading_submission_id}`}>best →</Link>
@@ -597,8 +647,12 @@ function PromptStrategiesView() {
   // canonical pair the rest of the platform keys off.
   const [pairs, setPairs] = useState<{ name: string; version: string; languages: string[] }[]>([]);
   const [prompts, setPrompts] = useState<PromptTemplatePublic[]>([]);
+  const [comps, setComps] = useState<CompetitionPublic[]>([]);
   const [pairKey, setPairKey] = useState<string>("");   // "name|version"
   const [language, setLanguage] = useState<string>("");
+  // "" = every competition; a slug scopes the prompt comparison to that
+  // competition's problem set.
+  const [competition, setCompetition] = useState<string>("");
   const [pickedPrompts, setPickedPrompts] = useState<number[]>([]);
   const [data, setData] = useState<ComparePromptsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -613,6 +667,7 @@ function PromptStrategiesView() {
         setPrompts(ps);
       })
       .catch((e: unknown) => setErr(String(e)));
+    api.competitions().then(setComps).catch(() => setComps([]));
   }, []);
 
   const selectedPair = useMemo(
@@ -634,6 +689,7 @@ function PromptStrategiesView() {
         modelVersion: selectedPair.version,
         language: language || undefined,
         promptIds: pickedPrompts,
+        competition: competition || undefined,
       });
       setData(r);
     } catch (e: unknown) {
@@ -704,6 +760,16 @@ function PromptStrategiesView() {
       <section className="col">
         <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label className="col" style={{ gap: 4 }}>
+            <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>competition</span>
+            <select value={competition} onChange={e => setCompetition(e.target.value)}
+                    title="Restrict the comparison to one competition's problem set">
+              <option value="">all competitions</option>
+              {comps.map(c => (
+                <option key={c.slug} value={c.slug}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="col" style={{ gap: 4 }}>
             <span className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase" }}>language</span>
             <select value={language} onChange={e => setLanguage(e.target.value)} disabled={!selectedPair}>
               <option value="">all languages this model has used</option>
@@ -714,11 +780,11 @@ function PromptStrategiesView() {
                   disabled={loading || !selectedPair || pickedPrompts.length < 2}>
             {loading ? "Comparing…" : `Compare ${pickedPrompts.length || ""} prompt${pickedPrompts.length === 1 ? "" : "s"}`}
           </button>
-          {(pickedPrompts.length > 0 || pairKey || language) && (
+          {(pickedPrompts.length > 0 || pairKey || language || competition) && (
             <button className="secondary"
                     onClick={() => {
                       setPickedPrompts([]); setPairKey("");
-                      setLanguage(""); setData(null);
+                      setLanguage(""); setCompetition(""); setData(null);
                     }}>Clear</button>
           )}
         </div>
@@ -746,7 +812,7 @@ function PromptStrategiesView() {
 }
 
 function PromptWinnersBanner({ winners }: { winners: ComparePromptsWinners }) {
-  const fields: { label: string; key: keyof ComparePromptsWinners; tip: string }[] = [
+  const fields = ([
     { label: "best pass@1",        key: "best_pass_at_1",        tip: "highest pass@1 across the prompts" },
     { label: "best pass@k",        key: "best_pass_at_k",        tip: "highest pass@k" },
     { label: "most problems",      key: "most_problems_solved",  tip: "most distinct problems accepted" },
@@ -754,7 +820,8 @@ function PromptWinnersBanner({ winners }: { winners: ComparePromptsWinners }) {
     { label: "leanest peak mem",   key: "leanest_avg_memory",    tip: "lowest mean peak memory (MB) across accepted attempts" },
     { label: "best runtime %ile",  key: "best_runtime_percentile", tip: "highest mean LeetCode runtime percentile" },
     { label: "best memory %ile",   key: "best_memory_percentile",  tip: "highest mean LeetCode memory percentile" },
-  ];
+  ] as { label: string; key: keyof ComparePromptsWinners; tip: string }[])
+    .filter(f => SHOW_RELATIVE_METRICS || !String(f.key).includes("percentile"));
   return (
     <section className="col">
       <h2 style={{ marginBottom: 4 }}>Winners</h2>
@@ -806,10 +873,10 @@ function PromptSummaryTable({
             <th title="mean of accepted-best avg runtime (ms)">Avg runtime</th>
             <th title="mean of accepted-best best runtime (ms)">Best runtime</th>
             <th title="mean of accepted-best mean peak memory (MB), peak on both oracles">Peak mem</th>
-            <th title="mean of accepted-best avg runtime percentile">RT %ile</th>
-            <th title="mean of accepted-best avg memory percentile">Mem %ile</th>
-            <th title="time-vs-LeetCode-avg coefficient (>1 = faster than the LeetCode population)">t vs avg</th>
-            <th title="memory-vs-LeetCode-avg coefficient">m vs avg</th>
+            {SHOW_RELATIVE_METRICS && <th title="mean of accepted-best avg runtime percentile">RT %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="mean of accepted-best avg memory percentile">Mem %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="time-vs-LeetCode-avg coefficient (>1 = faster than the LeetCode population)">t vs avg</th>}
+            {SHOW_RELATIVE_METRICS && <th title="memory-vs-LeetCode-avg coefficient">m vs avg</th>}
             <th></th>
           </tr></thead>
           <tbody>
@@ -829,10 +896,10 @@ function PromptSummaryTable({
                 <td className="metric" style={mark("fastest_avg_runtime", r.prompt_name)}>{formatRuntime(r.avg_runtime_ms)}</td>
                 <td className="metric">{formatRuntime(r.best_runtime_ms)}</td>
                 <td className="metric" style={mark("leanest_avg_memory", r.prompt_name)}>{formatMemory(r.avg_memory_mb)}</td>
-                <td className="metric" style={mark("best_runtime_percentile", r.prompt_name)}>{formatPercentile(r.avg_runtime_percentile)}</td>
-                <td className="metric" style={mark("best_memory_percentile", r.prompt_name)}>{formatPercentile(r.avg_memory_percentile)}</td>
-                <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>
-                <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>
+                {SHOW_RELATIVE_METRICS && <td className="metric" style={mark("best_runtime_percentile", r.prompt_name)}>{formatPercentile(r.avg_runtime_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className="metric" style={mark("best_memory_percentile", r.prompt_name)}>{formatPercentile(r.avg_memory_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>}
                 <td>
                   {r.leading_submission_id != null && (
                     <Link to={`/submissions/${r.leading_submission_id}`}>top run →</Link>
@@ -856,6 +923,11 @@ function PromptSummaryTable({
  * ever made. */
 function SubmissionsCompareView() {
   const [submissions, setSubmissions] = useState<SubmissionPublic[]>([]);
+  const [comps, setComps] = useState<CompetitionPublic[]>([]);
+  // "" = every competition. Otherwise a competition slug that scopes the
+  // pick-list to submissions targeting that competition — so a head-to-head
+  // stays within one problem set (pass@1 denominators are comparable).
+  const [compFilter, setCompFilter] = useState<string>("");
   const [picked, setPicked] = useState<number[]>([]);
   const [filter, setFilter] = useState("");
   const [data, setData] = useState<CompareResponse | null>(null);
@@ -867,6 +939,7 @@ function SubmissionsCompareView() {
       .then(rows => setSubmissions(
         rows.slice().sort((a, b) => b.id - a.id)))    // newest first
       .catch((e: unknown) => setErr(String(e)));
+    api.competitions().then(setComps).catch(() => setComps([]));
   }, []);
 
   async function run() {
@@ -882,19 +955,24 @@ function SubmissionsCompareView() {
     setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
   }
 
-  // Visible list — substring match across model, language, or "#id". A picked
-  // submission stays visible even when the filter would otherwise hide it,
-  // so you can't accidentally drop a selection by typing.
+  // Visible list — competition scope + substring match across model, language,
+  // or "#id". A picked submission stays visible even when the filters would
+  // otherwise hide it, so you can't accidentally drop a selection by typing
+  // or by switching competitions.
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    if (!needle) return submissions;
-    return submissions.filter(s =>
-      picked.includes(s.id) ||
-      s.model_name.toLowerCase().includes(needle) ||
-      s.language.toLowerCase().includes(needle) ||
-      String(s.id).includes(needle) ||
-      (s.prompt_name?.toLowerCase().includes(needle) ?? false));
-  }, [submissions, filter, picked]);
+    return submissions.filter(s => {
+      if (picked.includes(s.id)) return true;
+      if (compFilter && s.competition_slug !== compFilter) return false;
+      if (!needle) return true;
+      return (
+        s.model_name.toLowerCase().includes(needle) ||
+        s.language.toLowerCase().includes(needle) ||
+        String(s.id).includes(needle) ||
+        (s.prompt_name?.toLowerCase().includes(needle) ?? false)
+      );
+    });
+  }, [submissions, filter, picked, compFilter]);
 
   return (
     <div className="col">
@@ -910,6 +988,14 @@ function SubmissionsCompareView() {
 
       <section className="col">
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={compFilter} onChange={e => setCompFilter(e.target.value)}
+                  title="Scope the pick-list to one competition. Comparing within a single competition keeps pass@1 / Solved denominators comparable."
+                  style={{ minWidth: 220 }}>
+            <option value="">all competitions</option>
+            {comps.map(c => (
+              <option key={c.slug} value={c.slug}>{c.name}</option>
+            ))}
+          </select>
           <input placeholder="Search by model / language / #id / prompt…"
                  value={filter} onChange={e => setFilter(e.target.value)}
                  style={{ minWidth: 320 }} />
@@ -925,6 +1011,7 @@ function SubmissionsCompareView() {
               <th>#</th>
               <th>Model</th>
               <th>Lang</th>
+              <th title="Competition this submission targeted. pass@1 / Solved are scored against this competition's problem set.">Comp</th>
               <th>Prompt</th>
               <th>pass@1</th>
               <th>Solved</th>
@@ -944,6 +1031,7 @@ function SubmissionsCompareView() {
                     <td><Link to={`/submissions/${s.id}`}>#{s.id}</Link></td>
                     <td><b>{s.model_name}</b>{" "}<span className="muted">{s.model_version}</span></td>
                     <td>{s.language}</td>
+                    <td className="muted">{s.competition_name ?? s.competition_slug ?? "—"}</td>
                     <td className="muted">{s.prompt_name ?? "—"}</td>
                     <td className="metric">{formatPassAt1(s.pass_at_1)}</td>
                     <td className="metric">{s.total_solved}/{s.total_problems}</td>

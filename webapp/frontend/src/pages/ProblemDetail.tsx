@@ -4,6 +4,7 @@ import { api, ProblemDetail } from "../lib/api";
 import LevelBadge from "../components/LevelBadge";
 import Markdown from "../components/Markdown";
 import { formatEnergy, formatMemory, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 
 export default function ProblemDetailPage() {
@@ -200,8 +201,8 @@ function BestPerLanguage({ p }: { p: ProblemDetail }) {
             <th title="LeetCode-reported runtime (ms)">Runtime</th>
             <th title="Peak (max resident) memory (MB). Peak on both oracles, never per function call">Peak mem</th>
             {showEnergy && <th title="Runtime energy (Joules). Reported by execution-instrumented harnesses (e.g. arena-local). Lower = less energy consumed executing this solution.">Energy</th>}
-            <th title="Runtime percentile in that language">RT %ile</th>
-            <th title="Memory percentile in that language">Mem %ile</th>
+            {SHOW_RELATIVE_METRICS && <th title="Runtime percentile in that language">RT %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Memory percentile in that language">Mem %ile</th>}
             <th title="Accepted / total judged attempts in this language">A/T</th>
             <th></th>
           </tr></thead>
@@ -222,8 +223,8 @@ function BestPerLanguage({ p }: { p: ProblemDetail }) {
                 {showEnergy && (
                   <td className="metric">{formatEnergy(s.runtime_energy_j)}</td>
                 )}
-                <td className="metric">{formatPercentile(s.runtime_percentile)}</td>
-                <td className="metric">{formatPercentile(s.memory_percentile)}</td>
+                {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(s.runtime_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(s.memory_percentile)}</td>}
                 <td className="metric">
                   {p.n_accepted_by_language[s.language] ?? 0}/{p.n_attempts_by_language[s.language] ?? 0}
                 </td>
@@ -278,8 +279,8 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
                 <th title="Best LeetCode runtime across the 5 dispatch repeats (min ms); the mean is shown in parens. Lower is better.">Runtime (best · avg)</th>
                 <th title="Best peak (max resident) memory across the 5 dispatch repeats (min MB); the mean is shown in parens. Peak on both oracles, never per function call. Lower is better.">Peak mem (best · avg)</th>
                 {showEnergy && <th title="Runtime energy in Joules. Best (least energy) across dispatch repeats, mean in parens. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Energy (best · avg)</th>}
-                <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats; the mean is shown in parens. Higher = faster than more of the LeetCode population AT THE TIME OF SUBMISSION (LC's percentile field is itself noisy; see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>
-                <th title="Highest LeetCode memory percentile across the 5 dispatch repeats; mean in parens.">Mem %ile (best · avg)</th>
+                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats; the mean is shown in parens. Higher = faster than more of the LeetCode population AT THE TIME OF SUBMISSION (LC's percentile field is itself noisy; see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>}
+                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode memory percentile across the 5 dispatch repeats; mean in parens.">Mem %ile (best · avg)</th>}
                 <th></th>
               </tr></thead>
               <tbody>
@@ -315,18 +316,22 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
                         )}
                       </td>
                     )}
-                    <td className="metric">
-                      {formatPercentile(s.runtime_percentile)}
-                      {s.avg_runtime_percentile != null && s.avg_runtime_percentile !== s.runtime_percentile && (
-                        <span className="muted" style={{ marginLeft: 4 }}>· {formatPercentile(s.avg_runtime_percentile)}</span>
-                      )}
-                    </td>
-                    <td className="metric">
-                      {formatPercentile(s.memory_percentile)}
-                      {s.avg_memory_percentile != null && s.avg_memory_percentile !== s.memory_percentile && (
-                        <span className="muted" style={{ marginLeft: 4 }}>· {formatPercentile(s.avg_memory_percentile)}</span>
-                      )}
-                    </td>
+                    {SHOW_RELATIVE_METRICS && (
+                      <td className="metric">
+                        {formatPercentile(s.runtime_percentile)}
+                        {s.avg_runtime_percentile != null && s.avg_runtime_percentile !== s.runtime_percentile && (
+                          <span className="muted" style={{ marginLeft: 4 }}>· {formatPercentile(s.avg_runtime_percentile)}</span>
+                        )}
+                      </td>
+                    )}
+                    {SHOW_RELATIVE_METRICS && (
+                      <td className="metric">
+                        {formatPercentile(s.memory_percentile)}
+                        {s.avg_memory_percentile != null && s.avg_memory_percentile !== s.memory_percentile && (
+                          <span className="muted" style={{ marginLeft: 4 }}>· {formatPercentile(s.avg_memory_percentile)}</span>
+                        )}
+                      </td>
+                    )}
                     <td><Link to={`/submissions/${s.submission_id}`}>batch →</Link></td>
                   </tr>
                 ))}

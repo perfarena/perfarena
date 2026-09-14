@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, CompetitionDetail } from "../lib/api";
 import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 
 /* /competitions/:slug — the membership list (which problems are in this
@@ -88,8 +89,8 @@ export default function CompetitionDetailPage() {
               <th title="Problems solved out of total in this competition.">Solved</th>
               <th title="Average LeetCode-reported runtime across the model's accepted attempts on this competition's problems only.">Avg runtime</th>
               <th title="Average peak (max resident) memory across accepted attempts. Peak on both oracles, never per function call.">Peak mem</th>
-              <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>
-              <th title="Average memory percentile across accepted attempts.">Memory %ile</th>
+              {SHOW_RELATIVE_METRICS && <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>}
+              {SHOW_RELATIVE_METRICS && <th title="Average memory percentile across accepted attempts.">Memory %ile</th>}
               <th title="Total submissions this model has against this competition.">subs</th>
             </tr></thead>
             <tbody>
@@ -107,8 +108,8 @@ export default function CompetitionDetailPage() {
                   </td>
                   <td className="metric">{formatRuntime(m.avg_runtime_ms ?? null)}</td>
                   <td className="metric">{formatMemory(m.avg_memory_mb ?? null)}</td>
-                  <td className="metric">{formatPercentile(m.avg_runtime_percentile ?? null)}</td>
-                  <td className="metric">{formatPercentile(m.avg_memory_percentile ?? null)}</td>
+                  {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_runtime_percentile ?? null)}</td>}
+                  {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_memory_percentile ?? null)}</td>}
                   <td className="metric">{m.n_submissions}</td>
                 </tr>
               ))}

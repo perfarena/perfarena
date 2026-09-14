@@ -514,16 +514,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         try:
             import inspect
             try:
-                batch_ok = "repeats" in inspect.signature(_MEASURE_HANDLER).parameters
+                _params = inspect.signature(_MEASURE_HANDLER).parameters
+                batch_ok = "repeats" in _params
+                meta_ok = "meta" in _params      # forward meta only if accepted
             except (TypeError, ValueError):
                 batch_ok = False
+                meta_ok = False
             if batch_ok:
                 # Batch handler: ONE call, returns a list of `repeats` results.
                 def _run_batch() -> Any:
+                    kw = {**metrics_kw, "repeats": repeats, "do_compile": compile_flag}
+                    if meta_ok:
+                        kw["meta"] = meta        # per-request knobs (e.g. compile_flags)
                     return _MEASURE_HANDLER(
-                        body["title_slug"], body["language"], body["code"],
-                        **{**metrics_kw, "repeats": repeats, "do_compile": compile_flag},
-                    )
+                        body["title_slug"], body["language"], body["code"], **kw)
                 try:
                     batch = _run_with_watchdog(_run_batch, "measure")
                 except Exception as e:                               # noqa: BLE001
@@ -532,9 +536,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                                                        f"{type(e).__name__}: {e}"}}]
             else:
                 # Back-compat handler (no batch support): loop the per-call shape.
+                _mkw = {**metrics_kw, "meta": meta} if meta_ok else metrics_kw
                 batch = _run_with_watchdog(
                     lambda: [self._call_handler(_MEASURE_HANDLER, body,
-                                                extra_kwargs=metrics_kw)
+                                                extra_kwargs=_mkw)
                              for _ in range(repeats)],
                     "measure")
             if isinstance(batch, dict):
@@ -567,8 +572,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not self._acquire_or_reject(meta):
             return
         try:
+            import inspect
+            try:
+                _vmeta_ok = "meta" in inspect.signature(_VALIDATE_HANDLER).parameters
+            except (TypeError, ValueError):
+                _vmeta_ok = False
+            _vkw = {"meta": meta} if _vmeta_ok else None
             r = _run_with_watchdog(
-                lambda: self._call_handler(_VALIDATE_HANDLER, body), "validate")
+                lambda: self._call_handler(_VALIDATE_HANDLER, body, extra_kwargs=_vkw),
+                "validate")
         finally:
             self._release()
         # Correctness responses carry status_msg + raw_response + a

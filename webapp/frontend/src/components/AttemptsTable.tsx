@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { AttemptResultPayload, AttemptRunDetail, api } from "../lib/api";
 import { formatDuration, formatEnergy, formatMemory, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import { ErrorPanel, LogEntryPanel, ProvenancePanel, hasErrorLog } from "./AuditPanels";
 import { RunsChart } from "./RunsChart";
 
@@ -75,8 +76,8 @@ function RunRow({ run, perOp, showTests }: { run: AttemptRunDetail; perOp: boole
           <OpMark show={perOp && run.runtime_ms != null} />
         </td>
         <td className="metric">{formatMemory(run.memory_mb)}</td>
-        <td className="metric">{formatPercentile(run.runtime_percentile)}</td>
-        <td className="metric">{formatPercentile(run.memory_percentile)}</td>
+        {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(run.runtime_percentile)}</td>}
+        {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(run.memory_percentile)}</td>}
         {showTests && (
           <td className="metric">{run.total_correct ?? "?"}/{run.total_testcases ?? "?"}</td>
         )}
@@ -229,9 +230,11 @@ function AttemptRow({
         {showRuntimeEnergy && (
           <td className="metric">{formatEnergy(a.best_runtime_energy_j)}</td>
         )}
-        <td className="metric">
-          {formatPercentile(a.avg_runtime_percentile)} / {formatPercentile(a.avg_memory_percentile)}
-        </td>
+        {SHOW_RELATIVE_METRICS && (
+          <td className="metric">
+            {formatPercentile(a.avg_runtime_percentile)} / {formatPercentile(a.avg_memory_percentile)}
+          </td>
+        )}
         <td className="metric" title="$ cost of this LLM call (0 for Ollama)">
           {a.cost_usd == null ? "–" : `$${a.cost_usd.toFixed(4)}`}
         </td>
@@ -290,7 +293,7 @@ function AttemptRow({
                 <table className="tbl" style={{ margin: 0 }}>
                   <thead><tr>
                     <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>
-                    <th>RT %ile</th><th>Mem %ile</th>
+                    {SHOW_RELATIVE_METRICS && <><th>RT %ile</th><th>Mem %ile</th></>}
                     {a.runs.some(r => r.total_correct != null || r.total_testcases != null) && (
                       <th title="Reference cases the correctness oracle passed / total, checked ONCE by the /validate gate. The perf measurement runs only the ~5 curated cases, not all of these — so this is a correctness figure, not the number of tests each run executed.">Correctness</th>
                     )}
@@ -398,7 +401,7 @@ export default function AttemptsTable(
           {showRuntimeEnergy && (
             <th title="Best (least) runtime energy across dispatch runs. Same source as Avg energy.">Best energy</th>
           )}
-          <th title="avg runtime / memory percentile">%ile (rt/mem)</th>
+          {SHOW_RELATIVE_METRICS && <th title="avg runtime / memory percentile">%ile (rt/mem)</th>}
           <th title="$ cost of this LLM call (one sample)">Cost</th>
           <th title="code-only response tokens (estimate)">Tokens</th>
           <th title="generation wall-clock for this solution">Gen time</th>

@@ -240,6 +240,7 @@ function CatalogMenu() {
         >
           <MenuItem to="/competitions" onPick={() => setOpen(false)}>Competitions</MenuItem>
           <MenuItem to="/harnesses"    onPick={() => setOpen(false)}>Harnesses</MenuItem>
+          <MenuItem to="/machines"     onPick={() => setOpen(false)}>Machines</MenuItem>
           <MenuItem to="/problems"     onPick={() => setOpen(false)}>Problems</MenuItem>
           <MenuItem to="/models"       onPick={() => setOpen(false)}>Models</MenuItem>
           <MenuItem to="/languages"    onPick={() => setOpen(false)}>Languages</MenuItem>

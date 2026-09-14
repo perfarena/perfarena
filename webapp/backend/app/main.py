@@ -31,7 +31,7 @@ from sqlmodel import Session, select
 
 from .auth import (
     current_admin, current_user, generate_api_key,
-    hash_password, verify_password,
+    hash_password, verify_password, maybe_user,
 )
 from . import captcha
 from . import languages as langs_mod
@@ -66,7 +66,7 @@ from .schemas import (
     ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
-    HarnessDetail, HarnessIn, HarnessPublic, HarnessRef,
+    HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachinePublic,
     CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
     CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
@@ -1026,6 +1026,49 @@ _DEFAULT_PROMPTS: list[dict] = [
             "starter snippet from Problem.code_snippets. Use when comparing "
             "with/without-shape ablations; pre-requires "
             "`app.fetch_code_snippets`."
+        ),
+    },
+    {
+        "name": "experiment-system-with-shape-and-flags",
+        "system_prompt": (
+            "You are a competitive-programming assistant. Solve the problem "
+            "in {{language_display}}.\n\n"
+            "MANDATORY SHAPE: your final code MUST match the class and method "
+            "signature shown in the starter snippet below. Don't rename the "
+            "method, don't change argument names or types, don't wrap the "
+            "Solution class in another class.\n\n"
+            "{{optimization_directive}}\n\n"
+            "{{round_instruction}}\n\n"
+            "Think step by step, then return the final solution in a single "
+            "```{{language_fence}} code block. Don't include any other "
+            "comments or text outside the code block.\n\n"
+            "COMPILATION FLAGS: after the code block, on its own final line, "
+            "output the exact compiler flags you want used to build your "
+            "solution, in this format (nothing else on the line):\n"
+            "PERFARENA-FLAGS: <flags>\n"
+            "Give raw flags valid for {{language_display}}'s compiler and "
+            "include any language essentials (e.g. the standard version). "
+            "Example for C++: `PERFARENA-FLAGS: -O3 -march=native -std=c++17`. "
+            "If the language is interpreted (no compiler), output "
+            "`PERFARENA-FLAGS:` with nothing after it."
+        ),
+        "user_prompt_template": (
+            "Solve this LeetCode problem `{{slug}}` in {{language_display}}.\n\n"
+            "{{statement}}\n\n"
+            "{{hints_block}}\n\n"
+            "STARTER CODE (your solution must conform to this exact shape — "
+            "implement the method body):\n"
+            "```{{language_fence}}\n{{code_template}}\n```\n\n"
+            "{{rounds_history}}"
+        ),
+        "language_hint": None,
+        "notes": (
+            "experiment-system-with-shape PLUS a directive for the model to "
+            "choose its own compilation flags, emitted as a `PERFARENA-FLAGS: "
+            "<flags>` marker line the client parses (extract_compile_flags). "
+            "The chosen flags become the run's compile_flags (per-attempt, "
+            "recorded in provenance / MeasurementProfile); invalid flags fall "
+            "back to the language default on the runner and are flagged."
         ),
     },
 ]
@@ -2481,9 +2524,49 @@ def _harness_stats(
             judged)
 
 
+@app.get("/api/machines", response_model=list[MachinePublic])
+def list_machines(session: Session = Depends(get_session)):
+    """List every measurement machine (the hardware a submission ran on), with a
+    submission-count activity stat. Public — machines carry no secrets (unlike
+    harness config), only hardware/OS/energy-tool provenance."""
+    machines = session.exec(select(Machine).order_by(Machine.name)).all()
+    # One grouped count instead of N queries.
+    counts: dict[int, int] = {}
+    for mid in session.exec(
+        select(Submission.machine_id).where(Submission.machine_id.isnot(None))
+    ).all():
+        counts[mid] = counts.get(mid, 0) + 1
+    return [
+        MachinePublic(
+            id=m.id, name=m.name, hostname=m.hostname, cpu_model=m.cpu_model,
+            cores=m.cores, energy_source=m.energy_source, os=m.os, notes=m.notes,
+            created_at=m.created_at, n_submissions=counts.get(m.id, 0),
+        )
+        for m in machines
+    ]
+
+
+# Config keys that carry secrets (runner auth tokens, credentials). Their VALUES
+# are redacted for non-admins so a harness page never leaks the runner's token —
+# the harness GET endpoints are public (no auth required to view a harness).
+_SECRET_CONFIG_KEYS = {"auth_token", "token", "api_key", "apikey",
+                       "password", "secret", "credential", "credentials"}
+
+
+def _public_harness_config(config: dict | None, viewer: "User | None") -> dict | None:
+    """Return the harness config safe to show `viewer`. Admins get it verbatim
+    (they manage it via the edit form); everyone else gets secret VALUES masked
+    with '***' (the key stays so the shape is visible, the secret is not)."""
+    if not config or (viewer is not None and viewer.role == UserRole.admin):
+        return config
+    return {k: ("***" if k.lower() in _SECRET_CONFIG_KEYS else v)
+            for k, v in config.items()}
+
+
 @app.get("/api/harnesses", response_model=list[HarnessPublic])
 def list_harnesses(
     include_retired: bool = False,
+    viewer: "User | None" = Depends(maybe_user),
     session: Session = Depends(get_session),
 ):
     """List every harness / perf oracle the platform tracks, with activity
@@ -2498,14 +2581,16 @@ def list_harnesses(
         out.append(HarnessPublic(
             id=h.id, slug=h.slug, name=h.name,
             description=h.description, kind=h.kind, status=h.status,
-            created_at=h.created_at, config=h.config,
+            created_at=h.created_at, config=_public_harness_config(h.config, viewer),
             n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
         ))
     return out
 
 
 @app.get("/api/harnesses/{slug}", response_model=HarnessDetail)
-def get_harness(slug: str, session: Session = Depends(get_session)):
+def get_harness(slug: str,
+                viewer: "User | None" = Depends(maybe_user),
+                session: Session = Depends(get_session)):
     h = session.exec(select(Harness).where(Harness.slug == slug)).first()
     if h is None:
         raise HTTPException(404, "harness not found")
@@ -2553,7 +2638,7 @@ def get_harness(slug: str, session: Session = Depends(get_session)):
     return HarnessDetail(
         id=h.id, slug=h.slug, name=h.name,
         description=h.description, kind=h.kind, status=h.status,
-        created_at=h.created_at, config=h.config,
+        created_at=h.created_at, config=_public_harness_config(h.config, viewer),
         n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
         competitions=[CompetitionRef(slug=c.slug, name=c.name) for c in comps],
         languages=langs,
@@ -2717,6 +2802,7 @@ def _correctness_oracle_stats(
 @app.get("/api/correctness-oracles", response_model=list[CorrectnessOraclePublic])
 def list_correctness_oracles(
     include_retired: bool = False,
+    viewer: "User | None" = Depends(maybe_user),
     session: Session = Depends(get_session),
 ):
     """List every correctness oracle the platform tracks, with activity
@@ -2731,14 +2817,16 @@ def list_correctness_oracles(
         out.append(CorrectnessOraclePublic(
             id=o.id, slug=o.slug, name=o.name,
             description=o.description, kind=o.kind, status=o.status,
-            created_at=o.created_at, config=o.config,
+            created_at=o.created_at, config=_public_harness_config(o.config, viewer),
             n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
         ))
     return out
 
 
 @app.get("/api/correctness-oracles/{slug}", response_model=CorrectnessOracleDetail)
-def get_correctness_oracle(slug: str, session: Session = Depends(get_session)):
+def get_correctness_oracle(slug: str,
+                           viewer: "User | None" = Depends(maybe_user),
+                           session: Session = Depends(get_session)):
     o = session.exec(
         select(CorrectnessOracle).where(CorrectnessOracle.slug == slug)
     ).first()
@@ -2784,7 +2872,7 @@ def get_correctness_oracle(slug: str, session: Session = Depends(get_session)):
     return CorrectnessOracleDetail(
         id=o.id, slug=o.slug, name=o.name,
         description=o.description, kind=o.kind, status=o.status,
-        created_at=o.created_at, config=o.config,
+        created_at=o.created_at, config=_public_harness_config(o.config, viewer),
         n_competitions=n_comps, n_submissions=n_subs, n_runs=n_runs,
         competitions=[CompetitionRef(slug=c.slug, name=c.name) for c in comps],
         languages=langs,
@@ -2984,6 +3072,32 @@ def list_models(session: Session = Depends(get_session)):
     ]
 
 
+def _competition_problem_slugs(session: Session, comp_slug: str) -> set[str] | None:
+    """Resolve a competition slug to the title_slugs of its problems.
+
+    Returns None when the slug matches no competition (callers treat that as
+    "no competition scope"); an empty set when the competition exists but has
+    no problems linked. Used to scope the compare endpoints to one problem set.
+    """
+    comp = session.exec(
+        select(Competition).where(Competition.slug == comp_slug)
+    ).first()
+    if comp is None:
+        return None
+    pids = [
+        cp.problem_id for cp in session.exec(
+            select(CompetitionProblem).where(
+                CompetitionProblem.competition_id == comp.id
+            )
+        ).all()
+    ]
+    if not pids:
+        return set()
+    return set(session.exec(
+        select(Problem.title_slug).where(Problem.id.in_(pids))
+    ).all())
+
+
 @app.get("/api/compare", response_model=CompareResponse)
 def compare_models(
     models: list[str] = Query(..., min_length=2,
@@ -2992,15 +3106,23 @@ def compare_models(
     prompt_id: int | None = Query(None, description="restrict to one PromptTemplate"),
     problems: str | None = Query(
         None, description="comma-separated problem slugs to restrict to"),
+    competition: str | None = Query(
+        None, description="restrict to a competition's problem set (slug)"),
     session: Session = Depends(get_session),
 ):
     """Head-to-head model comparison. Aggregates each model's judged
-    submissions (optionally filtered by language and/or a problem subset)
-    into one summary row + a per-problem matrix (where every requested
-    problem shows what each model achieved)."""
+    submissions (optionally filtered by language, a problem subset, and/or a
+    competition's problem set) into one summary row + a per-problem matrix
+    (where every requested problem shows what each model achieved)."""
     wanted_slugs: set[str] | None = None
     if problems:
         wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
+    if competition:
+        comp_slugs = _competition_problem_slugs(session, competition)
+        if comp_slugs is not None:
+            # Intersect so a competition + explicit problem subset narrows to
+            # the overlap; competition alone restricts to its whole problem set.
+            wanted_slugs = comp_slugs if wanted_slugs is None else (wanted_slugs & comp_slugs)
 
     # All judged, non-deleted submissions for the requested models.
     q = (
@@ -3576,6 +3698,8 @@ def compare_prompts(
                                   description="repeat ?prompt_ids=ID for each prompt to compare"),
     problems: str | None = Query(
         None, description="comma-separated problem slugs to restrict to"),
+    competition: str | None = Query(
+        None, description="restrict to a competition's problem set (slug)"),
     session: Session = Depends(get_session),
 ):
     """Head-to-head comparison of prompt strategies within one (model, version,
@@ -3586,6 +3710,10 @@ def compare_prompts(
     wanted_slugs: set[str] | None = None
     if problems:
         wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
+    if competition:
+        comp_slugs = _competition_problem_slugs(session, competition)
+        if comp_slugs is not None:
+            wanted_slugs = comp_slugs if wanted_slugs is None else (wanted_slugs & comp_slugs)
 
     # Resolve prompt rows once (also enforces that every requested id exists).
     prompts_by_id: dict[int, PromptTemplate] = {}

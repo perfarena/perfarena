@@ -114,6 +114,7 @@ from submit_with_local_model import (                          # noqa: E402
     PROVIDERS, Provider,
     _looks_like,
     _is_clbg_statement,
+    extract_compile_flags, sanitize_compile_flags,
     build_code_template_block, build_hints_block,
     build_optimization_directive,
     call_cost_usd, estimate_code_tokens,
@@ -143,6 +144,26 @@ def _now_hms() -> str:
     when each call actually happened (e.g. how long a slow local generation took
     between two lines), not just the elapsed-since-start offset."""
     return dt.datetime.now().strftime("%H:%M:%S")
+
+
+def _resolve_compile_flags(arg_value: "str | None", language: str) -> str:
+    """Resolve --compile-flags for one language. Accepts either a single flag
+    string (applied to any language) or a per-language map
+    `cpp=-O3 -std=c++17;rust=-C opt-level=3`. Map form is detected when the first
+    `;`-segment's key (before `=`) is a known language slug — raw flags start
+    with `-`, so `-march=native` is never misread as a map. Returns "" for a
+    language absent from the map, or when unset."""
+    if not arg_value:
+        return ""
+    segs = [s for s in arg_value.split(";") if s.strip()]
+    first_key = segs[0].split("=", 1)[0].strip() if (segs and "=" in segs[0]) else ""
+    if first_key in LANGUAGE_DISPLAY:      # per-language map
+        for s in segs:
+            k, _, v = s.partition("=")
+            if k.strip() == language:
+                return v.strip()
+        return ""
+    return arg_value.strip()               # single string for the run's language
 
 
 def _tuple_key(model: str, prompt_name: str, language: str, slug: str) -> str:
@@ -1263,6 +1284,18 @@ def main() -> None:
                          "that happens to start with all Easy.")
     ap.add_argument("--target",    choices=("latency", "memory"), default=None,
                     help="if a prompt uses {{optimization_directive}}, fill it with this.")
+    ap.add_argument("--compile-flags", default=None, metavar="FLAGS",
+                    help="Per-run compilation flags for compiled/JIT languages. "
+                         "Either a single flag string applied to the run's "
+                         "language (e.g. \"-O3 -march=native -std=c++17\"), or a "
+                         "per-language map \"cpp=-O3 -std=c++17;rust=-C opt-level=3\" "
+                         "so a multi-language sweep sends the right flags per "
+                         "submission. RAW flags: they fully replace that "
+                         "language's default and must be valid for its compiler. "
+                         "A distinct flag set is recorded as a separate "
+                         "MeasurementProfile (energy compared only within the same "
+                         "flags). When a flags-choosing prompt is used, the model's "
+                         "own PERFARENA-FLAGS take precedence over this.")
     ap.add_argument("--hints",     action="store_true",
                     help="if a prompt uses {{hints_block}}, include LeetCode hints.")
     ap.add_argument("--rounds",    type=int, default=1, metavar="N",
@@ -1923,6 +1956,20 @@ def main() -> None:
                     if not _looks_like(code, language) else None
                 )
 
+            # ---- Resolve compilation flags (per attempt) ----
+            # Model-chosen flags (PERFARENA-FLAGS marker in the raw response,
+            # from a flags-choosing prompt) take precedence over the operator's
+            # --compile-flags; both are sanitized. Stored on the attempt trace so
+            # the dispatch applies + records them per attempt.
+            _op_flags = sanitize_compile_flags(_resolve_compile_flags(args.compile_flags, language))
+            _model_flags = sanitize_compile_flags(extract_compile_flags(trace.get("raw_response") or ""))
+            _compile_flags = _model_flags or _op_flags
+            if _compile_flags:
+                trace["compile_flags"] = _compile_flags
+                if _model_flags:
+                    trace["compile_flags_source"] = "model"
+                    print(f"    ↳ model chose compile flags: {_compile_flags}", flush=True)
+
             # ---- Build the attempt body ----
             summary = (trace.get("reasoning") or trace.get("raw_response")
                        or "matrix sweep — see structured trace").strip()[:4000] or "x"
@@ -1979,7 +2026,17 @@ def main() -> None:
                             "language": language,
                             "prompt_template": prompt["system_prompt"],
                             "prompt_id": prompt["id"],
-                            "model_params": {"temperature": args.temperature},
+                            "model_params": {
+                                "temperature": args.temperature,
+                                # Submission-level compile flags (operator
+                                # --compile-flags for this language). Per-attempt
+                                # model-chosen flags on attempt.trace override
+                                # this in dispatch. Omitted when empty so legacy
+                                # submissions are byte-identical.
+                                **({"compile_flags": sanitize_compile_flags(
+                                        _resolve_compile_flags(args.compile_flags, language))}
+                                   if _resolve_compile_flags(args.compile_flags, language) else {}),
+                            },
                             "n_samples_per_problem": 1,
                             "n_rounds": args.rounds,
                             "include_hints": bool(args.hints),

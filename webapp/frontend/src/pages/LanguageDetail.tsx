@@ -4,6 +4,7 @@ import { api, LanguageDetailPayload, LanguageTopModel } from "../lib/api";
 import {
   formatDuration, formatEnergy, formatMemory, formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import PromptName from "../components/PromptName";
 
 /** Ranking criteria for the per-language leaderboard. Each entry maps to
@@ -126,8 +127,8 @@ export default function LanguageDetail() {
           <Stat label="lowest best runtime" value={formatRuntime(stats.best.best_runtime_ms)} />
           <Stat label="lowest peak mem" value={formatMemory(stats.best.avg_memory_mb)} />
           <Stat label="lowest best peak mem" value={formatMemory(stats.best.best_memory_mb)} />
-          <Stat label="best runtime %ile" value={formatPercentile(stats.best.avg_runtime_percentile)} />
-          <Stat label="best memory %ile" value={formatPercentile(stats.best.avg_memory_percentile)} />
+          {SHOW_RELATIVE_METRICS && <Stat label="best runtime %ile" value={formatPercentile(stats.best.avg_runtime_percentile)} />}
+          {SHOW_RELATIVE_METRICS && <Stat label="best memory %ile" value={formatPercentile(stats.best.avg_memory_percentile)} />}
         </div>
       </section>
 
@@ -138,7 +139,9 @@ export default function LanguageDetail() {
             Sort by:
             <select value={sortKey as string}
                     onChange={e => setSortKey(e.target.value as keyof LanguageTopModel)}>
-              {SORT_OPTIONS.map(o => (
+              {SORT_OPTIONS
+                .filter(o => SHOW_RELATIVE_METRICS || !String(o.key).includes("percentile"))
+                .map(o => (
                 <option key={o.key as string} value={o.key as string}>
                   {o.label} {o.direction === "desc" ? "↓" : "↑"}
                 </option>
@@ -156,7 +159,7 @@ export default function LanguageDetail() {
                 <th title="Registered prompt template used. Click to compare prompts.">Prompt</th>
                 <th>pass@1</th><th>pass@k</th>
                 <th>Avg runtime</th><th>Peak mem</th>
-                <th>Runtime %ile</th><th>Memory %ile</th>
+                {SHOW_RELATIVE_METRICS && <><th>Runtime %ile</th><th>Memory %ile</th></>}
                 <th title="Total $ across all attempts in this submission. Recomputed live from the model's current $/1M-token rates when set on /models.">Cost</th>
                 <th title="Total generation wall-clock summed across attempts.">Gen time</th>
                 <th title="Total generation energy (Joules). Only present when the submit client measured it (NVML / RAPL / provider telemetry).">Gen energy</th>
@@ -178,8 +181,8 @@ export default function LanguageDetail() {
                     <td className="metric">{formatPassAt1(m.pass_at_k)}</td>
                     <td className="metric">{formatRuntime(m.avg_runtime_ms)}</td>
                     <td className="metric">{formatMemory(m.avg_memory_mb)}</td>
-                    <td className="metric">{formatPercentile(m.avg_runtime_percentile)}</td>
-                    <td className="metric">{formatPercentile(m.avg_memory_percentile)}</td>
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_runtime_percentile)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(m.avg_memory_percentile)}</td>}
                     <td className="metric">{m.total_cost_usd == null ? "–" : `$${m.total_cost_usd.toFixed(4)}`}</td>
                     <td className="metric">{formatDuration(m.total_generation_ms)}</td>
                     <td className="metric">{formatEnergy(m.total_generation_energy_j)}</td>

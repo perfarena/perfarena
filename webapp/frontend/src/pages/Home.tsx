@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, CompetitionPublic, RankingEntry } from "../lib/api";
 import { formatPassAt1, formatPercentile } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 import PromptName from "../components/PromptName";
 
@@ -11,17 +12,40 @@ import PromptName from "../components/PromptName";
 const PRIMARY_COMPETITION_SLUG = "leetcode-99-perf";
 
 export default function Home() {
-  const [top, setTop] = useState<RankingEntry[]>([]);
   const [comps, setComps] = useState<CompetitionPublic[]>([]);
+  // "Top of the leaderboard" is now tabbed per competition. Each tab's top-5 is
+  // fetched lazily the first time it's opened and cached here, so the homepage
+  // only pays for the active competition up front.
+  const [activeComp, setActiveComp] = useState<string>(PRIMARY_COMPETITION_SLUG);
+  const [topByComp, setTopByComp] = useState<Record<string, RankingEntry[]>>({});
+  const [loadingComp, setLoadingComp] = useState<string | null>(null);
+
+  function loadTop(slug: string) {
+    if (topByComp[slug]) return;                    // cached — lazy no-op
+    setLoadingComp(slug);
+    api.rankings({ competition: slug })
+      .then((rows: RankingEntry[]) => setTopByComp(m => ({ ...m, [slug]: rows.slice(0, 5) })))
+      .catch(() => setTopByComp(m => ({ ...m, [slug]: [] })))
+      .finally(() => setLoadingComp(l => (l === slug ? null : l)));
+  }
 
   useEffect(() => {
-    api.rankings({ competition: PRIMARY_COMPETITION_SLUG })
-      .then((rows: RankingEntry[]) => setTop(rows.slice(0, 5)))
-      .catch(() => {});
+    loadTop(PRIMARY_COMPETITION_SLUG);              // eager-load only the default tab
     api.competitions().then(setComps).catch(() => setComps([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function onTab(slug: string) { setActiveComp(slug); loadTop(slug); }
+
   const primary = comps.find(c => c.slug === PRIMARY_COMPETITION_SLUG) ?? null;
+  // Tab order: primary first, then the rest by name. If the primary isn't in
+  // the list yet (still loading), fall back to whatever competitions exist.
+  const tabComps = [
+    ...comps.filter(c => c.slug === PRIMARY_COMPETITION_SLUG),
+    ...comps.filter(c => c.slug !== PRIMARY_COMPETITION_SLUG),
+  ];
+  const activeCompObj = comps.find(c => c.slug === activeComp) ?? primary;
+  const top = topByComp[activeComp] ?? [];
   // Other competitions (besides the primary) get their own card row below
   // the primary card so visitors discover the multi-competition story.
   const other = comps.filter(c => c.slug !== PRIMARY_COMPETITION_SLUG);
@@ -77,15 +101,29 @@ export default function Home() {
       </section>
 
       <section>
-        <h2>
-          Top of the leaderboard
-          {primary && (
-            <span className="muted" style={{ fontSize: "0.9rem", fontWeight: 400, marginLeft: 8 }}>
-              · {primary.name}
-            </span>
-          )}
-        </h2>
-        {top.length === 0 ? (
+        <h2 style={{ marginBottom: 8 }}>Top of the leaderboard</h2>
+        {/* One tab per competition. The active tab's top-5 is fetched lazily on
+            first open and cached, so the homepage only loads the default up front. */}
+        {tabComps.length > 0 && (
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+            {tabComps.map(c => (
+              <button key={c.slug}
+                      className={c.slug === activeComp ? "" : "secondary"}
+                      onClick={() => onTab(c.slug)}
+                      style={{ fontSize: "0.85rem" }}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {activeCompObj && (
+          <div className="muted" style={{ fontSize: "0.85rem", marginBottom: 8 }}>
+            {activeCompObj.n_problems} problems · {activeCompObj.n_submissions} submissions · {activeCompObj.n_models} models
+          </div>
+        )}
+        {loadingComp === activeComp && top.length === 0 ? (
+          <div className="empty">Loading…</div>
+        ) : top.length === 0 ? (
           <div className="empty">No judged submissions in this competition yet.</div>
         ) : (
           <div className="card tbl-scroll" style={{ padding: 0 }}>
@@ -93,7 +131,10 @@ export default function Home() {
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
                 <th title="Registered prompt template used. Different prompts = different experimental cells.">Prompt</th>
-                <th>pass@1</th><th>Runtime %ile</th><th>Memory %ile</th><th></th>
+                <th>pass@1</th>
+                {SHOW_RELATIVE_METRICS && <th title="Avg runtime percentile (relative to the reference population)">RT %ile</th>}
+                {SHOW_RELATIVE_METRICS && <th title="Avg memory percentile (relative to the reference population)">Mem %ile</th>}
+                <th></th>
               </tr></thead>
               <tbody>
                 {top.map(r => (
@@ -109,8 +150,8 @@ export default function Home() {
                     <td><LanguageLink name={r.language} /></td>
                     <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
                     <td className="metric">{formatPassAt1(r.pass_at_1)}</td>
-                    <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>
-                    <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>}
                     <td><Link to={`/submissions/${r.submission_id}`}>details →</Link></td>
                   </tr>
                 ))}
@@ -119,7 +160,7 @@ export default function Home() {
           </div>
         )}
         <div className="row" style={{ marginTop: 12 }}>
-          <Link to="/rankings">See the full leaderboard →</Link>
+          <Link to={`/rankings?competition=${encodeURIComponent(activeComp)}`}>See the full leaderboard →</Link>
         </div>
       </section>
 

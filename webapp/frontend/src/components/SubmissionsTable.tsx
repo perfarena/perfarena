@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { SubmissionPublic } from "../lib/api";
 import { formatDuration, formatEnergy, formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "./LanguageLink";
 import PromptName from "./PromptName";
 
@@ -26,24 +27,24 @@ export default function SubmissionsTable({ rows }: { rows: SubmissionPublic[] })
           <th title="Registered prompt template used (clickable). 'ad-hoc' if the submitter passed inline prompt text instead of a registry id.">Prompt</th>
           <th title="Competition this submission targeted. pass@1 and Solved are computed against THIS competition's problem set as the denominator. A dash marks a legacy row created before the per-submission scope existed.">Competition</th>
           <th title="Perf oracle (harness) that scored this submission's runs. Resolved per submission (submission override → competition default). Every legacy row resolves to `leetcode` via the startup backfill.">Harness</th>
-          <th title="Correctness oracle: the verdict source (Accepted / Wrong Answer / RE / TLE) driving pass@1. Separate from the performance oracle, so one oracle can score a submission and another can measure it.">Correctness</th>
+          <th title="Correctness oracle: the verdict source (Accepted / Wrong Answer / RE / TLE) driving pass@1. Separate from the performance oracle, so one oracle can score a submission and another can measure it.">Correct</th>
           <th>Status</th><th>pass@1</th>
           <th title="Mean acceptance rate across submitted attempts: total accepted / total submitted. Divides only by attempts actually shipped, so partial submissions aren't penalised for unattempted problems. Differs from pass@1 when there are multiple samples per problem.">pass@k</th>
           <th>Solved</th>
           <th title="Total attempts submitted (one Attempt = one code POST). Re-submissions for the same problem count.">Attempts</th>
-          <th title="Mean LeetCode-reported runtime">Avg runtime</th>
+          <th title="Mean LeetCode-reported runtime">Avg RT</th>
           <th title="Mean peak memory (MB) across runs. Peak (max resident), not per function call, correct on both oracles.">Peak mem</th>
-          <th title="Avg LeetCode runtime percentile">Runtime %ile</th>
-          <th title="Avg LeetCode memory percentile">Memory %ile</th>
-          {showRuntimeEnergy && <th title="Avg runtime energy (Joules): mean of per-problem mean execution energy across accepted attempts. Reported only when the harness that scored this submission measures execution energy (an in-house runner with RAPL / NVML). Lower is better.">Avg energy</th>}
-          {showRuntimeEnergy && <th title="Best runtime energy (Joules): mean of per-problem MIN execution energy across accepted attempts. Same source as Avg energy.">Best energy</th>}
+          {SHOW_RELATIVE_METRICS && <th title="Avg LeetCode runtime percentile (relative to the reference population)">RT %ile</th>}
+          {SHOW_RELATIVE_METRICS && <th title="Avg LeetCode memory percentile (relative to the reference population)">Mem %ile</th>}
+          {showRuntimeEnergy && <th title="Avg runtime energy (Joules): mean of per-problem mean execution energy across accepted attempts. Reported only when the harness that scored this submission measures execution energy (an in-house runner with RAPL / NVML). Lower is better.">Avg E</th>}
+          {showRuntimeEnergy && <th title="Best runtime energy (Joules): mean of per-problem MIN execution energy across accepted attempts. Same source as Avg energy.">Best E</th>}
           <th title="Total $ cost of all LLM calls in this submission. Live-recomputed from /models pricing × stored tokens when the model has rates configured; falls back to the snapshot stamped at submit otherwise. 0 for Ollama / local.">Cost</th>
-          <th title="Per-attempt median cost in USD. Apples-to-apples 'typical $ per problem solved', which doesn't scale with how many problems the submission covered.">Median $/att</th>
+          <th title="Per-attempt median cost in USD. Apples-to-apples 'typical $ per problem solved', which doesn't scale with how many problems the submission covered.">$/att</th>
           <th title="Total code-only response tokens across all attempts.">Tokens</th>
-          <th title="Per-attempt median response_tokens: typical 'how many tokens does one solution from this model cost?' regardless of submission size.">Median tok/att</th>
+          <th title="Per-attempt median response_tokens: typical 'how many tokens does one solution from this model cost?' regardless of submission size.">tok/att</th>
           <th title="Total generation wall-clock across all attempts (sum of each solution's generation time)">Gen time</th>
-          <th title="Per-attempt median generation time. Apples-to-apples 'how long does ONE solution take this model to generate' regardless of submission size.">Median gen/att</th>
-          {showEnergy && <th title="Total generation energy across all attempts (Joules). Reported by submit clients that have a power probe; LeetCode never reports it.">Gen energy</th>}
+          <th title="Per-attempt median generation time. Apples-to-apples 'how long does ONE solution take this model to generate' regardless of submission size.">gen/att</th>
+          {showEnergy && <th title="Total generation energy across all attempts (Joules). Reported by submit clients that have a power probe; LeetCode never reports it.">Gen E</th>}
           <th></th>
         </tr></thead>
         <tbody>
@@ -125,8 +126,12 @@ export default function SubmissionsTable({ rows }: { rows: SubmissionPublic[] })
                 )}
               </td>
               <td className="metric">{formatMemory(s.avg_memory_mb)}</td>
-              <td className="metric">{formatPercentile(s.avg_runtime_percentile)}</td>
-              <td className="metric">{formatPercentile(s.avg_memory_percentile)}</td>
+              {SHOW_RELATIVE_METRICS && (
+                <td className="metric">{formatPercentile(s.avg_runtime_percentile)}</td>
+              )}
+              {SHOW_RELATIVE_METRICS && (
+                <td className="metric">{formatPercentile(s.avg_memory_percentile)}</td>
+              )}
               {showRuntimeEnergy && (
                 <td className="metric">{formatEnergy(s.avg_runtime_energy_j)}</td>
               )}

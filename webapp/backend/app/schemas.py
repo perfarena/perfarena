@@ -967,6 +967,22 @@ class HarnessRef(BaseModel):
     name: str
 
 
+class MachinePublic(BaseModel):
+    """A measurement machine (the box a submission was measured on). Energy is
+    only comparable within one machine + tool, so the Machines tab surfaces the
+    hardware/OS/energy-tool provenance. `n_submissions` is the activity stat."""
+    id: int
+    name: str
+    hostname: str | None = None
+    cpu_model: str | None = None
+    cores: int | None = None
+    energy_source: str | None = None
+    os: str | None = None
+    notes: str | None = None
+    created_at: datetime
+    n_submissions: int = 0
+
+
 class HarnessPublic(BaseModel):
     id: int
     slug: str

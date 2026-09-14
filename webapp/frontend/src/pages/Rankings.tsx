@@ -10,6 +10,12 @@ import {
 import Th from "../components/Th";
 import PromptName from "../components/PromptName";
 import LanguageLink from "../components/LanguageLink";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
+
+// A submission must have attempted at least this fraction of the competition's
+// problems to appear on the leaderboard — a partial run (a handful of problems)
+// isn't comparable to a full sweep, so we hide it and disclaim the cutoff.
+const MIN_ATTEMPTED_FRACTION = 1 / 3;
 
 const LANGS = ["python3", "java", "cpp", "javascript", "typescript", "csharp", "c",
   "golang", "rust", "kotlin", "ruby", "swift", "scala", "php"];
@@ -34,7 +40,12 @@ export default function Rankings() {
   const [language, setLanguage] = useState<string>("");
   const [level, setLevel] = useState<string>("");
   const [k, setK] = useState<string>("");                    // "" = any
-  const [competitionSlug, setCompetitionSlug] = useState<string>(DEFAULT_COMPETITION);
+  const [competitionSlug, setCompetitionSlug] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_COMPETITION;
+    // Honour ?competition=… so the homepage's per-competition "see full
+    // leaderboard →" deep links land scoped to the right competition.
+    return new URLSearchParams(window.location.search).get("competition") ?? DEFAULT_COMPETITION;
+  });
   const [competitions, setCompetitions] = useState<CompetitionPublic[]>([]);
   // Harness filter. Empty = "any harness" (default) so users landing on the
   // page see the full board; picking one scopes to submissions scored by
@@ -108,6 +119,12 @@ export default function Rankings() {
     const memMax = numOr(ranges.memMax,  Infinity);
 
     return rows.filter(r => {
+      // Coverage gate: hide submissions that attempted fewer than 1/3 of the
+      // competition's problems — a partial run isn't comparable to a full sweep.
+      // total_problems is the competition size for this row; legacy rows with
+      // it unset (0/null) are kept (no denominator to gate on).
+      if (r.total_problems && r.n_attempts < Math.ceil(r.total_problems * MIN_ATTEMPTED_FRACTION))
+        return false;
       if (needle) {
         const hay = (
           r.model_name + " " + r.model_version + " " +
@@ -174,11 +191,15 @@ export default function Rankings() {
       <div className="hero">
         <h1>Leaderboard</h1>
         <p>
-          pass@1, runtime percentile, and memory percentile for every
-          model × language × difficulty, scoped to the competition you
-          pick below. The
+          pass@1, runtime, and memory for every model × language × difficulty,
+          scoped to the competition you pick below. The
           {" "}<Link to="/competitions">Competitions</Link> page lists
           every competition and lets you add new ones.
+        </p>
+        <p className="muted" style={{ fontSize: "0.85rem" }}>
+          Only submissions that attempted at least <b>one third</b> of the
+          selected competition's problems are shown — partial runs aren't
+          comparable to full sweeps.
         </p>
         {selectedCompetition && (
           <div className="card" style={{
@@ -216,16 +237,13 @@ export default function Rankings() {
           background: "rgba(220,180,80,0.08)",
           fontSize: "0.88rem",
         }}>
-          <b>Reading this table across languages?</b> The raw <code>Avg runtime</code>,{" "}
-          <code>Best runtime</code>, <code>Peak mem</code> and <code>Best peak mem</code> columns are
+          <b>Reading this table across languages?</b> The raw <code>Avg RT</code>,{" "}
+          <code>Best RT</code>, <code>Peak mem</code> and <code>Best mem</code> columns are
           measured in absolute ms / MB and don't compare across languages.
           Python's interpreter alone adds ~30-50 ms to every solution, and
           LeetCode gives each language a different time limit, so those
-          columns are muted here. For cross-language comparisons use the
-          percentile columns and the <code>t vs avg</code> / <code>t vs exp</code> / <code>m vs avg</code> /{" "}
-          <code>m vs exp</code> coefficients: each is normalised to a per-(problem,
-          language) baseline and compares directly. Pick a language filter
-          to un-mute the raw columns.
+          columns are muted here. Pick a language filter to un-mute them and
+          compare within one language.
         </div>
       )}
 
@@ -331,38 +349,38 @@ export default function Rankings() {
               <thead><tr>
                 <Th label="#" tip="Row position under the current sort. Click any sortable header to re-sort; click again to flip the direction." />
                 <Th label="Model" tip="Model name and version. Click the name to open the model's aggregate page." sortKey="model_name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Submitter" tip="Organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Subm." tip="Submitter: organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific: one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
-                <Th label="Competition" tip="Competition this submission targeted. pass@1, pass@k, and Solved use THIS competition's problem set as the denominator (not 'every Problem row in the DB'). A dash marks a legacy row created before the per-submission scope existed." />
+                <Th label="Comp" tip="Competition this submission targeted. pass@1, pass@k, and Solved use THIS competition's problem set as the denominator (not 'every Problem row in the DB'). A dash marks a legacy row created before the per-submission scope existed." />
                 <Th label="Harness" tip="Perf oracle that produced the runtime / memory / percentile numbers on this row. Resolved per submission (submission override → competition default). All legacy rows resolve to `leetcode` via the startup backfill; new harnesses (in-house runner, HumanEval unittest, …) appear once you plug them in on /harnesses." />
-                <Th label="Correctness" tip="Correctness oracle that produced the Accepted / Wrong Answer / Runtime Error / TLE verdict on this row. Decoupled from the perf oracle to the left, so a submission can be judged for correctness by one source and measured for performance by another. Every legacy row resolves to `leetcode`." />
+                <Th label="Correct" tip="Correctness oracle that produced the Accepted / Wrong Answer / Runtime Error / TLE verdict on this row. Decoupled from the perf oracle to the left, so a submission can be judged for correctness by one source and measured for performance by another. Every legacy row resolves to `leetcode`." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@1" tip="Unbiased pass@1 estimator over k samples: the average of c/n per problem. Equivalent to single-shot pass-rate when k=1, and statistically more reliable when k>1. Use this column to compare submissions across different k values." sortKey="pass_at_1" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@k" tip="Mean acceptance rate across the SUBMITTED attempts: total accepted samples / total submitted samples. Equivalently, the average of per-problem acceptance fractions when k is constant. Denominator is the count of attempts actually submitted, NOT total supported problems, so a partial submission isn't penalised for unattempted problems. Differs from pass@1 (which divides by total supported) and pass@full (best-of-k per problem)." sortKey="pass_at_k" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="pass@full" tip="Fraction of all supported problems with at least one accepted sample (best-of-k per problem). Always ≤ pass@1 ≤ pass@k for partial submissions with high accept rate. Useful as the maximum achievable rate at this sample budget." sortKey="pass_at_full" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Solved" tip="Number of problems with at least one accepted sample / total supported problems. Sorts by problems solved." sortKey="total_solved" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Attempts" tip="Total number of attempts submitted (one Attempt = one code + trace POST). Equals k × total problems for a complete submission." sortKey="n_attempts" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Avg runtime" tip="Each problem is submitted 5× to smooth LeetCode's noise. Per problem we take the MEAN of its accepted runs; this column is the mean of those per-problem means across all accepted problems." sortKey="avg_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Best runtime" tip="Per problem we take the FASTEST of its 5 runs; this column is the mean of those per-problem bests across all accepted problems." sortKey="best_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Avg RT" tip="Average runtime. Each problem is submitted 5× to smooth LeetCode's noise. Per problem we take the MEAN of its accepted runs; this column is the mean of those per-problem means across all accepted problems." sortKey="avg_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Best RT" tip="Best runtime. Per problem we take the FASTEST of its 5 runs; this column is the mean of those per-problem bests across all accepted problems." sortKey="best_runtime_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Peak mem" tip="Mean of per-problem mean PEAK memory (5 runs each) across all accepted problems. Memory is peak (max resident) on both oracles, never per function call." sortKey="avg_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Best peak mem" tip="Mean of per-problem minimum PEAK memory (5 runs each) across all accepted problems." sortKey="best_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Runtime %ile" tip="Mean of the per-problem LeetCode runtime percentile, averaged across accepted attempts. Higher = LC ranked the run as faster than more of the LC population AT THE TIME. The per-run percentile is noisy (~4 pp spread within a single attempt's 5 runs; see docs/leetcode-percentile-semantics.md); the ~500-sample mean shown here smooths most of that out." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Memory %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Same noise caveat as Runtime %ile, but memory %ile tends to be much less noisy than runtime %ile in practice." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                {showEnergy && <Th label="Avg energy" tip="Mean of per-problem mean runtime energy (Joules), across accepted problems. Reported only when the scoring harness measures execution energy (LeetCode never does). Lower is better." sortKey="avg_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
-                {showEnergy && <Th label="Best energy" tip="Mean of per-problem BEST (minimum) runtime energy across accepted problems. Same source as Avg energy but takes the lowest energy reading per problem." sortKey="best_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
-                {showEnergy && <Th label="Energy %ile" tip="Mean of the per-problem runtime-energy percentile reported by the harness, averaged across accepted attempts. Higher = the model used less energy than more of the harness's baseline population." sortKey="avg_runtime_energy_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                <Th label="Best mem" tip="Best (lowest) peak memory. Mean of per-problem minimum PEAK memory (5 runs each) across all accepted problems." sortKey="best_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                {SHOW_RELATIVE_METRICS && <Th label="RT %ile" tip="Mean of the per-problem LeetCode runtime percentile, averaged across accepted attempts. Higher = LC ranked the run as faster than more of the LC population AT THE TIME. The per-run percentile is noisy (~4 pp spread within a single attempt's 5 runs; see docs/leetcode-percentile-semantics.md); the ~500-sample mean shown here smooths most of that out." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {SHOW_RELATIVE_METRICS && <Th label="Mem %ile" tip="Mean of the per-problem LeetCode memory percentile, averaged across accepted attempts. Same noise caveat as Runtime %ile, but memory %ile tends to be much less noisy than runtime %ile in practice." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {showEnergy && <Th label="Avg E" tip="Average energy (Joules): mean of per-problem mean runtime energy across accepted problems. Reported only when the scoring harness measures execution energy (LeetCode never does). Lower is better." sortKey="avg_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {showEnergy && <Th label="Best E" tip="Best energy (Joules): mean of per-problem BEST (minimum) runtime energy across accepted problems. Same source as Avg energy but takes the lowest energy reading per problem." sortKey="best_runtime_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {showEnergy && SHOW_RELATIVE_METRICS && <Th label="E %ile" tip="Mean of the per-problem runtime-energy percentile reported by the harness, averaged across accepted attempts. Higher = the model used less energy than more of the harness's baseline population." sortKey="avg_runtime_energy_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
                 {showMachine && <Th label="Machine" tip="Machine + energy tool this row's runtime / energy numbers were measured on. Energy and time are only comparable within one (machine, energy tool) pair. A dash marks a LeetCode-scored row, run on LeetCode's own servers, so the machine is unknown." />}
-                <Th label="t vs avg" tip="Speedup against the AVERAGE LeetCode submission. Computed per accepted attempt as leetcode_avg_runtime_ms / model_runtime_ms, then averaged. 1.0× = parity; 2.0× = twice as fast as the LeetCode average. (The LeetCode population mixes human and AI-assisted submissions; LeetCode doesn't separate them.)" sortKey="time_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="t vs exp" tip="Speedup against the EXPERT cohort on LeetCode (~top decile of the population distribution). leetcode_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top LeetCode performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE LeetCode submission: leetcode_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the LeetCode average." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="m vs exp" tip="Memory ratio vs. the EXPERT LeetCode cohort. >1.0× = the model is leaner than top LeetCode performers." sortKey="mem_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Total tokens" tip="Sum of code-only response tokens across every attempt in this submission. Scales with attempt count (and therefore with problems covered); use 'Median tokens / att' to compare typical spend per problem instead." sortKey="total_response_tokens" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Median tokens / att" tip="Per-attempt median of response_tokens. Comparable across submissions regardless of how many problems each covers. It answers 'how many tokens does ONE solution from this model cost, typically?'" sortKey="median_response_tokens_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Total cost ($)" tip="Sum of LLM cost across every attempt in this submission. Live-recomputed from /models pricing × stored tokens when available; falls back to the snapshot cost stamped at submit time for legacy attempts. 0 for all-Ollama submissions." sortKey="total_cost_usd" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Median $ / att" tip="Per-attempt median cost in USD. Apples-to-apples 'typical cost per problem solved' regardless of submission size." sortKey="median_cost_usd_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Total gen time" tip="Sum of generation wall-clock across every attempt in this submission. Scales with attempt count; use 'Median gen time / att' to compare typical per-solution latency instead." sortKey="total_generation_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Median gen time / att" tip="Per-attempt median of wall_clock_ms. Typical 'how long does ONE solution take this model to generate?' regardless of how many problems the submission covered." sortKey="median_generation_ms_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                {SHOW_RELATIVE_METRICS && <Th label="t vs avg" tip="Speedup against the AVERAGE LeetCode submission. Computed per accepted attempt as leetcode_avg_runtime_ms / model_runtime_ms, then averaged. 1.0× = parity; 2.0× = twice as fast as the LeetCode average. (The LeetCode population mixes human and AI-assisted submissions; LeetCode doesn't separate them.)" sortKey="time_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {SHOW_RELATIVE_METRICS && <Th label="t vs exp" tip="Speedup against the EXPERT cohort on LeetCode (~top decile of the population distribution). leetcode_expert_runtime_ms / model_runtime_ms averaged across accepted attempts. ≥1.0× means the model is at least matching top LeetCode performers on time." sortKey="time_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {SHOW_RELATIVE_METRICS && <Th label="m vs avg" tip="Memory ratio vs. the AVERAGE LeetCode submission: leetcode_avg_memory_mb / model_memory_mb averaged across accepted attempts. >1.0× = the model uses less memory than the LeetCode average." sortKey="mem_human_avg" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                {SHOW_RELATIVE_METRICS && <Th label="m vs exp" tip="Memory ratio vs. the EXPERT LeetCode cohort. >1.0× = the model is leaner than top LeetCode performers." sortKey="mem_human_expert" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
+                <Th label="Tokens" tip="Total tokens: sum of code-only response tokens across every attempt in this submission. Scales with attempt count (and therefore with problems covered); use 'tok/att' to compare typical spend per problem instead." sortKey="total_response_tokens" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="tok/att" tip="Median tokens per attempt: per-attempt median of response_tokens. Comparable across submissions regardless of how many problems each covers. It answers 'how many tokens does ONE solution from this model cost, typically?'" sortKey="median_response_tokens_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Cost" tip="Total cost ($): sum of LLM cost across every attempt in this submission. Live-recomputed from /models pricing × stored tokens when available; falls back to the snapshot cost stamped at submit time for legacy attempts. 0 for all-Ollama submissions." sortKey="total_cost_usd" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="$/att" tip="Median cost per attempt in USD. Apples-to-apples 'typical cost per problem solved' regardless of submission size." sortKey="median_cost_usd_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Gen time" tip="Total generation wall-clock across every attempt in this submission. Scales with attempt count; use 'gen/att' to compare typical per-solution latency instead." sortKey="total_generation_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="gen/att" tip="Median generation time per attempt: per-attempt median of wall_clock_ms. Typical 'how long does ONE solution take this model to generate?' regardless of how many problems the submission covered." sortKey="median_generation_ms_per_attempt" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <th></th>
               </tr></thead>
               <tbody>
@@ -434,11 +452,11 @@ export default function Rankings() {
                     </td>
                     <td className="metric" style={rawCellStyle}>{formatMemory(r.avg_memory_mb)}</td>
                     <td className="metric" style={rawCellStyle}>{formatMemory(r.best_memory_mb)}</td>
-                    <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>
-                    <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>}
                     {showEnergy && <td className="metric">{formatEnergy(r.avg_runtime_energy_j)}</td>}
                     {showEnergy && <td className="metric">{formatEnergy(r.best_runtime_energy_j)}</td>}
-                    {showEnergy && <td className="metric">{formatPercentile(r.avg_runtime_energy_percentile)}</td>}
+                    {showEnergy && SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_runtime_energy_percentile)}</td>}
                     {showMachine && (
                       <td>
                         {r.machine_name || r.energy_tool ? (
@@ -457,10 +475,10 @@ export default function Rankings() {
                         ) : <span className="muted">—</span>}
                       </td>
                     )}
-                    <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>
-                    <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>
-                    <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>
-                    <td className={`metric ${coefficientClass(r.mem_human_expert)}`}>{formatCoefficient(r.mem_human_expert)}</td>
+                    {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.time_human_avg)}`}>{formatCoefficient(r.time_human_avg)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.time_human_expert)}`}>{formatCoefficient(r.time_human_expert)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.mem_human_avg)}`}>{formatCoefficient(r.mem_human_avg)}</td>}
+                    {SHOW_RELATIVE_METRICS && <td className={`metric ${coefficientClass(r.mem_human_expert)}`}>{formatCoefficient(r.mem_human_expert)}</td>}
                     <td className="metric">{formatTokenCount(r.total_response_tokens)}</td>
                     <td className="metric">{formatTokenCount(r.median_response_tokens_per_attempt)}</td>
                     <td className="metric">{formatDollar(r.total_cost_usd)}</td>

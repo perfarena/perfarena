@@ -4,6 +4,7 @@ import { api, ModelDetail, ModelDetailLanguageStat } from "../lib/api";
 import LanguageLink from "../components/LanguageLink";
 import SubmissionsTable from "../components/SubmissionsTable";
 import { formatMemory, formatPassAt1, formatPercentile, formatRuntime } from "../lib/format";
+import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 
 export default function ModelDetailPage() {
   const { name = "" } = useParams();
@@ -30,8 +31,8 @@ export default function ModelDetailPage() {
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label="submissions" value={m.n_submissions.toString()} />
         <Stat label="best pass@1" value={formatPassAt1(m.best_pass_at_1)} />
-        <Stat label="best avg runtime %ile" value={formatPercentile(m.best_avg_runtime_percentile)} />
-        <Stat label="best avg memory %ile" value={formatPercentile(m.best_avg_memory_percentile)} />
+        {SHOW_RELATIVE_METRICS && <Stat label="best avg runtime %ile" value={formatPercentile(m.best_avg_runtime_percentile)} />}
+        {SHOW_RELATIVE_METRICS && <Stat label="best avg memory %ile" value={formatPercentile(m.best_avg_memory_percentile)} />}
       </div>
 
       <ByLanguage rows={m.by_language} />
@@ -58,8 +59,8 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
             <th>Best pass@1</th>
             <th title="Lowest avg runtime across this model's submissions in the language">Best avg runtime</th>
             <th title="Lowest mean peak memory across this model's submissions in the language. Memory is peak (max resident) on both oracles, never per function call.">Best peak mem</th>
-            <th title="Highest avg runtime percentile reached">RT %ile</th>
-            <th title="Highest avg memory percentile reached">Mem %ile</th>
+            {SHOW_RELATIVE_METRICS && <th title="Highest avg runtime percentile reached">RT %ile</th>}
+            {SHOW_RELATIVE_METRICS && <th title="Highest avg memory percentile reached">Mem %ile</th>}
             <th>Fully accepted</th>
             <th title="Any of this model's submissions in the language is currently on the leaderboard">On leaderboard</th>
           </tr></thead>
@@ -71,8 +72,8 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
                 <td className="metric">{formatPassAt1(r.best_pass_at_1)}</td>
                 <td className="metric">{formatRuntime(r.best_avg_runtime_ms)}</td>
                 <td className="metric">{formatMemory(r.best_avg_memory_mb)}</td>
-                <td className="metric">{formatPercentile(r.best_avg_runtime_percentile)}</td>
-                <td className="metric">{formatPercentile(r.best_avg_memory_percentile)}</td>
+                {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.best_avg_runtime_percentile)}</td>}
+                {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.best_avg_memory_percentile)}</td>}
                 <td>{r.fully_accepted_any
                   ? <span className="badge badge-easy">yes</span>
                   : <span className="badge badge-medium">no</span>}</td>

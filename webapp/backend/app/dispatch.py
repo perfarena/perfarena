@@ -425,9 +425,30 @@ def _leetbot_validate(problem: "Problem", language: str, code: str,
     }
 
 
+def _submission_meta(sub: Submission, attempt: "Attempt | None" = None, **extra) -> dict:
+    """Base `meta` for arena-runner /measure and /validate calls. Carries the
+    per-run `compile_flags` so the runner applies them at compile time and
+    records them in provenance. Precedence: the ATTEMPT's model-chosen flags
+    (`attempt.trace.compile_flags`, from a flags-choosing prompt) override the
+    SUBMISSION-level operator flags (`model_params.compile_flags`). Omitted when
+    empty, so legacy submissions/attempts send exactly the meta they did before."""
+    m = dict(extra)
+    cf = ""
+    tr = getattr(attempt, "trace", None) if attempt is not None else None
+    if isinstance(tr, dict):
+        cf = str(tr.get("compile_flags") or "").strip()
+    if not cf:
+        mp = getattr(sub, "model_params", None)
+        cf = str(mp.get("compile_flags") or "").strip() if isinstance(mp, dict) else ""
+    if cf:
+        m["compile_flags"] = cf
+    return m
+
+
 def _correctness_gate(session: "Session", sub: Submission, code: str,
                       problem: "Problem",
-                      oracle: "CorrectnessOracle | None") -> dict | None:
+                      oracle: "CorrectnessOracle | None",
+                      attempt: "Attempt | None" = None) -> dict | None:
     """Oracle-independent correctness check. Returns a verdict dict
     (status_msg, raw_response, ...), or None when the oracle can't gate.
       * remote /validate oracle (arena-local) -> HTTP /validate
@@ -444,7 +465,7 @@ def _correctness_gate(session: "Session", sub: Submission, code: str,
         if _is_remote_validate_oracle(oracle):
             return _arena.validate_via_arena_local(
                 problem, sub.language, code, oracle,
-                meta={"submission_id": sub.id},
+                meta=_submission_meta(sub, attempt=attempt, submission_id=sub.id),
             )
         if oracle.kind == "leetcode":
             return _leetbot_validate(problem, sub.language, code, session)
@@ -1495,6 +1516,7 @@ def dispatch_submission(submission_id: int) -> None:
                     # harness afterwards).
                     vr = _correctness_gate(
                         session, sub, a.code, problem, effective_correctness,
+                        attempt=a,
                     )
                     if vr.get("system_failure"):
                         # Transport / auth / parse failure — treat like a
@@ -1685,7 +1707,8 @@ def dispatch_submission(submission_id: int) -> None:
                         problem, sub.language, a.code, n_repeats,
                         harness=effective_harness,
                         on_run_completed=_persist_run_remote,
-                        meta={"submission_id": sub.id, "attempt_id": a.id},
+                        meta=_submission_meta(sub, attempt=a,
+                                              submission_id=sub.id, attempt_id=a.id),
                     )
                 elif real:
                     # Per-account pacing: instead of a fixed cross-attempt

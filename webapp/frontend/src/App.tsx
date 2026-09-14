@@ -27,6 +27,7 @@ import Catalog from "./pages/Catalog";
 import Competitions from "./pages/Competitions";
 import CompetitionDetail from "./pages/CompetitionDetail";
 import HarnessesHub from "./pages/HarnessesHub";
+import Machines from "./pages/Machines";
 import HarnessDetail from "./pages/HarnessDetail";
 import CorrectnessOracleDetail from "./pages/CorrectnessOracleDetail";
 import Prompts from "./pages/Prompts";
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="prompts/:id" element={<Prompts />} />
         <Route path="competitions" element={<Competitions />} />
         <Route path="competitions/:slug" element={<CompetitionDetail />} />
+        <Route path="machines" element={<Machines />} />
         <Route path="harnesses" element={<HarnessesHub />} />
         <Route path="harnesses/:slug" element={<HarnessDetail />} />
         {/* Standalone correctness-oracles list is now a hub tab; keep the
