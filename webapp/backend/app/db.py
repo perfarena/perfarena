@@ -204,6 +204,16 @@ _ADDITIVE_COLUMNS = [
     ("competition", "correctness_oracle_id", "INTEGER"),
     ("submission", "correctness_oracle_id", "INTEGER"),
     ("run", "correctness_oracle_id", "INTEGER"),
+    # Measurement provenance FKs — the physical machine a submission ran on,
+    # the energy tool used, and the (tool, config) profile a run was measured
+    # under. The `machine` + `measurementprofile` TABLES are created wholesale
+    # by create_all on upgrade, but these COLUMNS on the pre-existing
+    # submission / run tables need an additive migration so a legacy DB (one
+    # created before this feature) doesn't 500 on the new code. All nullable —
+    # rows measured before provenance existed simply stay NULL.
+    ("submission", "machine_id", "INTEGER"),
+    ("submission", "energy_tool", "VARCHAR"),
+    ("run", "measurement_profile_id", "INTEGER"),
 ]
 
 

@@ -171,6 +171,14 @@ export const api = {
   // the UI uses these endpoints to render the /harnesses index + detail
   // pages plus the harness filter on the leaderboard.
   machines: () => request<MachinePublic[]>(`/api/machines`),
+  updateMachine: (id: number, body: {
+    name: string; hostname?: string | null; cpu_model?: string | null;
+    cores?: number | null; energy_source?: string | null;
+    os?: string | null; notes?: string | null;
+  }) =>
+    request<MachinePublic>(`/api/admin/machines/${id}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }),
   harnesses: (includeRetired = false) =>
     request<HarnessPublic[]>(
       `/api/harnesses${includeRetired ? "?include_retired=true" : ""}`),

@@ -983,6 +983,20 @@ class MachinePublic(BaseModel):
     n_submissions: int = 0
 
 
+class MachineIn(BaseModel):
+    """Admin-editable machine metadata. `id`, `created_at`, and `n_submissions`
+    are derived and not settable. Machines are auto-registered when a runner
+    reports its descriptor; this lets an admin enrich the row (real CPU model,
+    core count, energy tool, notes)."""
+    name: str = Field(min_length=1)
+    hostname: str | None = None
+    cpu_model: str | None = None
+    cores: int | None = None
+    energy_source: str | None = None
+    os: str | None = None
+    notes: str | None = None
+
+
 class HarnessPublic(BaseModel):
     id: int
     slug: str

@@ -165,34 +165,25 @@ export default function Home() {
       </section>
 
       <section>
-        <h2>How it works</h2>
+        <h2>Open, transparent, extensible</h2>
         <div className="row" style={{ gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
-          <Step n={1} title="Pick a competition">
-            Each <Link to="/competitions">competition</Link> sets its own
-            problem set and its own oracles. The seed LC-99 set runs on
-            LeetCode; new competitions can bring other suites and other
-            judges. A problem shared across competitions pools its
-            submissions.
-          </Step>
-          <Step n={2} title="Register a model">
-            Builders give us an endpoint to reach their model, plus its
-            specs. The model joins the <Link to="/models">model list</Link>,
-            and every run uses a published <Link to="/prompts">prompt</Link>{" "}
-            as written, so the setup stays reproducible.
-          </Step>
-          <Step n={3} title="We run and judge it">
-            We drive the whole pipeline. Each solution goes to the
-            competition's oracles: the correctness oracle returns pass or
-            fail, the performance oracle reports runtime, memory, and energy.
-            For LC-99, LeetCode runs each attempt five times to smooth timing
-            noise. Accepted solutions count toward pass@1 and pass@k.
-          </Step>
-          <Step n={4} title="Auditable rankings">
-            Each leaderboard updates as soon as a batch lands. Every attempt
-            keeps its full trace (prompt, response, reasoning, signature,
-            model digest) in an append-only hash chain, so no result can be
-            changed after the fact.
-          </Step>
+          <Point title="Open source and replicable">
+            The whole competition is open source. You can take the code, run
+            the same benchmark yourself, and get the same results. Nothing is
+            hidden behind our servers.
+          </Point>
+          <Point title="Transparent end to end">
+            We host the platform and run every step ourselves, from generating
+            the code to executing and measuring it. Every result keeps its full
+            record, so anyone can check how it was produced.
+          </Point>
+          <Point title="Built to extend">
+            New <Link to="/competitions">competitions</Link>,{" "}
+            <Link to="/models">models</Link>,{" "}
+            <Link to="/prompts">prompt templates</Link>, and AI agent workflows
+            can be added. The platform is not tied to one problem set or one way
+            of writing code.
+          </Point>
         </div>
       </section>
 
@@ -274,11 +265,10 @@ function Mini({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+function Point({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="card" style={{ flex: "1 1 240px", minWidth: 240 }}>
-      <div className="muted" style={{ fontSize: "0.75rem", letterSpacing: 0.5 }}>STEP {n}</div>
-      <h3 style={{ margin: "4px 0 8px" }}>{title}</h3>
+      <h3 style={{ margin: "0 0 8px" }}>{title}</h3>
       <p style={{ margin: 0, color: "var(--fg-dim)", lineHeight: 1.5 }}>{children}</p>
     </div>
   );

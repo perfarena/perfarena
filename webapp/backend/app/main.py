@@ -66,7 +66,7 @@ from .schemas import (
     ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
-    HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachinePublic,
+    HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachineIn, MachinePublic,
     CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
     CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
@@ -2544,6 +2544,32 @@ def list_machines(session: Session = Depends(get_session)):
         )
         for m in machines
     ]
+
+
+@app.put("/api/admin/machines/{mid}", response_model=MachinePublic)
+def edit_machine(
+    mid: int, payload: MachineIn,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Admin: edit a machine's provenance metadata. Rows are auto-created by the
+    runner with only a hostname; this lets an admin fill in the real CPU model,
+    core count, energy tool, OS, and notes. Derived fields (id, created_at,
+    n_submissions) aren't settable."""
+    m = session.get(Machine, mid)
+    if m is None:
+        raise HTTPException(404, "machine not found")
+    for k, v in payload.model_dump().items():
+        setattr(m, k, v)
+    session.add(m); session.commit(); session.refresh(m)
+    n_subs = len(session.exec(
+        select(Submission.id).where(Submission.machine_id == m.id)
+    ).all())
+    return MachinePublic(
+        id=m.id, name=m.name, hostname=m.hostname, cpu_model=m.cpu_model,
+        cores=m.cores, energy_source=m.energy_source, os=m.os, notes=m.notes,
+        created_at=m.created_at, n_submissions=n_subs,
+    )
 
 
 # Config keys that carry secrets (runner auth tokens, credentials). Their VALUES
