@@ -5,12 +5,27 @@ import os
 from pathlib import Path
 
 from sqlalchemy import event, text
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, Session, create_engine
 
 DB_PATH = Path(os.environ.get("ARENA_DB", Path(__file__).parent.parent / "arena.db"))
 DB_URL = f"sqlite:///{DB_PATH}"
 
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+# NullPool (no fixed connection ceiling) instead of SQLAlchemy's default
+# QueuePool (5 + 10 overflow = 15). `dispatch_submission` holds one Session
+# open across the whole multi-second LeetCode submission loop; with dispatch
+# enabled a sweep runs many of these at once, and a 15-connection cap made
+# every other request (UI reads, new POSTs) block for `pool_timeout` and then
+# raise QueuePool "connection timed out". SQLite file connections are cheap to
+# open and WAL + busy_timeout (below) already serialize writers, so opening a
+# fresh connection per checkout is safe here. This bounds concurrency by real
+# demand rather than by a fixed pool. Dispatch concurrency itself should still
+# be capped upstream so a burst cannot open an unbounded number of connections.
+engine = create_engine(
+    DB_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=NullPool,
+)
 
 
 # Concurrency hardening for the dispatch worker + HTTP handler combo.
