@@ -221,18 +221,42 @@ def _cache_dir(output_path: Path) -> Path:
     return output_path.parent / "sweep_cache"
 
 
+def _extra_gen_knobs(args) -> dict:
+    """Generation-API params beyond the always-present temperature, declared
+    here ONCE. Each is included only when it deviates from the model/provider
+    default, so a normal run stays byte-identical to legacy runs. Whatever this
+    returns flows to two places automatically:
+
+      * the code-cache salt (`_cache_salt`) — a different value gets its own
+        cache file, so it never reuses a mismatched generation;
+      * the submission `model_params` — the run becomes a distinct, traceable
+        submission.
+
+    To add a new knob (top_p, top_k, seed, …) wire it to both places at once by
+    adding a single entry here."""
+    knobs: dict = {}
+    if getattr(args, "no_think", False):
+        knobs["think"] = False
+    return knobs
+
+
 def _cache_salt(args) -> str:
     """Generation-affecting knobs that are NOT part of tuple_key
     (model|prompt_name|language|slug) but DO change the produced code. Folded
     into the cache FILENAME hash so a run with different knobs never reuses a
     mismatched generation. Kept out of the human-readable tuple_key so the
     progress log stays legible."""
-    return "|".join([
+    parts = [
         f"target={getattr(args, 'target', None) or ''}",
         f"hints={int(bool(getattr(args, 'hints', False)))}",
         f"temp={getattr(args, 'temperature', None)}",
         f"rounds={getattr(args, 'rounds', None)}",
-    ])
+    ]
+    # Extra generation knobs (think, and any future top_p / seed / …). Appended
+    # only when non-default, so a normal run's filename matches legacy runs.
+    for k, v in _extra_gen_knobs(args).items():
+        parts.append(f"{k}={v}")
+    return "|".join(parts)
 
 
 def _cache_key_filename(tuple_key: str, salt: str = "") -> str:
@@ -1232,6 +1256,12 @@ def main() -> None:
                          "distinguishes cells). Defaults to the provider "
                          "name (ollama / openai / …) when omitted.")
     ap.add_argument("--temperature", type=float, default=1)
+    ap.add_argument("--no-think", action="store_true",
+                    help="Disable model reasoning by sending Ollama's "
+                         "`\"think\": false` in the /api/chat body. Use it for "
+                         "models that reason by default when you want that off. "
+                         "Ollama provider only; ignored for --provider openai. "
+                         "Default keeps thinking enabled.")
 
     # Matrix subsetting
     ap.add_argument("--prompts",   default=None, metavar="NAME[,NAME]",
@@ -2028,11 +2058,20 @@ def main() -> None:
                             "prompt_id": prompt["id"],
                             "model_params": {
                                 "temperature": args.temperature,
+                                # Extra generation knobs (think, and any future
+                                # top_p / seed / …) — declared once in
+                                # _extra_gen_knobs. Present only when non-default;
+                                # each also salts the code cache, so a distinct
+                                # value is a distinct submission AND a distinct
+                                # cache file.
+                                **_extra_gen_knobs(args),
                                 # Submission-level compile flags (operator
                                 # --compile-flags for this language). Per-attempt
                                 # model-chosen flags on attempt.trace override
-                                # this in dispatch. Omitted when empty so legacy
-                                # submissions are byte-identical.
+                                # this in dispatch. NOT a generation knob (it
+                                # doesn't change the generated code, so it stays
+                                # out of the cache salt). Omitted when empty so
+                                # legacy submissions are byte-identical.
                                 **({"compile_flags": sanitize_compile_flags(
                                         _resolve_compile_flags(args.compile_flags, language))}
                                    if _resolve_compile_flags(args.compile_flags, language) else {}),

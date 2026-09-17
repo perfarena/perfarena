@@ -1461,6 +1461,7 @@ export interface LanguageTopSubmission {
   pass_at_k: number | null;
   avg_runtime_ms: number | null;
   avg_memory_mb: number | null;
+  avg_runtime_energy_j: number | null;
   avg_runtime_percentile: number | null;
   avg_memory_percentile: number | null;
 }

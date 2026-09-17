@@ -1318,8 +1318,9 @@ class OllamaProvider(Provider):
 
     name = "ollama"
 
-    def __init__(self, ollama_url: str) -> None:
+    def __init__(self, ollama_url: str, think: bool = True) -> None:
         self.ollama_url = ollama_url
+        self.think = think
 
     def generate(self, model: str, statement: str, slug: str,
                  params: dict, language: str,
@@ -1327,7 +1328,7 @@ class OllamaProvider(Provider):
                  extras: dict[str, str] | None = None) -> tuple[str, dict]:
         return _ollama_generate_impl(
             self.ollama_url, model, statement, slug, params, language,
-            registry_prompt=registry_prompt, extras=extras,
+            registry_prompt=registry_prompt, extras=extras, think=self.think,
         )
 
     def model_digest(self, model: str) -> str | None:
@@ -1357,7 +1358,8 @@ def make_provider(args) -> Provider:
             f"unknown --provider {name!r}; supported: {', '.join(sorted(PROVIDERS))}"
         )
     if name == "ollama":
-        return cls(ollama_url=getattr(args, "ollama_url"))
+        return cls(ollama_url=getattr(args, "ollama_url"),
+                   think=not getattr(args, "no_think", False))
     if name == "openai":
         key = (getattr(args, "openai_api_key", None)
                or os.environ.get("OPENAI_API_KEY"))
@@ -1394,7 +1396,8 @@ def call_ollama(ollama_url: str, model: str, statement: str, slug: str,
 def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str,
                           params: dict, language: str,
                           registry_prompt: dict | None = None,
-                          extras: dict[str, str] | None = None) -> tuple[str, dict]:
+                          extras: dict[str, str] | None = None,
+                          think: bool = True) -> tuple[str, dict]:
     """Call Ollama's native /api/chat (think=on). Return (code, trace).
     `language` selects the prompt wording and the preferred code-fence tag.
     If `registry_prompt` is given, its system_prompt + user_prompt_template
@@ -1433,7 +1436,7 @@ def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str
             {"role": "system", "content": sys_p},
             {"role": "user", "content": user_prompt},
         ],
-        "think": True,           # ask reasoning models to expose the thinking channel
+        "think": think,          # True exposes the reasoning channel; False (--no-think) disables it
         "stream": False,
         "options": params,
     }

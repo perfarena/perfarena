@@ -668,7 +668,7 @@ def _seed_bootstrap_admin() -> None:
         ARENA_BOOTSTRAP_ADMIN_PASSWORD  default = unset (API-key only login)
 
     * SAFETY NET (nothing set + no admin exists yet): auto-provision a
-      default admin (`admin@perfarena.local`) with a freshly-generated
+      default admin (`admin@perfarena.dev`) with a freshly-generated
       API key. Without this, a fresh container ships with zero admin
       accounts and the operator has no way to hit /api/admin/* endpoints
       — a footgun disguised as security. The generated key is printed to
@@ -719,7 +719,7 @@ def _seed_bootstrap_admin() -> None:
             return
         if s.exec(select(User).where(User.role == UserRole.admin)).first():
             return
-        default_email = "admin@perfarena.local"
+        default_email = "admin@perfarena.dev"
         api_key = generate_api_key()
         u = User(
             email=default_email,
@@ -4566,9 +4566,10 @@ def get_captcha():
 def list_languages(session: Session = Depends(get_session)):
     """One row per language the platform knows about. Enriched with the
     SPA's at-a-glance card metadata: paradigms list, TIOBE rank, distinct
-    model count, and the top 3 submissions ranked by pass@k (then by
-    avg_runtime_ms as tiebreaker). The /languages page renders each row
-    as a card so the operator can scan languages without drilling in."""
+    model count, and one row per model (its best submission by pass@k, then
+    avg_runtime_ms). The /languages page re-ranks these client-side by the
+    chosen metric (runtime by default, or memory / energy / pass@k), so every
+    metric including execution energy rides along on each row."""
     all_subs = session.exec(
         select(Submission).where(Submission.deleted_at.is_(None))
     ).all()
@@ -4593,15 +4594,26 @@ def list_languages(session: Session = Depends(get_session)):
         # faster solution wins among models with the same pass-rate.
         # `pass_at_k or 0` and `avg_runtime_ms or inf` keep rows with
         # null metrics at the bottom rather than crashing the sort.
-        ranked = sorted(
-            (s for s in subs if s.status == SubmissionStatus.judged),
-            key=lambda s: (
+        # One row per distinct model (its best submission by pass@k, then
+        # runtime). The /languages page re-ranks these client-side by the
+        # chosen metric — runtime by default, or memory / energy / pass@k —
+        # so we return every model with all metrics (energy included) rather
+        # than a pass@k-only top-3.
+        def _rank_key(s):
+            return (
                 -(s.pass_at_k if s.pass_at_k is not None else -1.0),
                 s.avg_runtime_ms if s.avg_runtime_ms is not None else float("inf"),
-            ),
-        )
+            )
+        best_by_model: dict[tuple, Submission] = {}
+        for s in subs:
+            if s.status != SubmissionStatus.judged:
+                continue
+            k = (s.model_name, s.model_version)
+            cur = best_by_model.get(k)
+            if cur is None or _rank_key(s) < _rank_key(cur):
+                best_by_model[k] = s
         top_subs = []
-        for s in ranked[:3]:
+        for s in sorted(best_by_model.values(), key=_rank_key):
             u = session.get(User, s.user_id)
             top_subs.append({
                 "submission_id": s.id,
@@ -4612,6 +4624,7 @@ def list_languages(session: Session = Depends(get_session)):
                 "pass_at_k": s.pass_at_k,
                 "avg_runtime_ms": s.avg_runtime_ms,
                 "avg_memory_mb": s.avg_memory_mb,
+                "avg_runtime_energy_j": s.avg_runtime_energy_j,
                 "avg_runtime_percentile": s.avg_runtime_percentile,
                 "avg_memory_percentile": s.avg_memory_percentile,
             })

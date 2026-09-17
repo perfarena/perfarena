@@ -11,6 +11,10 @@ import CompareByLevel from "../components/CompareByLevel";
 import CompareByTag from "../components/CompareByTag";
 import { CompareByLevelRow, CompareByTagRow } from "../lib/api";
 
+// Temporarily hides the "vs. LeetCode baselines" section on the submission
+// page. Set to false to restore it.
+const HIDE_LEETCODE_BASELINES = true;
+
 function BaselineSourceChip({
   summary, isAdmin, onRefreshed,
 }: {
@@ -300,7 +304,9 @@ export default function SubmissionDetailPage() {
         across accepted problems.
       </p>
 
-      {SHOW_RELATIVE_METRICS && (
+      {/* "vs. LeetCode baselines" section hidden for now, per request.
+          Flip HIDE_LEETCODE_BASELINES to false to restore it. */}
+      {!HIDE_LEETCODE_BASELINES && SHOW_RELATIVE_METRICS && (
         <>
           <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
           <p className="muted" style={{ marginTop: 4 }}>

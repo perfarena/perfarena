@@ -1,7 +1,47 @@
+import { useState } from "react";
 import { AttemptProvenance, AttemptTrace, RunErrorLog } from "../lib/api";
 
 /** Shared inline panels for per-row audit info on SubmissionDetail and
  *  AttemptResults — keeps the two pages visually consistent. */
+
+/** Copy-to-clipboard button, one transient "Copied" state per box. Matches
+ *  the copy pattern used on ProblemDetail / ApiKey. */
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — fail silent */
+    }
+  }
+  return (
+    <button
+      type="button"
+      className="secondary"
+      onClick={copy}
+      style={{ padding: "2px 8px", fontSize: "0.72rem", lineHeight: 1.4, flex: "none" }}
+    >
+      {copied ? "Copied ✓" : "Copy"}
+    </button>
+  );
+}
+
+/** A labelled log/provenance text box with a copy button in its header. */
+function LogBox({ label, value }: { label: string; value?: string | null }) {
+  const text = value ?? "";
+  return (
+    <div className="col" style={{ gap: 4 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+        <CopyButton text={text} />
+      </div>
+      <pre className="code" style={{ margin: 0, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap" }}>{text}</pre>
+    </div>
+  );
+}
 
 export function hasErrorLog(log: RunErrorLog | null | undefined): boolean {
   return !!log && Object.values(log).some(v => v != null && v !== "");
@@ -35,10 +75,7 @@ export function ErrorPanel({ log }: { log: RunErrorLog }) {
   return (
     <div className="col" style={{ gap: 10, padding: 10 }}>
       {fields.map(([label, value]) => (
-        <div key={label} className="col" style={{ gap: 4 }}>
-          <div className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-          <pre className="code" style={{ margin: 0, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap" }}>{value}</pre>
-        </div>
+        <LogBox key={label} label={label} value={value} />
       ))}
     </div>
   );
@@ -72,10 +109,7 @@ export function ProvenancePanel({ t }: {
         </div>
       )}
       {fields.map(([label, value]) => (
-        <div key={label} className="col" style={{ gap: 4 }}>
-          <div className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-          <pre className="code" style={{ margin: 0, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap" }}>{value}</pre>
-        </div>
+        <LogBox key={label} label={label} value={value} />
       ))}
       {fields.length === 0 && <div className="muted">No structured trace recorded for this attempt.</div>}
     </div>

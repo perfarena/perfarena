@@ -340,3 +340,46 @@ button.theme-toggle:hover { background: var(--panel-2); color: var(--accent); }
   width: 100%; height: 100%; object-fit: cover; display: block;
 }
 .blog-body { font-size: 1rem; }
+
+/* Languages page — per-language ranking cards, styled after the efficiency
+   dashboard but on the PerfArena token palette. */
+.lang-grid { display: flex; flex-direction: column; gap: 16px; }
+.lang-card { gap: 12px; transition: border-color 120ms ease; }
+.lang-card:hover { border-color: var(--accent); }
+.lang-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.lang-head h3 { margin: 0; font-size: 1.15rem; letter-spacing: -0.01em; }
+.lang-meta { font-size: 0.78rem; color: var(--fg-dim); }
+.lang-meta b { color: var(--accent); font-weight: 640; }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--panel); }
+.seg button { border: none; border-right: 1px solid var(--border); border-radius: 0; background: transparent;
+  color: var(--fg-dim); font-weight: 600; font-size: 0.8rem; padding: 7px 15px; }
+.seg button:last-child { border-right: none; }
+.seg button:hover:not(.on) { color: var(--fg); background: var(--panel-2); }
+.seg button.on { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+
+.rank-wrap { overflow-x: auto; }
+table.rank-tbl { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+table.rank-tbl th { text-align: right; padding: 4px 8px 8px; color: var(--fg-dim); font-size: 0.66rem;
+  text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.rank-tbl th.l, table.rank-tbl td.l { text-align: left; }
+table.rank-tbl td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+table.rank-tbl tr:last-child td { border-bottom: none; }
+.rank-tbl .rk { color: var(--fg-dim); text-align: right; width: 1.6em; font-variant-numeric: tabular-nums; }
+.rank-tbl .mdl { font-weight: 560; }
+.rank-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rank-tbl .chart { width: 40%; min-width: 180px; }
+
+.cbar { display: flex; align-items: center; gap: 8px; }
+.cbar .track { flex: 1; height: 8px; border-radius: 6px; background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; min-width: 64px; }
+.cbar .fill { height: 100%; border-radius: 6px; background: var(--accent); }
+.cbar .val { font-size: 0.78rem; color: var(--fg); min-width: 5.4em; text-align: right; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .cbar .fill { transition: width 0.4s cubic-bezier(.2,.7,.2,1); } }
+
+.pass-pill { display: inline-block; min-width: 2.6em; text-align: center; padding: 1px 6px; border-radius: 999px;
+  font-size: 0.76rem; font-weight: 600; }
+.pass-hi { background: var(--easy-soft); color: var(--easy); }
+.pass-mid { background: var(--medium-soft); color: var(--medium); }
+.pass-lo { background: var(--hard-soft); color: var(--hard); }
+.win-mark { color: var(--accent); font-size: 0.9em; }
