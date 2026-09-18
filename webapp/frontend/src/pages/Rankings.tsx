@@ -315,20 +315,24 @@ export default function Rankings() {
               onMax={v => setRanges(r => ({ ...r, passMax: v }))}
               hintMin="0" hintMax="100"
             />
-            <RangeInput
-              label="avg runtime %ile"
-              minVal={ranges.rtMin} maxVal={ranges.rtMax}
-              onMin={v => setRanges(r => ({ ...r, rtMin: v }))}
-              onMax={v => setRanges(r => ({ ...r, rtMax: v }))}
-              hintMin="0" hintMax="100"
-            />
-            <RangeInput
-              label="avg memory %ile"
-              minVal={ranges.memMin} maxVal={ranges.memMax}
-              onMin={v => setRanges(r => ({ ...r, memMin: v }))}
-              onMax={v => setRanges(r => ({ ...r, memMax: v }))}
-              hintMin="0" hintMax="100"
-            />
+            {SHOW_RELATIVE_METRICS && (
+              <>
+                <RangeInput
+                  label="avg runtime %ile"
+                  minVal={ranges.rtMin} maxVal={ranges.rtMax}
+                  onMin={v => setRanges(r => ({ ...r, rtMin: v }))}
+                  onMax={v => setRanges(r => ({ ...r, rtMax: v }))}
+                  hintMin="0" hintMax="100"
+                />
+                <RangeInput
+                  label="avg memory %ile"
+                  minVal={ranges.memMin} maxVal={ranges.memMax}
+                  onMin={v => setRanges(r => ({ ...r, memMin: v }))}
+                  onMax={v => setRanges(r => ({ ...r, memMax: v }))}
+                  hintMin="0" hintMax="100"
+                />
+              </>
+            )}
             <button className="secondary" onClick={() => setRanges(DEFAULT_RANGES)} disabled={!anyAdvanced}>
               Reset
             </button>

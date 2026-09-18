@@ -86,6 +86,19 @@ header.top nav button {
 header.top nav a.active,
 header.top nav button.active { color: var(--fg); }
 
+/* Hamburger toggle + mobile menu. Both are hidden on desktop and only take
+ * over below the mobile breakpoint (see the @media block near the end). */
+.nav-toggle {
+  display: none;
+  width: 38px; height: 38px; padding: 0;
+  align-items: center; justify-content: center;
+  background: transparent; color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 1.15rem; line-height: 1;
+}
+.nav-toggle:hover { background: var(--panel-2); color: var(--accent); }
+.mobile-nav { display: none; }
+
 main {
   flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto;
 }
@@ -123,6 +136,45 @@ h2 { font-size: 1.25rem; color: var(--fg); }
 }
 @media (max-width: 900px) {
   .tbl-scroll { width: 100%; left: 0; transform: none; }
+}
+
+/* --- Mobile navigation + spacing --- */
+@media (max-width: 760px) {
+  /* Let the expanded menu wrap onto a full-width second row inside the
+     sticky header, so it needs no fixed-offset math to sit below the bar. */
+  header.top { flex-wrap: wrap; padding: 10px 14px; row-gap: 4px; }
+  header.top nav.nav-desktop { display: none; }
+  header.top .auth-desktop { display: none; }
+  .nav-toggle { display: inline-flex; }
+
+  main { padding: 16px 14px; }
+  footer { padding: 14px 16px; }
+  h1 { font-size: 1.35rem; }
+  h2 { font-size: 1.12rem; }
+
+  .mobile-nav {
+    display: flex; flex-direction: column;
+    flex-basis: 100%; width: 100%;
+    margin-top: 8px; padding-top: 8px; gap: 2px;
+    border-top: 1px solid var(--border);
+    max-height: 72vh; overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .mobile-nav a,
+  .mobile-nav button.m-item {
+    display: block; width: 100%; text-align: left;
+    padding: 12px 8px; border-radius: 8px;
+    color: var(--fg); background: transparent; border: none;
+    font: inherit; font-size: 1rem; cursor: pointer;
+  }
+  .mobile-nav a.active { color: var(--accent); background: var(--accent-soft); }
+  .mobile-nav a:hover,
+  .mobile-nav button.m-item:hover { background: var(--panel-2); text-decoration: none; }
+  .mobile-nav .group-label {
+    padding: 14px 8px 4px; color: var(--fg-dim);
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .mobile-nav hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; width: 100%; }
 }
 table.tbl {
   width: 100%; border-collapse: collapse;
@@ -383,3 +435,48 @@ table.rank-tbl tr:last-child td { border-bottom: none; }
 .pass-mid { background: var(--medium-soft); color: var(--medium); }
 .pass-lo { background: var(--hard-soft); color: var(--hard); }
 .win-mark { color: var(--accent); font-size: 0.9em; }
+
+/* ---- Mobile polish: touch targets, spacing, PWA safe areas ---- */
+@media (max-width: 760px) {
+  /* Respect the notch / home indicator when installed as a PWA. */
+  header.top {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  main {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  footer { padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+
+  .card { padding: 14px; }
+  .hero { padding: 16px 0 10px; }
+  .hero h1 { font-size: 1.45rem; }
+  .hero p { font-size: 0.95rem; }
+
+  /* Key/value grids stack: label sits above its value, no fixed 180px column. */
+  .kv { grid-template-columns: 1fr; gap: 2px 0; }
+  .kv .k { margin-top: 10px; }
+  .kv .k:first-child { margin-top: 0; }
+
+  /* Segmented toggles span the row as equal, tappable segments. */
+  .seg { display: flex; width: 100%; }
+  .seg button { flex: 1; padding: 10px 8px; font-size: 0.82rem; }
+
+  /* Tighter cells fit more columns before the table has to scroll. */
+  table.tbl th, table.tbl td { padding: 7px 8px; }
+
+  /* Tooltips never exceed the viewport width. */
+  .th-tip::after { max-width: min(320px, 88vw); }
+
+  /* 16px form controls stop iOS Safari from zooming in on focus. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Comfortable tap targets for inline actions (icon buttons keep their size). */
+  button { min-height: 40px; }
+  button.theme-toggle, .nav-toggle { min-height: 0; }
+
+  /* Language cards: title first, then stats wrapping left-aligned below it. */
+  .lang-head { flex-direction: column; gap: 8px; }
+  .lang-head > .row { justify-content: flex-start; gap: 16px; }
+}

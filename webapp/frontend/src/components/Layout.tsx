@@ -3,9 +3,36 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getApiKey, MePayload, setApiKey, subscribeAuth } from "../lib/api";
 import ThemeToggle from "./ThemeToggle";
 
+/* Link lists shared between the desktop dropdowns and the mobile menu, so the
+ * two navigations never drift apart. */
+const CATALOG_LINKS = [
+  { to: "/competitions", label: "Competitions" },
+  { to: "/harnesses",    label: "Harnesses" },
+  { to: "/machines",     label: "Machines" },
+  { to: "/problems",     label: "Problems" },
+  { to: "/models",       label: "Models" },
+  { to: "/languages",    label: "Languages" },
+  { to: "/prompts",      label: "Prompts" },
+  { to: "/submissions",  label: "Submissions" },
+  { to: "/snapshots",    label: "Snapshots" },
+];
+const ACCOUNT_LINKS = [
+  { to: "/me",             label: "My runs" },
+  { to: "/me/by-language", label: "By language" },
+  { to: "/me/api-key",     label: "API key" },
+  { to: "/cost-estimator", label: "Cost estimator" },
+];
+const ADMIN_LINKS = [
+  { to: "/admin",                   label: "Admin" },
+  { to: "/admin/leetcode-accounts", label: "LeetCode accounts" },
+  { to: "/admin/export",            label: "Export & Import" },
+];
+
 export default function Layout() {
   const [me, setMe] = useState<MePayload | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const nav = useNavigate();
+  const loc = useLocation();
 
   // Re-fetches `me` whenever the API key changes — including after Login.tsx
   // calls setApiKey() — so the nav swaps to the signed-in version immediately,
@@ -20,8 +47,19 @@ export default function Layout() {
     return subscribeAuth(refreshMe);
   }, [refreshMe]);
 
+  // Close the mobile menu whenever the route changes (a link was tapped) or
+  // Escape is pressed, so it never lingers over the new page.
+  useEffect(() => { setMobileOpen(false); }, [loc.pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setMobileOpen(false); }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   function logout() {
     setApiKey(null);              // emits the auth-changed event → refreshMe → setMe(null)
+    setMobileOpen(false);
     nav("/");
   }
 
@@ -36,15 +74,12 @@ export default function Layout() {
                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
             PerfArena
           </Link>
-          <nav>
+          <nav className="nav-desktop">
             <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : "")}>Home</NavLink>
             <NavLink to="/rankings" className={({ isActive }) => (isActive ? "active" : "")}>Rankings</NavLink>
-            {/* "Catalog" is the umbrella for the six registries — Competitions,
-                Problems, Models, Prompts, Submissions, Snapshots — that used
-                to be separate top tabs. They share the family resemblance
-                "browse named things inside the arena", so collapsing them
-                keeps the top bar focused on the live workflows
-                (Rankings / Compare) rather than indexes. */}
+            {/* "Catalog" is the umbrella for the registries that used to be
+                separate top tabs; collapsing them keeps the top bar focused on
+                the live workflows (Rankings / Compare). */}
             <CatalogMenu />
             <NavLink to="/compare" className={({ isActive }) => (isActive ? "active" : "")}>Compare</NavLink>
             <NavLink to="/blog" className={({ isActive }) => (isActive ? "active" : "")}>Blog</NavLink>
@@ -52,16 +87,30 @@ export default function Layout() {
           </nav>
         </div>
         <div className="row" style={{ gap: 12 }}>
-          {me ? (
-            <UserMenu me={me} onLogout={logout} />
-          ) : (
-            // Self-signup removed — the platform is curated by the team. Only
-            // sign-in stays surfaced; legacy /register stays accessible via
-            // direct URL but isn't a public path anymore.
-            <NavLink to="/login">Login</NavLink>
-          )}
+          <div className="row auth-desktop" style={{ gap: 12 }}>
+            {me ? (
+              <UserMenu me={me} onLogout={logout} />
+            ) : (
+              // Self-signup removed — the platform is curated by the team. Only
+              // sign-in stays surfaced; legacy /register stays reachable by URL.
+              <NavLink to="/login">Login</NavLink>
+            )}
+          </div>
           <ThemeToggle />
+          <button
+            className="nav-toggle"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-nav"
+            onClick={() => setMobileOpen(o => !o)}
+          >
+            {mobileOpen ? "✕" : "☰"}
+          </button>
         </div>
+
+        {mobileOpen && (
+          <MobileNav me={me} onLogout={logout} onClose={() => setMobileOpen(false)} />
+        )}
       </header>
       <main><Outlet /></main>
       <footer className="col" style={{ gap: 4 }}>
@@ -79,6 +128,44 @@ export default function Layout() {
         </div>
       </footer>
     </div>
+  );
+}
+
+/* Full-screen-width menu shown under the top bar on narrow viewports. It
+ * flattens the desktop dropdowns (Catalog, user menu) into plain sections so
+ * there are no nested pop-ups to fight with touch. */
+function MobileNav({
+  me, onLogout, onClose,
+}: { me: MePayload | null; onLogout: () => void; onClose: () => void }) {
+  const link = (to: string, label: string, end = false) => (
+    <NavLink key={to} to={to} end={end} onClick={onClose}
+             className={({ isActive }) => (isActive ? "active" : "")}>
+      {label}
+    </NavLink>
+  );
+  return (
+    <nav id="mobile-nav" className="mobile-nav">
+      {link("/", "Home", true)}
+      {link("/rankings", "Rankings")}
+      {link("/compare", "Compare")}
+      {link("/blog", "Blog")}
+      {link("/about", "About")}
+
+      <div className="group-label">Catalog</div>
+      {CATALOG_LINKS.map(l => link(l.to, l.label))}
+
+      <hr />
+      {me ? (
+        <>
+          <div className="group-label">{me.display_name}{me.org ? ` · ${me.org}` : ""}</div>
+          {ACCOUNT_LINKS.map(l => link(l.to, l.label))}
+          {me.role === "admin" && ADMIN_LINKS.map(l => link(l.to, l.label))}
+          <button className="m-item" onClick={onLogout}>Logout</button>
+        </>
+      ) : (
+        link("/login", "Login")
+      )}
+    </nav>
   );
 }
 
@@ -132,20 +219,12 @@ function UserMenu({ me, onLogout }: { me: MePayload; onLogout: () => void }) {
             display: "flex", flexDirection: "column", gap: 2,
           }}
         >
-          <MenuItem to="/me" onPick={() => setOpen(false)}>My runs</MenuItem>
-          <MenuItem to="/me/by-language" onPick={() => setOpen(false)}>By language</MenuItem>
-          <MenuItem to="/me/api-key" onPick={() => setOpen(false)}>API key</MenuItem>
-          {/* Sweep-planning tool — relevant to anyone running their own
-              populations, not just admins. Lives in the user menu rather
-              than the top bar because it's a tool, not a primary view. */}
-          <MenuItem to="/cost-estimator" onPick={() => setOpen(false)}>Cost estimator</MenuItem>
-          {me.role === "admin" && (
-            <>
-              <MenuItem to="/admin" onPick={() => setOpen(false)}>Admin</MenuItem>
-              <MenuItem to="/admin/leetcode-accounts" onPick={() => setOpen(false)}>LeetCode accounts</MenuItem>
-              <MenuItem to="/admin/export" onPick={() => setOpen(false)}>Export &amp; Import</MenuItem>
-            </>
-          )}
+          {ACCOUNT_LINKS.map(l => (
+            <MenuItem key={l.to} to={l.to} onPick={() => setOpen(false)}>{l.label}</MenuItem>
+          ))}
+          {me.role === "admin" && ADMIN_LINKS.map(l => (
+            <MenuItem key={l.to} to={l.to} onPick={() => setOpen(false)}>{l.label}</MenuItem>
+          ))}
         </div>
       )}
     </div>
@@ -169,11 +248,10 @@ function MenuItem({
 }
 
 
-/* "Catalog" header dropdown — umbrella for the three registries we used to
- * surface as separate top-level tabs. Mirrors UserMenu's outside-click +
- * Escape behaviour so both menus feel consistent. The trigger styles
- * itself as `active` whenever the route is on any sub-page so the user
- * can tell at a glance which tab the current page belongs to. */
+/* "Catalog" header dropdown — umbrella for the registries we used to surface
+ * as separate top-level tabs. Mirrors UserMenu's outside-click + Escape
+ * behaviour. The trigger styles itself as `active` whenever the route is on
+ * any sub-page so the user can tell which tab the current page belongs to. */
 const CATALOG_PATHS = [
   "/competitions", "/harnesses", "/correctness-oracles", "/problems",
   "/models", "/languages", "/prompts", "/submissions", "/snapshots",
@@ -238,15 +316,9 @@ function CatalogMenu() {
             display: "flex", flexDirection: "column", gap: 2,
           }}
         >
-          <MenuItem to="/competitions" onPick={() => setOpen(false)}>Competitions</MenuItem>
-          <MenuItem to="/harnesses"    onPick={() => setOpen(false)}>Harnesses</MenuItem>
-          <MenuItem to="/machines"     onPick={() => setOpen(false)}>Machines</MenuItem>
-          <MenuItem to="/problems"     onPick={() => setOpen(false)}>Problems</MenuItem>
-          <MenuItem to="/models"       onPick={() => setOpen(false)}>Models</MenuItem>
-          <MenuItem to="/languages"    onPick={() => setOpen(false)}>Languages</MenuItem>
-          <MenuItem to="/prompts"      onPick={() => setOpen(false)}>Prompts</MenuItem>
-          <MenuItem to="/submissions"  onPick={() => setOpen(false)}>Submissions</MenuItem>
-          <MenuItem to="/snapshots"    onPick={() => setOpen(false)}>Snapshots</MenuItem>
+          {CATALOG_LINKS.map(l => (
+            <MenuItem key={l.to} to={l.to} onPick={() => setOpen(false)}>{l.label}</MenuItem>
+          ))}
         </div>
       )}
     </span>
