@@ -103,6 +103,7 @@ Notes for future us
 from __future__ import annotations
 
 import json
+import sys
 import time
 from typing import Any, Callable
 
@@ -111,7 +112,19 @@ import httpx
 from .models import CorrectnessOracle, Harness, Problem
 
 
+def _log(msg: str) -> None:
+    """Timestamped operational line to stderr. Marks each measure/validate the
+    backend dispatches to a runner and the outcome, so the backend side shows
+    what it sent and how long the runner took."""
+    print(f"[arena-local {time.strftime('%H:%M:%S')}] {msg}",
+          file=sys.stderr, flush=True)
+
+
 _DEFAULT_TIMEOUT_S = 300.0
+# Hard ceiling for a correctness /validate call. Validation is a single
+# short run, so it must never hold a connection longer than this even if an
+# oracle's config.timeout_s is set higher (that larger value is for /measure).
+_VALIDATE_MAX_TIMEOUT_S = 300.0
 
 
 # Both Harness and CorrectnessOracle share the same runner-config shape
@@ -121,10 +134,13 @@ _DEFAULT_TIMEOUT_S = 300.0
 _Runner = Harness | CorrectnessOracle
 
 
-def _client(runner: _Runner) -> tuple[httpx.Client, str]:
+def _client(runner: _Runner, *,
+            timeout_cap_s: float | None = None) -> tuple[httpx.Client, str]:
     """Build a client for the runner's endpoint. Raises ValueError when
     the config is missing or malformed — callers should stamp
-    dispatch_warning and abort the attempt in that case."""
+    dispatch_warning and abort the attempt in that case. `timeout_cap_s`
+    caps the client timeout below the configured value (used by /validate to
+    enforce a 5-minute maximum regardless of config)."""
     cfg = runner.config or {}
     endpoint = (cfg.get("endpoint") or "").rstrip("/")
     if not endpoint:
@@ -138,6 +154,8 @@ def _client(runner: _Runner) -> tuple[httpx.Client, str]:
         )
     token = cfg.get("auth_token") or ""
     timeout = float(cfg.get("timeout_s") or _DEFAULT_TIMEOUT_S)
+    if timeout_cap_s is not None:
+        timeout = min(timeout, timeout_cap_s)
     headers = {"content-type": "application/json"}
     if token:
         headers["authorization"] = f"Bearer {token}"
@@ -314,6 +332,8 @@ def dispatch_via_arena_local(
     if metrics is not None:
         body["metrics"] = list(metrics)
     started = time.time()
+    _log(f"-> {endpoint}/measure {language}/{problem.title_slug} "
+         f"repeats={repeats} att={(meta or {}).get('attempt_id')}")
     try:
         with client:
             # Prefer the split-endpoint route when the runner exposes
@@ -409,6 +429,9 @@ def dispatch_via_arena_local(
         for i, run in enumerate(normalised, start=1):
             on_run_completed(run, i)
 
+    _verdict = normalised[0].get("status_msg") if normalised else "?"
+    _log(f"<- {endpoint}/measure {language}/{problem.title_slug} "
+         f"-> {_verdict} in {time.time() - started:.1f}s")
     return normalised
 
 
@@ -443,7 +466,7 @@ def validate_via_arena_local(
     "oracle unreachable" without conflating them.
     """
     try:
-        client, endpoint = _client(oracle)
+        client, endpoint = _client(oracle, timeout_cap_s=_VALIDATE_MAX_TIMEOUT_S)
     except ValueError as e:
         return {"status_msg": "Dispatch error",
                 "raw_response": {"note": str(e)},
@@ -456,6 +479,8 @@ def validate_via_arena_local(
         "meta":       meta or {},
     }
     started = time.time()
+    _log(f"-> {endpoint}/validate {language}/{problem.title_slug} "
+         f"att={(meta or {}).get('attempt_id')}")
     try:
         with client:
             r = client.post("/validate", json=body)
@@ -524,6 +549,8 @@ def validate_via_arena_local(
                 },
                 "system_failure": True}
     status = verdict.get("status_msg") or "Runtime Error"
+    _log(f"<- {endpoint}/validate {language}/{problem.title_slug} "
+         f"-> {status} in {time.time() - started:.1f}s")
     # Fold error_log into raw_response.error_log so the persist path
     # (which stores raw_response on the Run row) surfaces it without
     # a schema change. Runners that emit raw_response.error_log

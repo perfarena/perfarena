@@ -181,6 +181,15 @@ _ISOLATION_SAMPLE_S: float = float(
     os.environ.get("PERFARENA_ISOLATION_SAMPLE_S", "0.3") or 0.3)
 
 
+def _log(msg: str) -> None:
+    """Always-on, timestamped operational line to stderr. Distinct from the
+    optional per-request access log (gated by --verbose): these mark request
+    receipt and the start/end of each measured or validated test suite, so an
+    operator can see what the runner is doing and how long each stage takes."""
+    print(f"[runner {time.strftime('%H:%M:%S')}] {msg}",
+          file=sys.stderr, flush=True)
+
+
 def _kill_own_children() -> int:
     """SIGKILL every descendant process of this runner (the in-flight test
     suites). The server is serial (one job under _RUN_LOCK), so its children ARE
@@ -461,6 +470,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         holds the lock (and must release it later); False if we bailed
         out with a 429."""
         if _REJECT_WHEN_BUSY and not _RUN_LOCK.acquire(blocking=False):
+            _log(f"REJECT 429 busy since={_BUSY['since']} "
+                 f"running={_BUSY['meta']} (caller will retry)")
             self._send_json(429, {
                 "error": "runner busy — another job in progress",
                 "busy_since": _BUSY["since"], "busy_meta": _BUSY["meta"],
@@ -538,6 +549,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         repeats = max(1, min(repeats, 25))
         meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+        _log(f"RX /measure {body['language']}/{body['title_slug']} "
+             f"repeats={repeats} sub={meta.get('submission_id')} "
+             f"att={meta.get('attempt_id')}")
 
         # `metrics` — optional list of {"time","energy","memory"}.
         # Reject at the API boundary rather than passing through
@@ -584,6 +598,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     "retryable": True,
                 })
                 return
+            _log(f"START measure {body['language']}/{body['title_slug']} "
+                 f"(repeats={repeats}) — executing test suite")
+            _t_start = time.time()
             import inspect
             try:
                 _params = inspect.signature(_MEASURE_HANDLER).parameters
@@ -627,6 +644,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             runs = [_normalise(b) for b in batch[:repeats]]
         finally:
             self._release()
+        _verdict = runs[0].get("status_msg") if runs else "?"
+        _log(f"DONE measure {body['language']}/{body['title_slug']} "
+             f"-> {_verdict} in {time.time() - _t_start:.1f}s")
         self._send_json(200, {"runs": runs})
 
     def _do_validate(self) -> None:
@@ -640,10 +660,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         assert body is not None
         meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+        _log(f"RX /validate {body['language']}/{body['title_slug']} "
+             f"sub={meta.get('submission_id')} att={meta.get('attempt_id')}")
 
         if not self._acquire_or_reject(meta):
             return
+        _t_start = time.time()
         try:
+            _log(f"START validate {body['language']}/{body['title_slug']} "
+                 f"— executing test suite")
             import inspect
             try:
                 _vmeta_ok = "meta" in inspect.signature(_VALIDATE_HANDLER).parameters
@@ -655,6 +680,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 "validate")
         finally:
             self._release()
+        _log(f"DONE validate {body['language']}/{body['title_slug']} "
+             f"-> {r.get('status_msg')} in {time.time() - _t_start:.1f}s")
         # Correctness responses carry status_msg + raw_response + a
         # top-level `error_log` (populated on any non-Accepted verdict
         # by the handler). Perf fields are meaningless on /validate.
@@ -712,6 +739,47 @@ def _resolve_handler(
     mod = importlib.import_module(module_path)
     fn = getattr(mod, fn_name)
     return fn, f"custom: {spec}"
+
+
+def _preflight_toolchains() -> None:
+    """Advisory startup check: report which language toolchains this box can
+    actually build and run, so a missing one (e.g. node/npx for TypeScript) is
+    obvious immediately instead of surfacing as one failed attempt at a time.
+    Also prints PATH and PERFARENA_ROOT status, since a runner launched from a
+    bare environment (systemd, cron, non-login shell) is the usual cause of
+    'npx: not found' when node is installed but only on an interactive PATH.
+    Never blocks startup."""
+    import shutil
+    groups = [
+        ("python3", ["python3"]),
+        ("c/cpp", ["gcc", "g++"]),
+        ("java", ["javac", "java"]),
+        ("csharp", ["dotnet"]),
+        ("php", ["php"]),
+        ("typescript", ["node", "npx"]),
+        ("rust", ["rustc"]),
+        ("go", ["go"]),
+        ("ruby", ["ruby"]),
+    ]
+    print("[harness-runner] toolchain preflight:", file=sys.stderr)
+    for lang, tools in groups:
+        missing = [t for t in tools if shutil.which(t) is None]
+        if missing:
+            print(f"[harness-runner]   {lang:<11} MISSING {missing} — "
+                  f"{lang} attempts will fail to build/run", file=sys.stderr)
+        else:
+            print(f"[harness-runner]   {lang:<11} ok", file=sys.stderr)
+    root = os.environ.get("PERFARENA_ROOT")
+    if root:
+        ok = os.path.exists(os.path.join(root, "perfarena.mk"))
+        print(f"[harness-runner]   PERFARENA_ROOT={root} "
+              f"{'ok' if ok else 'INVALID (perfarena.mk not found)'}",
+              file=sys.stderr)
+    else:
+        print("[harness-runner]   PERFARENA_ROOT unset "
+              "(handler will try to auto-detect the fork)", file=sys.stderr)
+    print(f"[harness-runner]   PATH={os.environ.get('PATH', '')}",
+          file=sys.stderr)
 
 
 def main() -> None:
@@ -811,6 +879,7 @@ def main() -> None:
           file=sys.stderr)
     print(f"[harness-runner] access log: "
           f"{'on' if _VERBOSE else 'off'}", file=sys.stderr)
+    _preflight_toolchains()
     try:
         server.serve_forever(poll_interval=60.0)
     except KeyboardInterrupt:
