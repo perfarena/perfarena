@@ -162,6 +162,24 @@ _VERBOSE: bool = False
 # --request-timeout / PERFARENA_REQUEST_TIMEOUT_S.
 _REQUEST_TIMEOUT_S: float = float(os.environ.get("PERFARENA_REQUEST_TIMEOUT_S", "0") or 0)
 
+# Isolation guard for /measure. The perf oracle only produces trustworthy
+# RAPL/runtime numbers when nothing else on the host competes for a core, so
+# before every measured run the runner asserts the host is quiet. Disable with
+# PERFARENA_ISOLATION_CHECK=0 (e.g. on a shared dev box where the check would
+# only produce false busies).
+_ISOLATION_CHECK: bool = (
+    os.environ.get("PERFARENA_ISOLATION_CHECK", "1").strip().lower()
+    not in ("0", "false", "no", ""))
+# A single competing compute process pins at least one core near 100%. Any core
+# busier than this (percent, 0-100) in the moment before we start means another
+# process is running, so we refuse to measure. Baseline HTTP serving stays well
+# below it. Tune per host with PERFARENA_MAX_BUSY_CORE_PCT.
+_MAX_BUSY_CORE_PCT: float = float(
+    os.environ.get("PERFARENA_MAX_BUSY_CORE_PCT", "60") or 60)
+# Sampling window (seconds) for the per-core utilisation probe.
+_ISOLATION_SAMPLE_S: float = float(
+    os.environ.get("PERFARENA_ISOLATION_SAMPLE_S", "0.3") or 0.3)
+
 
 def _kill_own_children() -> int:
     """SIGKILL every descendant process of this runner (the in-flight test
@@ -202,6 +220,42 @@ def _kill_own_children() -> int:
     except Exception:  # noqa: BLE001
         pass
     return killed
+
+
+def _assert_measurement_isolation() -> dict:
+    """Guard one /measure run: the perf-oracle host must be quiet before we start.
+
+    Two things break isolation, and this handles both:
+      1. Our OWN leftover children. A previous run the watchdog SIGKILLed can
+         leave a backgrounded grandchild still burning a core. Reap them first.
+      2. Any OTHER process consuming a core (a second dispatch, a manual `make
+         measure`, an unrelated job). A compute benchmark pins at least one core
+         near 100%, so a per-core utilisation probe detects it.
+
+    Returns {"isolated": bool, "reaped": int, "max_core_pct": float|None,
+    "reason": str|None}. Never raises. A missing psutil or a probe error fails
+    OPEN (isolated=True) so the guard can't wedge the runner."""
+    reaped = _kill_own_children()          # step 1: clean our own leaked runs
+    if not _ISOLATION_CHECK:
+        return {"isolated": True, "reaped": reaped,
+                "max_core_pct": None, "reason": None}
+    try:
+        import psutil  # type: ignore
+        percpu = psutil.cpu_percent(interval=_ISOLATION_SAMPLE_S, percpu=True)
+        max_core = max(percpu) if percpu else 0.0
+    except Exception:  # noqa: BLE001 — no psutil / probe error → fail open
+        return {"isolated": True, "reaped": reaped,
+                "max_core_pct": None, "reason": None}
+    if max_core > _MAX_BUSY_CORE_PCT:
+        return {
+            "isolated": False, "reaped": reaped, "max_core_pct": max_core,
+            "reason": (f"host not idle before measuring: a core is "
+                       f"{max_core:.0f}% busy (> {_MAX_BUSY_CORE_PCT:.0f}%). "
+                       f"Another benchmarking process is running — refusing to "
+                       f"measure so the numbers stay isolated."),
+        }
+    return {"isolated": True, "reaped": reaped,
+            "max_core_pct": max_core, "reason": None}
 
 
 def _run_with_watchdog(fn: "Callable[[], Any]", label: str) -> Any:
@@ -512,6 +566,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not self._acquire_or_reject(meta):
             return
         try:
+            # Isolation gate: the perf oracle must own the host for the run.
+            # Reap any leaked children from a prior run, then refuse (429) if
+            # another process is still pinning a core — the client already
+            # backs off and retries on 429, same as the busy-runner case.
+            iso = _assert_measurement_isolation()
+            if iso["reaped"]:
+                print(f"[runner] isolation: reaped {iso['reaped']} leftover "
+                      f"benchmark process(es) before measuring",
+                      file=sys.stderr, flush=True)
+            if not iso["isolated"]:
+                print(f"[runner] isolation: {iso['reason']}",
+                      file=sys.stderr, flush=True)
+                self._send_json(429, {
+                    "error": iso["reason"],
+                    "max_core_pct": iso["max_core_pct"],
+                    "retryable": True,
+                })
+                return
             import inspect
             try:
                 _params = inspect.signature(_MEASURE_HANDLER).parameters

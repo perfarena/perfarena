@@ -141,9 +141,12 @@ def _mark_stale_pending_attempts() -> int:
     """Stamp `dispatch_warning` on every attempt that's been queued
     without any LeetCode contact for ARENA_ATTEMPT_STALE_AFTER_S.
 
-    Selection: `n_runs == 0 OR n_runs IS NULL` AND `dispatch_warning IS NULL`
-    AND `prefailed_reason IS NULL` AND `logged_at < cutoff` (or NULL —
-    we treat unset timestamps as ancient so they don't sit forever).
+    Selection: `final_status IS NULL` (never got a verdict) AND
+    `dispatch_warning IS NULL` AND `prefailed_reason IS NULL` AND
+    `logged_at < cutoff` (or NULL — we treat unset timestamps as ancient
+    so they don't sit forever). Keying on `final_status` rather than the
+    `n_runs` column also catches partially-dispatched attempts (n_runs>0
+    but no verdict) that a process interruption left "queued" forever.
 
     Returns the number of rows updated. Runs as one indexed UPDATE so
     it's safe to invoke from a background thread without holding a
@@ -155,7 +158,11 @@ def _mark_stale_pending_attempts() -> int:
     with Session(engine) as session:
         stale = session.exec(
             select(Attempt).where(
-                ((Attempt.n_runs == 0) | (Attempt.n_runs.is_(None))),
+                # `final_status IS NULL` = never finalized (the true "no
+                # verdict yet" signal). Keying on the n_runs COLUMN missed
+                # attempts that landed a partial run (n_runs>0) but died
+                # before the final aggregate, leaving them "queued" forever.
+                Attempt.final_status.is_(None),
                 Attempt.dispatch_warning.is_(None),
                 Attempt.prefailed_reason.is_(None),
                 # Either logged_at is in the past OR it's null (legacy
