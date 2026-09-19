@@ -807,18 +807,44 @@ def _measure_curated_looped(
 
 
 def _root() -> Path:
-    root = os.environ.get("PERFARENA_ROOT")
-    if not root:
+    """Locate the Energy-Languages fork root (the directory holding
+    perfarena.mk). PERFARENA_ROOT wins when set and valid. When it is unset
+    or wrong, fall back to auto-detection relative to this file so a runner
+    started without the env var still works instead of failing every attempt."""
+    env = os.environ.get("PERFARENA_ROOT")
+    candidates: list[Path] = []
+    if env:
+        candidates.append(Path(env))
+    here = Path(__file__).resolve()
+    # Repo layout: this file is <repo>/webapp/examples/, the fork <repo>/Energy-Languages.
+    candidates.append(here.parent.parent.parent / "Energy-Languages")
+    # Walk up: an ancestor that IS the fork, or one that contains it.
+    for anc in here.parents:
+        candidates.append(anc)
+        candidates.append(anc / "Energy-Languages")
+    # Common container layout.
+    candidates.append(Path("/work/Energy-Languages"))
+    seen: set[str] = set()
+    for c in candidates:
+        try:
+            p = c.resolve()
+        except OSError:
+            continue
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        if (p / "perfarena.mk").exists():
+            return p
+    if env:
         raise RuntimeError(
-            "PERFARENA_ROOT env var not set — point it at the "
-            "Energy-Languages fork root (the directory containing "
-            "Python/, C++/, perfarena.mk, ...).")
-    p = Path(root).resolve()
-    if not (p / "perfarena.mk").exists():
-        raise RuntimeError(
-            f"PERFARENA_ROOT={p} does not look like an Energy-Languages "
-            "fork — perfarena.mk not found.")
-    return p
+            f"PERFARENA_ROOT={env} does not look like an Energy-Languages "
+            "fork (perfarena.mk not found there), and auto-detection from "
+            f"{here} also failed.")
+    raise RuntimeError(
+        "PERFARENA_ROOT env var not set and auto-detection failed — point it "
+        "at the Energy-Languages fork root (the directory containing "
+        "perfarena.mk, Python/, C++/, ...).")
 
 
 def _cell_dir(title_slug: str, language: str) -> Path:

@@ -540,9 +540,111 @@ async def _ip_rate_limit_middleware(request, call_next):
     return await call_next(request)
 
 
+# --- crash diagnostics: let the backend self-report why it died -------------
+# The prod box has no easy log access, and an OOM or hard fault leaves nothing
+# in `docker logs`. Two mechanisms: (a) persist Python-level crashes to a file
+# on the DB volume so they survive a restart, and (b) expose live RSS so an
+# operator can watch memory climb toward an OOM kill through the admin API.
+_PROCESS_START = datetime.now()
+
+
+def _crash_log_path() -> Path:
+    from .db import DB_PATH
+    return DB_PATH.parent / "crash.log"
+
+
+def _append_crash(kind: str, text: str) -> None:
+    try:
+        p = _crash_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a") as f:
+            f.write(f"\n===== {datetime.now().isoformat()} [{kind}] =====\n{text}\n")
+    except Exception:                                                  # noqa: BLE001
+        pass
+
+
+def _install_crash_diagnostics() -> None:
+    """Route uncaught exceptions (worker threads, main thread, asyncio tasks)
+    and hard faults to the crash log. OOM via SIGKILL cannot be caught here, so
+    for that, watch rss_mb from GET /api/admin/diagnostics."""
+    import faulthandler
+    import threading
+    import traceback
+    try:
+        faulthandler.enable(file=_crash_log_path().open("a"), all_threads=True)
+    except Exception:                                                  # noqa: BLE001
+        pass
+
+    def _thread_hook(args) -> None:
+        name = args.thread.name if args.thread else "?"
+        _append_crash(f"thread:{name}", "".join(traceback.format_exception(
+            args.exc_type, args.exc_value, args.exc_traceback)))
+    threading.excepthook = _thread_hook
+
+    _prev_hook = sys.excepthook
+
+    def _sys_hook(et, ev, tb) -> None:
+        _append_crash("main", "".join(traceback.format_exception(et, ev, tb)))
+        _prev_hook(et, ev, tb)
+    sys.excepthook = _sys_hook
+
+    def _aio_hook(loop, ctx) -> None:
+        exc = ctx.get("exception")
+        detail = "".join(traceback.format_exception(
+            type(exc), exc, exc.__traceback__)) if exc else ""
+        _append_crash("asyncio", f"{ctx.get('message', '')}\n{detail}")
+    try:
+        import asyncio
+        asyncio.get_running_loop().set_exception_handler(_aio_hook)
+    except Exception:                                                  # noqa: BLE001
+        pass
+
+
+def _rss_mb() -> "float | None":
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024, 1)
+    except Exception:                                                  # noqa: BLE001
+        pass
+    try:
+        import resource
+        ru = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # ru_maxrss is kB on Linux, bytes on macOS.
+        return round(ru / 1024, 1) if sys.platform.startswith("linux") \
+            else round(ru / 1048576, 1)
+    except Exception:                                                  # noqa: BLE001
+        return None
+
+
+@app.get("/api/admin/diagnostics")
+def admin_diagnostics(_: User = Depends(current_admin)):
+    """Remote crash and memory diagnostics for a box with no log access.
+    Poll rss_mb while reproducing a crash: a steady climb that then vanishes
+    (endpoint unreachable) means an OOM kill. crash_log_tail carries any
+    Python-level traceback persisted across the restart."""
+    import threading as _th
+    tail = ""
+    try:
+        p = _crash_log_path()
+        if p.exists():
+            tail = p.read_text()[-8000:]
+    except Exception:                                                  # noqa: BLE001
+        pass
+    return {
+        "uptime_s": round((datetime.now() - _PROCESS_START).total_seconds(), 1),
+        "rss_mb": _rss_mb(),
+        "num_threads": _th.active_count(),
+        "python": sys.version.split()[0],
+        "crash_log_tail": tail,
+    }
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    _install_crash_diagnostics()
     # WAL self-heal: if a prior boot was killed mid-transaction (OOM, kill -9,
     # docker stop -t 0, …) the WAL can be left holding tens of MB of
     # uncheckpointed frames. SQLite's automatic checkpoint kicks in on each

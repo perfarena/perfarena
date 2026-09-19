@@ -120,7 +120,7 @@ from submit_with_local_model import (                          # noqa: E402
     call_cost_usd, estimate_code_tokens,
     compute_trace_hash, fetch_prompt,
     find_existing_submission, http_json,
-    make_provider,
+    make_provider, _inference_timeout,
 )
 # Iterative-refinement helpers — same `{{round_instruction}}` /
 # `{{rounds_history}}` semantics the iterative_refine.py driver uses,
@@ -920,6 +920,34 @@ class _Prefetched:
     err: str | None = None
 
 
+def _call_with_hard_timeout(fn, timeout_s: float, label: str):
+    """Run `fn()` under a HARD wall-clock cap and abandon it if it overruns.
+
+    `--inference-timeout` sets urllib's per-read socket timeout, but OpenRouter
+    streams keepalive whitespace during a long generation, which resets that
+    timer on every trickle so it never fires. The call then blocks far past the
+    nominal timeout. This wrapper runs the call in a daemon thread and stops
+    waiting after `timeout_s`, so the flag becomes a real total bound. The
+    abandoned thread keeps running in the background until its own socket read
+    returns; the sweep just moves on without it."""
+    box: dict = {}
+
+    def _run() -> None:
+        try:
+            box["value"] = fn()
+        except BaseException as e:            # capture SystemExit from http helpers too
+            box["error"] = e
+
+    t = Thread(target=_run, daemon=True, name=f"gen-{label}")
+    t.start()
+    t.join(timeout_s)
+    if t.is_alive():
+        raise TimeoutError(f"exceeded {timeout_s:.0f}s wall-clock cap")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 class _Prefetcher:
     """Background generator that stays up to `depth` tuples ahead of main.
 
@@ -1070,15 +1098,28 @@ class _Prefetcher:
         # parked on the prefetch queue the sweep otherwise looks frozen right
         # after startup. Printing the tuple + provider makes a slow generation
         # visible and tells the operator exactly which call is in flight.
+        hard_cap = _inference_timeout()
         print(f"  ⏳ [prefetch] generating {language}/{slug} via "
-              f"{self._provider.name} ({model})…", flush=True)
+              f"{self._provider.name} ({model}), ≤{hard_cap}s…", flush=True)
         _gen_t0 = time.time()
         try:
-            code, trace = self._provider.generate(
-                model, problem["content"], slug,
-                {"temperature": self._args.temperature}, language,
-                registry_prompt=prompt, extras=extras,
+            code, trace = _call_with_hard_timeout(
+                lambda: self._provider.generate(
+                    model, problem["content"], slug,
+                    {"temperature": self._args.temperature}, language,
+                    registry_prompt=prompt, extras=extras,
+                ),
+                hard_cap, f"{language}/{slug}",
             )
+        except TimeoutError as e:
+            # HARD wall-clock cap hit — the generation is still running in a
+            # background thread but we stop waiting so the sweep progresses.
+            print(f"  ✗ [prefetch] generation TIMED OUT for {language}/{slug} "
+                  f"({e}); moving on", flush=True)
+            return _Prefetched(tup=tup, problem=problem,
+                               status="ollama_err",
+                               err=f"[{self._provider.name}] generation "
+                                   f"timed out after {hard_cap}s")
         except SystemExit as e:
             # Keep the historical "ollama_err" status label so resume-log
             # filters still work; the provider name is in the error string
@@ -1231,6 +1272,16 @@ def _resolve_slugs(base: str, arg: str | None, competition: str | None,
 # ---------- main loop -------------------------------------------------------
 
 def main() -> None:
+    # Force line-buffered stdout/stderr. When the sweep's output is piped or
+    # redirected (tee, a log file, nohup), Python block-buffers stdout, so
+    # progress prints pile up invisibly and the run looks frozen at the last
+    # flushed line (typically "prefetcher: background"). Line buffering makes
+    # every progress line appear as it happens, TTY or not.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        pass
     ap = argparse.ArgumentParser(
         description="Matrix sweep over (prompt × language × problem).",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__,
