@@ -50,6 +50,15 @@ services:
       PERFARENA_CLBG_WARMUP_RUNS: "1"
       PERFARENA_CLBG_MEASURE_RUNS: "7"
       PERFARENA_IDLE_S: "1"
+      # SIGKILL a dangling/hung measurement after 240s (below the backend's
+      # 300s httpx timeout) so the serial runner can't wedge on one bad
+      # solution and leave later attempts "queued forever".
+      PERFARENA_REQUEST_TIMEOUT_S: "240"
+      # Pre-measure isolation guard. In a container the runner sees the noisy
+      # host cores and energy here is only a codecarbon estimate, so the guard
+      # would raise false "host busy" 429s. Keep it OFF locally; it defaults ON
+      # on the bare-metal RAPL box where measurement isolation actually matters.
+      PERFARENA_ISOLATION_CHECK: "0"
     command:
       - python
       - /work/webapp/examples/harness_runner_server.py
@@ -61,6 +70,9 @@ services:
       - perfarena_handler:measure_once
       - --validate-handler
       - perfarena_handler:validate_once
+      # Return 429 instead of parking a caller on the run-lock when the
+      # single-threaded runner is already busy.
+      - --reject-when-busy
     networks: [perfarena]
     restart: unless-stopped
 
