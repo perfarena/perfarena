@@ -1064,6 +1064,15 @@ class _Prefetcher:
             "{{round_instruction}}":      "",
             "{{rounds_history}}":         "",
         }
+        # Announce the call BEFORE it blocks. Generation is the one step here
+        # with no bounded feedback: a fresh call to a slow/thinking model can
+        # run for minutes (up to the inference timeout), and with the main loop
+        # parked on the prefetch queue the sweep otherwise looks frozen right
+        # after startup. Printing the tuple + provider makes a slow generation
+        # visible and tells the operator exactly which call is in flight.
+        print(f"  ⏳ [prefetch] generating {language}/{slug} via "
+              f"{self._provider.name} ({model})…", flush=True)
+        _gen_t0 = time.time()
         try:
             code, trace = self._provider.generate(
                 model, problem["content"], slug,
@@ -1074,9 +1083,14 @@ class _Prefetcher:
             # Keep the historical "ollama_err" status label so resume-log
             # filters still work; the provider name is in the error string
             # for triage.
+            print(f"  ✗ [prefetch] generation FAILED for {language}/{slug} "
+                  f"after {time.time() - _gen_t0:.0f}s: {e}", flush=True)
             return _Prefetched(tup=tup, problem=problem,
                                status="ollama_err",
                                err=f"[{self._provider.name}] {e}")
+        print(f"  ✓ [prefetch] generated {language}/{slug} in "
+              f"{time.time() - _gen_t0:.0f}s "
+              f"({len(code or '')} chars)", flush=True)
         if not _looks_like(code, language):
             # Wrong-language output: don't cache — re-generating may
             # give us a clean attempt next time. Caching the broken
