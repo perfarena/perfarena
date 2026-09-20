@@ -6269,12 +6269,13 @@ def admin_export(
         raise HTTPException(400, {"detail": "unknown tables", "unknown": unknown})
 
     if format == "json":
-        bundle = export_import.export_json(
-            session, requested, include_credentials=include_credentials,
-        )
         stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        # Stream row-by-row (own session inside the generator) so a large DB
+        # doesn't build the whole bundle + its json string in memory and
+        # OOM-kill the container.
         return StreamingResponse(
-            iter([json.dumps(bundle, default=str).encode()]),
+            (chunk.encode() for chunk in export_import.export_json_iter(
+                requested, include_credentials=include_credentials)),
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename=perfarena-export-{stamp}.json"},
         )

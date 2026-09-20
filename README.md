@@ -446,16 +446,20 @@ sudo -u perfrunner env \
   PERFARENA_ROOT="$PWD/../../Energy-Languages" \
   PYTHONPATH="$PWD/../../Energy-Languages" \
   PERFARENA_MACHINE_NAME=bicho PERFARENA_ENERGY_TOOL=codecarbon \
-  TSC=tsc PERFARENA_ISOLATION_CHECK=1 PERFARENA_REQUEST_TIMEOUT_S=1800 \
+  TSC=tsc PERFARENA_ISOLATION_CHECK=1 \
+  PERFARENA_HANDLER_TIMEOUT_S=1200 PERFARENA_LC_MEASURE_TIMEOUT_S=420 \
+  PERFARENA_REQUEST_TIMEOUT_S=1320 \
   ~/.venvs/perfrunner/bin/python harness_runner_server.py \
     --host 127.0.0.1 --port 8787 \
     --auth-token "$PERFARENA_RUNNER_TOKEN" \
     --measure-handler perfarena_handler:measure_once \
     --validate-handler perfarena_handler:validate_once \
-    --request-timeout 1800 --verbose
+    --request-timeout 1320 --verbose
 ```
 
-Register it in the backend (Harnesses page or `register-harness.sh`) with endpoint `http://127.0.0.1:8787` and the same `auth_token`. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
+Measurement ceilings: a CLBG measure may run 20 min (`PERFARENA_HANDLER_TIMEOUT_S=1200`) and a LeetCode measure 7 min (`PERFARENA_LC_MEASURE_TIMEOUT_S=420`); either overrun is reported as Time Limit Exceeded, never averaged into "Accepted". `--request-timeout 1320` is the global backstop above both.
+
+Register it in the backend (Harnesses page or `register-harness.sh`) with endpoint `http://127.0.0.1:8787` and the same `auth_token`. Set the harness `config.timeout_s` above the watchdog (e.g. `1380` for a `1320` watchdog); otherwise the backend gives up at its 300 s default and marks attempts "dispatch failed" while the runner is still measuring. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
 
 ### 4. Run a sweep
 
@@ -558,7 +562,10 @@ Set on the runner process (see Deployment §3). The `--auth-token` flag / `HARNE
 | `PERFARENA_ROOT` | auto-detected | Energy-Languages fork root (falls back to auto-detect if unset) |
 | `TSC` | `npx --yes -p typescript@…` | Set to `tsc` to use an installed compiler (no download under egress ban) |
 | `PERFARENA_ISOLATION_CHECK` | `1` | Refuse to measure if another process is pinning a core |
-| `PERFARENA_REQUEST_TIMEOUT_S` | `0` (off) | SIGKILL a run exceeding this many seconds |
+| `PERFARENA_HANDLER_TIMEOUT_S` | `1200` | CLBG measure ceiling: kill one `make measure` (all runs) past this → Time Limit Exceeded |
+| `PERFARENA_LC_MEASURE_TIMEOUT_S` | `420` | LeetCode measure ceiling: wall budget over the repeat loop; repeats past this → Time Limit Exceeded |
+| `PERFARENA_CASE_TIMEOUT_S` | `180` | Cap on a single LeetCode measurement run |
+| `PERFARENA_REQUEST_TIMEOUT_S` (or `--request-timeout`) | `0` (off) | Global watchdog backstop: SIGKILL the whole request past this. Set ABOVE the two ceilings and BELOW the backend harness `config.timeout_s` |
 | `PERFARENA_LOG_FILE` | unset | Tee all runner output (banner, RX/START/DONE, tracebacks) to this file for later inspection |
 
 ### Submission limits

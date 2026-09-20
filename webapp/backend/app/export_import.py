@@ -30,8 +30,10 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Callable
 
+from sqlalchemy import func
 from sqlmodel import Session, select
 
+from .db import engine
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
     CorrectnessOracle, Harness, Machine, MeasurementProfile, Problem,
@@ -237,6 +239,61 @@ def export_json(session: Session, tables: list[str],
             include_credentials
         )
     return envelope
+
+
+def export_json_iter(tables: list[str], *,
+                     include_credentials: bool = False):
+    """Stream the export envelope as JSON string chunks, row by row.
+
+    `export_json` builds the whole bundle as one dict and then json.dumps it in
+    one shot; with a large DB (the Run table's raw_response / leetcode_full_
+    response blobs) that holds the entire dataset AND its serialized string in
+    memory at once, which OOM-kills the container. This yields one row's JSON at
+    a time so peak memory stays near a single row.
+
+    Opens its OWN session (not the request-scoped one) because a StreamingResponse
+    is consumed after the endpoint returns, by which point a `Depends`-injected
+    session would already be closed."""
+    selected = [(name, m) for name, m in EXPORTABLE if name in tables]
+    include_lc = LC_ACCOUNTS_NAME in tables
+    lc_rows = (_serialize_leetcode_accounts(include_credentials=include_credentials)
+               if include_lc else [])
+    table_names = [name for name, _ in selected] + (
+        [LC_ACCOUNTS_NAME] if include_lc else [])
+
+    with Session(engine) as session:
+        counts: dict[str, int] = {}
+        for name, model in selected:
+            counts[name] = session.exec(select(func.count()).select_from(model)).one()
+        if include_lc:
+            counts[LC_ACCOUNTS_NAME] = len(lc_rows)
+
+        yield '{"version": 1, "exported_at": ' + json.dumps(datetime.utcnow().isoformat())
+        yield ', "tables": ' + json.dumps(table_names)
+        if include_lc:
+            yield (', "leetcode_accounts_credentials_included": '
+                   + json.dumps(bool(include_credentials)))
+        yield ', "counts": ' + json.dumps(counts)
+        yield ', "data": {'
+        first_table = True
+        for name, model in selected:
+            yield ('' if first_table else ', ') + json.dumps(name) + ': ['
+            first_table = False
+            first_row = True
+            # stream_results avoids the driver buffering the whole table where
+            # supported; the per-row dict is released after each chunk regardless.
+            q = select(model).execution_options(stream_results=True, yield_per=500)
+            for r in session.exec(q):
+                d = _row_to_dict(r)
+                if name == "users" and not include_credentials:
+                    d = _redact_user_rows([d], include_credentials=False)[0]
+                yield ('' if first_row else ', ') + json.dumps(d, default=str)
+                first_row = False
+            yield ']'
+        if include_lc:
+            yield ((', ' if selected else '') + json.dumps(LC_ACCOUNTS_NAME)
+                   + ': ' + json.dumps(lc_rows, default=str))
+        yield '}}'
 
 
 def export_csv_zip(session: Session, tables: list[str],
