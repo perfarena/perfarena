@@ -149,6 +149,28 @@ def _redact_cookie(cookie_header: str) -> str:
     return "; ".join(out_pieces)
 
 
+# Secret columns on the User table. api_key is stored in plaintext at rest, so
+# an unredacted export would hand out every user's live key; password_hash is a
+# bcrypt digest but still secret. Both are masked unless credentials are
+# explicitly requested. The marker is recognised on import so a round-trip
+# never overwrites a real key with the mask.
+_USER_SECRET_COLS = ("api_key", "password_hash")
+_REDACTED = "[redacted]"
+
+
+def _redact_user_rows(rows: list[dict], *, include_credentials: bool) -> list[dict]:
+    if include_credentials:
+        return rows
+    masked = []
+    for r in rows:
+        r = dict(r)
+        for col in _USER_SECRET_COLS:
+            if r.get(col):
+                r[col] = _REDACTED
+        masked.append(r)
+    return masked
+
+
 def _serialize_leetcode_accounts(*, include_credentials: bool) -> list[dict]:
     """Read the file-backed account pool and return JSON-safe dicts.
 
@@ -188,6 +210,8 @@ def export_json(session: Session, tables: list[str],
     counts: dict[str, int] = {}
     for name, model in selected:
         rows = [_row_to_dict(r) for r in session.exec(select(model)).all()]
+        if name == "users":
+            rows = _redact_user_rows(rows, include_credentials=include_credentials)
         data[name] = rows
         counts[name] = len(rows)
     # File-backed leetcode_accounts — listed in `tables` like any other
@@ -227,6 +251,8 @@ def export_csv_zip(session: Session, tables: list[str],
             if name not in tables:
                 continue
             rows = [_row_to_dict(r) for r in session.exec(select(model)).all()]
+            if name == "users":
+                rows = _redact_user_rows(rows, include_credentials=include_credentials)
             cols = list(model.__table__.columns.keys())          # type: ignore[attr-defined]
             sio = io.StringIO()
             writer = csv.DictWriter(sio, fieldnames=cols)
@@ -358,6 +384,13 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                     report[tname]["skipped"] += 1
                     continue
                 payload = _coerce_for_table(model, row)
+                # A redacted export carries the "[redacted]" marker for user
+                # secrets. Never persist the marker as a real credential — drop
+                # it so an imported user simply has no key until one is issued.
+                if tname == "users":
+                    for _c in _USER_SECRET_COLS:
+                        if payload.get(_c) == _REDACTED:
+                            payload[_c] = None
                 # Drop the incoming id — let SQLite assign a fresh one so
                 # local ids stay collision-free across replicas.
                 old_id = payload.pop("id", None)

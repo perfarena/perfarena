@@ -31,9 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip zip xz-utils gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- 2. C / C++ (Boost for pidigits, GMP for gmpy2) --------------------------
+# ---- 2. C / C++ (Boost for pidigits, GMP for gmpy2, PCRE2 for regex-redux) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc g++ clang libboost-dev libgmp-dev \
+        gcc g++ clang libboost-dev libgmp-dev libpcre2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- 3. Java 21 (also the JRE that Kotlin + Scala run on) --------------------
@@ -50,10 +50,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && npm install -g typescript@5 \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- 5. PHP, Ruby, Go --------------------------------------------------------
+# ---- 5. PHP (+ GMP for pidigits), Ruby, Go ----------------------------------
+# short_open_tag: several CLBG PHP references open with `<?`; without it PHP
+# echoes the source instead of running the program.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        php-cli ruby golang-go \
-    && rm -rf /var/lib/apt/lists/*
+        php-cli php-gmp ruby golang-go \
+    && rm -rf /var/lib/apt/lists/* \
+    && printf 'short_open_tag=On\n' > "$(php -i | sed -n 's/^Scan this dir for additional .ini files => //p' | head -1)/99-perfarena.ini"
 
 # ---- 6. Python + measurement venv (codecarbon + psutil + gmpy2) --------------
 # The venv becomes the default `python3`/`python` (PATH below), so the Makefiles'

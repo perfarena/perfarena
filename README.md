@@ -22,11 +22,12 @@ Built at **NYU Abu Dhabi** by Rui Rua, Hailemarian Mersha, Karim Ali (SanadLab),
 4. [Installation](#installation)
    - [Quick start with Docker (recommended)](#quick-start-with-docker-recommended)
    - [Local development](#local-development)
-5. [Running stuff](#running-stuff)
-6. [Configuration (env vars)](#configuration-env-vars)
-7. [Testing](#testing)
-8. [Contributing](#contributing)
-9. [Further reading](#further-reading)
+5. [Deployment (hardened)](#deployment-hardened)
+6. [Running stuff](#running-stuff)
+7. [Configuration (env vars)](#configuration-env-vars)
+8. [Testing](#testing)
+9. [Contributing](#contributing)
+10. [Further reading](#further-reading)
 
 ---
 
@@ -368,7 +369,7 @@ cd webapp/backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m app.seed                  # imports problems.parquet, seeds default prompts
-uvicorn app.main:app --reload       # http://localhost:8000  (API docs at /docs)
+uvicorn app.main:app --reload       # http://localhost:8000  (set ARENA_ENABLE_DOCS=1 for /docs)
 
 # (optional) seed fake competitors so the leaderboard isn't empty
 python -m app.populate
@@ -380,6 +381,96 @@ npm run dev                         # http://localhost:5173  (proxies /api → :
 ```
 
 Sign in with the admin API key (paste into Register → "already have a key?" or the `/me/api-key` page).
+
+---
+
+## Deployment (hardened)
+
+A recent security pass changed how components authenticate and how the runner is isolated. Read this before deploying anywhere reachable.
+
+**What changed:** API keys are stored **hashed** at rest (shown once at creation; the plaintext still works as `Authorization: Bearer`). The SPA logs in for a signed **session token**, which requires `ARENA_SESSION_SECRET`. Interactive docs are **off** by default (`ARENA_ENABLE_DOCS=1` to re-enable). The harness runner is **not exposed to the host**, accepts an optional **`--auth-token`**, mounts **no repo secrets**, and has **no network egress**.
+
+### 1. Local stack (docker compose)
+
+```bash
+# .env at the repo root (gitignored):
+#   ARENA_BOOTSTRAP_ADMIN_EMAIL=admin@perfarena.dev
+#   ARENA_BOOTSTRAP_ADMIN_API_KEY=<strong random>
+#   ARENA_SESSION_SECRET=<random>          # required for stable SPA logins
+#   PERFARENA_RUNNER_TOKEN=<random>        # optional: enforce runner auth
+docker compose -f docker-compose.local.yml build
+docker compose -f docker-compose.local.yml up -d
+./docker/harness-test/register-harness.sh
+```
+
+The runner sits on an internal, egress-less network (reachable only by the backend at `http://harness:8787`) and mounts only `Energy-Languages` + `webapp/examples`, so executed code sees neither `.env` nor `data/`.
+
+### 2. Backend container (standalone)
+
+```bash
+docker build -t perfarena-backend:latest .
+docker run -d --name perfarena-backend \
+  -p 127.0.0.1:8000:8000 \
+  -v perfarena-data:/data \
+  -e ARENA_DB=/data/arena.db \
+  -e ARENA_BOOTSTRAP_ADMIN_EMAIL=admin@perfarena.dev \
+  -e ARENA_BOOTSTRAP_ADMIN_API_KEY='<strong random>' \
+  -e ARENA_SESSION_SECRET='<random, stable>' \
+  --restart unless-stopped \
+  perfarena-backend:latest
+```
+
+Bind to `127.0.0.1` behind a reverse proxy or tunnel. Leave `ARENA_ENABLE_DOCS` unset so `/docs` and `/openapi.json` return 404.
+
+### 3. Harness runner on a bare-metal measurement host
+
+Provision toolchains + venv once, then run the runner as a dedicated non-root user with no access to secrets and no outbound network.
+
+```bash
+# one-time: toolchains + codecarbon venv
+cd ~/bench/perfarena-leetcode && bash setup-harness-host.sh --skip-energy
+
+# one-time: non-root user + lock secrets away from it
+sudo useradd -r -s /usr/sbin/nologin perfrunner
+sudo chmod 600 .env data/leetcode_accounts.json      # readable by the backend user only
+
+# one-time: deny egress for the runner uid, allow loopback, so executed code
+# cannot exfiltrate but the backend can still reach it on 127.0.0.1. (systemd
+# PrivateNetwork would also block the backend->runner call, so use a uid rule.)
+sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -o lo -j ACCEPT
+sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -j REJECT
+
+# start the runner (localhost-only, token-protected, no npx download)
+cd webapp/examples
+sudo -u perfrunner env \
+  PERFARENA_ROOT="$PWD/../../Energy-Languages" \
+  PYTHONPATH="$PWD/../../Energy-Languages" \
+  PERFARENA_MACHINE_NAME=bicho PERFARENA_ENERGY_TOOL=codecarbon \
+  TSC=tsc PERFARENA_ISOLATION_CHECK=1 PERFARENA_REQUEST_TIMEOUT_S=1800 \
+  ~/.venvs/perfrunner/bin/python harness_runner_server.py \
+    --host 127.0.0.1 --port 8787 \
+    --auth-token "$PERFARENA_RUNNER_TOKEN" \
+    --measure-handler perfarena_handler:measure_once \
+    --validate-handler perfarena_handler:validate_once \
+    --request-timeout 1800 --verbose
+```
+
+Register it in the backend (Harnesses page or `register-harness.sh`) with endpoint `http://127.0.0.1:8787` and the same `auth_token`. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
+
+### 4. Run a sweep
+
+```bash
+PYTHONUNBUFFERED=1 python -u webapp/examples/matrix_sweep.py \
+  --provider openai --openai-base-url https://openrouter.ai/api/v1/ \
+  --openai-api-key "$OPENROUTER_KEY" \
+  --model z-ai/glm-5.3-flash --prompts experiment-system-with-shape \
+  --language python3,java,cpp,typescript,csharp,php \
+  --competition leetcode-99-perf --harness arena-linux-local --correctness-oracle leetcode \
+  --base-url https://perfarena.ngrok.app --api-key "$ARENA_ADMIN_KEY" \
+  --temperature 0 --inference-timeout 300 --retry-failed
+```
+
+The API key is hashed at rest, but the plaintext key still authenticates as a Bearer, so `--api-key` is unchanged. Use a generous `--inference-timeout` for reasoning models (glm reasons for minutes), and `PYTHONUNBUFFERED=1 python -u` so progress streams live when the output is redirected.
 
 ---
 
@@ -438,8 +529,11 @@ This bypasses the platform; useful for smoke-testing LeetCode auth.
 | `ARENA_TRUST_PROXY` | `0` | Honour `X-Forwarded-For` (only when behind a trusted proxy) |
 | `ARENA_BOOTSTRAP_ADMIN_EMAIL` | unset | Create an admin on first boot (idempotent) |
 | `ARENA_BOOTSTRAP_ADMIN_NAME` | `Admin` | Display name |
-| `ARENA_BOOTSTRAP_ADMIN_API_KEY` | auto | Use this exact key; else one is generated |
+| `ARENA_BOOTSTRAP_ADMIN_API_KEY` | auto | Use this exact key; else one is generated (stored hashed) |
 | `ARENA_BOOTSTRAP_ADMIN_PASSWORD` | unset | If set, also enables `/login` for that user |
+| `ARENA_SESSION_SECRET` | per-process random | Signs SPA session tokens. **Set a stable value** or restarts log users out |
+| `ARENA_ENABLE_DOCS` | unset (off) | `1` → expose `/docs`, `/redoc`, `/openapi.json` (off in prod) |
+| `ARENA_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins (prod is same-origin) |
 
 ### Dispatch
 
@@ -452,6 +546,20 @@ This bypasses the platform; useful for smoke-testing LeetCode auth.
 | `LEETCODE_COOKIE_HEADER` | — | Full `Cookie:` header (required for real dispatch) |
 | `LEETCODE_SESSION` + `LEETCODE_CSRF_TOKEN` | — | Alternative to the header |
 | `LEETCODE_HOST` | `https://leetcode.com` | Set to `https://leetcode.cn` for the China site |
+
+### Harness runner (measurement host)
+
+Set on the runner process (see Deployment §3). The `--auth-token` flag / `HARNESS_RUNNER_TOKEN` gates who may execute code; the rest control isolation and measurement.
+
+| var / flag | default | purpose |
+|-----|---------|---------|
+| `--auth-token` (or `HARNESS_RUNNER_TOKEN`) | empty (open) | Bearer the backend must present; set it in any reachable deployment |
+| `--host` | `0.0.0.0` | Bind `127.0.0.1` when the backend is same-host |
+| `PERFARENA_ROOT` | auto-detected | Energy-Languages fork root (falls back to auto-detect if unset) |
+| `TSC` | `npx --yes -p typescript@…` | Set to `tsc` to use an installed compiler (no download under egress ban) |
+| `PERFARENA_ISOLATION_CHECK` | `1` | Refuse to measure if another process is pinning a core |
+| `PERFARENA_REQUEST_TIMEOUT_S` | `0` (off) | SIGKILL a run exceeding this many seconds |
+| `PERFARENA_LOG_FILE` | unset | Tee all runner output (banner, RX/START/DONE, tracebacks) to this file for later inspection |
 
 ### Submission limits
 

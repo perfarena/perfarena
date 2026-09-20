@@ -107,3 +107,55 @@ the Linux box** (`rua@192.168.1.7`) — it can't be done on this Mac.
 The database + API already store and expose each submission's **machine**,
 **energy tool**, and **per-op** numbers, but the website pages don't display
 them yet. Small frontend job whenever you want it surfaced in the UI.
+
+---
+
+## 🔲 TASK 4 — Add Kotlin as an 11th language (later)
+
+Kotlin is **not supported at all** today: no cells, no harness, no language
+mapping. A Kotlin submission fails immediately because the handler rejects
+unknown languages. Supporting it means building the whole stack, mirroring the
+existing Java support (both target the JVM, so Java is the closest template):
+
+1. **99 Kotlin cells** — `Energy-Languages/Kotlin/leetcode/<slug>/` with
+   `solution.kt` + a `Makefile` (compile with `kotlinc`, run on the JVM), matching
+   the layout of the other 10 languages.
+2. **Measurement harness** — a `Harness.kt` (or reuse `Harness.java` via JVM
+   interop) that loops each curated case to the wall-time budget and prints
+   `CASE=.. ITERS=.. ACC=.. MEAS_S=.. BEACON=..` to stderr.
+3. **Full-suite validator** — a `validate` mode that runs every reference case and
+   prints `VALIDATE slug=.. PASS/FAIL/RE passed=K ncases=N ..` + exit 0/1/3/2, like
+   the Java/C# validators.
+4. **Dispatch wiring** — a `kotlin) …` case in `selection/run_harness.sh`
+   (measure) and `selection/run_validate.sh` (validate); plus `_LANG_MAP` +
+   `_HARNESS_LANG` entries in `webapp/examples/perfarena_handler.py`.
+5. Add Kotlin to the competition's allowed languages once cells exist.
+
+Effort: comparable to one full language (Java) + writing/generating 99 cells.
+Not a config toggle.
+
+---
+
+## 🔲 TASK 5 — Open issues found while running the arena-local sweep (2026-08-22/23)
+
+- **Competition ⊃ the 99 cell-backed problems.** `leetcode-99-perf` dispatches
+  submissions for problems with NO cell (e.g. `permutation-sequence`,
+  `factorial-trailing-zeroes`, `valid-permutations-for-di-sequence`,
+  `sum-of-beauty-of-all-substrings`), which fail with `no cell` in every
+  language. Fix: restrict the competition to the 99 problems that have cells
+  (`scratchpad/fix_competition_problems.py`). This is the main "everything is
+  failing" cause.
+- **Kotlin submissions** — see TASK 4; drop Kotlin from the sweep until built.
+- **[DONE] Java `public class` compile error** — handler now strips `public`
+  from top-level type declarations before writing `solution.java`
+  (`_normalize_solution_code`), so model code with `public class Solution`
+  compiles.
+
+### Frontend (need a SPA rebuild + image redeploy)
+- **Misleading "tests" count in the runs view.** The K/N shown on each perf run
+  is the CORRECTNESS full-suite count (from the gate), but the perf measurement
+  only ran the ~5 curated cases — the two are conflated. Relabel it as the
+  correctness case count, or show the curated count for the measurement.
+- **Redundant first problems table** on the submissions page — remove it.
+- **Runtime errors don't show the error log** in the UI even though the handler
+  now returns `error_log` on every non-Accepted verdict — surface it.

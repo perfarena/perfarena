@@ -28,37 +28,80 @@ services:
       # boot the backend provisions this admin with this API key.
       ARENA_BOOTSTRAP_ADMIN_EMAIL: ${ARENA_BOOTSTRAP_ADMIN_EMAIL:-}
       ARENA_BOOTSTRAP_ADMIN_API_KEY: ${ARENA_BOOTSTRAP_ADMIN_API_KEY:-}
-    networks: [perfarena]
+      # Signs SPA session tokens. MUST be set (and stable) in any real
+      # deployment, otherwise a restart invalidates all logins. Keep it secret.
+      ARENA_SESSION_SECRET: ${ARENA_SESSION_SECRET:-}
+    # On the public network (LeetCode / model APIs) AND the internal one to
+    # reach the runner. The runner itself is internal-only (no egress).
+    networks: [perfarena, harness_internal]
     restart: unless-stopped
 
   harness:
     build:
       context: ./docker/harness-test
     image: perfarena-harness-test:latest
-    ports:
-      - "8787:8787"
+    # SECURITY: the runner executes untrusted model-generated code. It is NOT
+    # published to the host — only the backend reaches it over the internal
+    # `perfarena` network at http://harness:8787. Do not add a `ports:` mapping;
+    # exposing 8787 to the host/LAN turns an unauthenticated runner into open
+    # remote code execution.
     volumes:
-      - ./:/work
+      # SECURITY: mount ONLY what the runner needs, so repo secrets (.env,
+      # data/leetcode_accounts.json) are NOT visible to executed code. Cells are
+      # written under Energy-Languages (rw); the server modules are read-only.
+      - ./Energy-Languages:/work/Energy-Languages
+      - ./webapp/examples:/work/webapp/examples:ro
+      # Persist the runner's logs to a host file you can tail/consult for
+      # debugging (RX/START/DONE lines, handler output, tracebacks).
+      - ./logs/harness:/var/log/perfarena
     working_dir: /work
     environment:
       # _root() in perfarena_handler.py requires this to locate the harness fork.
       PERFARENA_ROOT: /work/Energy-Languages
       PYTHONPATH: /work/Energy-Languages
+      # Shared secret the backend must present on /measure and /validate. Empty
+      # => open (dev default, unchanged behavior). Set it in .env AND register
+      # the harness with the same token (see register-harness.sh) to enforce.
+      PERFARENA_RUNNER_TOKEN: ${PERFARENA_RUNNER_TOKEN:-}
       PERFARENA_PROFILER: codecarbon
       # CLBG whole-program measurement: discrete run counts (distinct from the
       # LeetCode per-op budget path). 1 warmup run + 7 measured runs per cell.
       PERFARENA_CLBG_WARMUP_RUNS: "1"
       PERFARENA_CLBG_MEASURE_RUNS: "7"
       PERFARENA_IDLE_S: "1"
-      # SIGKILL a dangling/hung measurement after 240s (below the backend's
-      # 300s httpx timeout) so the serial runner can't wedge on one bad
-      # solution and leave later attempts "queued forever".
-      PERFARENA_REQUEST_TIMEOUT_S: "240"
+      # Per-competition measurement ceilings, enforced in the handler (which
+      # knows the problem type). Each is the hard upper bound on how long ONE
+      # measurement may run before it is killed and reported as Time Limit
+      # Exceeded (never averaged into "Accepted"):
+      #   * CLBG whole-program measure: 20 min. Caps the single `make measure`
+      #     subprocess (all warmup+measure runs) via a reliable process-GROUP
+      #     kill.
+      PERFARENA_HANDLER_TIMEOUT_S: "1200"
+      #   * LeetCode per-op measure: 7 min. Wall-clock budget over the repeat
+      #     loop; once hit, the remaining repeats are recorded as Time Limit
+      #     Exceeded. Each single run is also bounded by PERFARENA_CASE_TIMEOUT_S.
+      PERFARENA_LC_MEASURE_TIMEOUT_S: "420"
+      # Global SIGKILL backstop for the WHOLE request (compile+validate+measure).
+      # Set ABOVE both per-competition ceilings so the handler's own per-type
+      # kill fires first; this only catches a handler that failed to stop
+      # itself. A fired watchdog forces a Time Limit Exceeded verdict.
+      # Ordering rule: handler ceiling (1200 / 420) < this watchdog < backend
+      # harness config.timeout_s (raise the registered harness config.timeout_s
+      # above this, e.g. 1380 — default is 300, which would make the backend log
+      # "dispatch failed" while the runner is still measuring).
+      PERFARENA_REQUEST_TIMEOUT_S: "1320"
       # Pre-measure isolation guard. In a container the runner sees the noisy
       # host cores and energy here is only a codecarbon estimate, so the guard
       # would raise false "host busy" 429s. Keep it OFF locally; it defaults ON
       # on the bare-metal RAPL box where measurement isolation actually matters.
       PERFARENA_ISOLATION_CHECK: "0"
+      # SECURITY (C1): the runner is on an internal, egress-less network, so the
+      # cells must not try to download a toolchain at build time. Use the tsc
+      # that ships in the image instead of `npx --yes -p typescript` (network).
+      TSC: tsc
+      # Persist all runner output to this file (mounted to ./logs/harness on the
+      # host) so errors can be inspected after the fact.
+      PERFARENA_LOG_FILE: /var/log/perfarena/runner.log
     command:
       - python
       - /work/webapp/examples/harness_runner_server.py
@@ -70,10 +113,16 @@ services:
       - perfarena_handler:measure_once
       - --validate-handler
       - perfarena_handler:validate_once
+      # Require this bearer token when set (empty => open, dev default).
+      - --auth-token
+      - ${PERFARENA_RUNNER_TOKEN:-}
       # Return 429 instead of parking a caller on the run-lock when the
       # single-threaded runner is already busy.
       - --reject-when-busy
-    networks: [perfarena]
+    # SECURITY (C1): ONLY the internal, egress-less network. Executed code can
+    # talk to nothing outside this compose, so it cannot exfiltrate. The backend
+    # still reaches it at http://harness:8787 over this same network.
+    networks: [harness_internal]
     restart: unless-stopped
 
 volumes:
@@ -81,3 +130,7 @@ volumes:
 
 networks:
   perfarena:
+  # No external connectivity: containers on it reach each other but not the
+  # internet. This is what denies egress to untrusted executed code.
+  harness_internal:
+    internal: true

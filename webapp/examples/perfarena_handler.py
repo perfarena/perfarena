@@ -867,6 +867,11 @@ def _cell_dir(title_slug: str, language: str) -> Path:
         raise ValueError(
             f"language {language!r} not measurable by this harness. "
             f"Known: {sorted(_LANG_MAP)}")
+    # SECURITY: title_slug is interpolated into a filesystem path below. Reject
+    # anything that is not a plain slug so a crafted value cannot traverse out
+    # of the fork (e.g. "../../etc") or write to an arbitrary location.
+    if title_slug in (".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", title_slug or ""):
+        raise ValueError(f"invalid title_slug {title_slug!r}")
     folder, _ext = _LANG_MAP[language]
     root = _root()
     candidates = [
@@ -1242,12 +1247,37 @@ def _compile_with_flag_fallback(
     return rc2, None   # real code error (fails even on defaults)
 
 
-def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
+def _count_measure_rows(cell: Path, folder: str, title_slug: str) -> int:
+    """Count `phase=measure` JSONL rows already present for THIS cell, captured
+    BEFORE `make measure` so _parse_metrics can isolate the rows THIS run
+    appends (the runner appends to the per-language JSONL, never truncates)."""
+    jsonl_path = cell.parent / f"{folder}.jsonl"
+    if not jsonl_path.exists():
+        return 0
+    n = 0
+    with jsonl_path.open() as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (row.get("test") == title_slug
+                    and row.get("language") in (folder, folder.lower())
+                    and row.get("phase") == "measure"):
+                n += 1
+    return n
+
+
+def _parse_metrics(cell: Path, folder: str, title_slug: str,
+                   baseline: int = 0) -> dict[str, Any]:
     """Parse the RAPL/codecarbon runner's JSONL output for THIS cell.
 
     Both runners write to `../<Folder>.jsonl` (relative to the cell),
-    appending. We take the trailing rows that match (test=title_slug,
-    language=folder, phase=measure) and average across iterations."""
+    appending. We take THIS run's rows (those appended past `baseline`) that
+    match (test=title_slug, language=folder, phase=measure) and average."""
     jsonl_path = cell.parent / f"{folder}.jsonl"
     if not jsonl_path.exists():
         raise RuntimeError(
@@ -1278,7 +1308,17 @@ def _parse_metrics(cell: Path, folder: str, title_slug: str) -> dict[str, Any]:
     # still honoured) for this cell so a re-run isn't skewed by earlier ones.
     n_measure = int(os.environ.get("PERFARENA_CLBG_MEASURE_RUNS")
                     or os.environ.get("PERFARENA_MEASURE") or "7")
-    tail = rows[-n_measure:]
+    # Only THIS run's rows: everything appended after the pre-measure baseline.
+    # The runner never truncates the JSONL, so without this we would average
+    # stale rows from a prior invocation of the same cell — exactly what let a
+    # watchdog-KILLED measure still parse a full sample set and get Accepted.
+    fresh = rows[baseline:]
+    if len(fresh) < n_measure:
+        raise RuntimeError(
+            f"incomplete measure for ({folder}, {title_slug}): "
+            f"{len(fresh)}/{n_measure} fresh sample(s) — the run was killed or "
+            f"timed out before finishing")
+    tail = fresh[-n_measure:]
 
     walls = [float(r["wall_ms"]) for r in tail if "wall_ms" in r]
     # Energy shape produced by the runner (both codecarbon and RAPL
@@ -1618,8 +1658,13 @@ def _measure_clbg_samples(
     machine = _machine_descriptor()
 
     def _one(runtime_ms, energy_j, energy_source, memory_mb, any_nonzero):
-        status = "Accepted" if (runtime_ms is not None or energy_j is not None
-                                or memory_mb is not None) else "Runtime Error"
+        # A nonzero benchmark exit means the program crashed on at least one
+        # measured run — never report that as a clean Accepted measurement.
+        if any_nonzero:
+            status = "Runtime Error"
+        else:
+            status = "Accepted" if (runtime_ms is not None or energy_j is not None
+                                    or memory_mb is not None) else "Runtime Error"
         energy_tool_out = (energy_source if (energy_j is not None and energy_source
                            and energy_source not in ("none", "codecarbon-error"))
                            else None)
@@ -1642,18 +1687,36 @@ def _measure_clbg_samples(
         # Memory-only request: one result carrying the single memory reading.
         return [_one(None, None, None, memory_mb, False)]
 
-    mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
-    if mr.returncode != 0:
-        return [_fail_dict("measure", "Runtime Error", mr)]
+    # Snapshot how many measure rows already exist so _parse_metrics can count
+    # ONLY the samples this run appends (the JSONL is never truncated).
+    baseline = _count_measure_rows(cell, folder, title_slug)
     try:
-        m = _parse_metrics(cell, folder, title_slug)
-    except RuntimeError as e:
+        mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
+    except subprocess.TimeoutExpired:
         return [{
-            "status_msg": "Runtime Error", "runtime_ms": None,
+            "status_msg": "Time Limit Exceeded", "runtime_ms": None,
             "memory_mb": None, "runtime_energy_j": None,
             "machine": machine, "config": _measure_config(),
             "raw_response": {"stage": "clbg-make-measure",
-                             "note": "CLBG `make measure` produced no metric",
+                             "note": f"`make measure` exceeded {timeout:.0f}s "
+                                     f"wall clock and was killed",
+                             "cell": str(cell)}}]
+    if mr.returncode != 0:
+        return [_fail_dict("measure", "Runtime Error", mr)]
+    try:
+        m = _parse_metrics(cell, folder, title_slug, baseline=baseline)
+    except RuntimeError as e:
+        # Reached only when `make` exited 0 but did NOT leave a complete, fresh
+        # sample set — the run was killed/timed out mid-measure. Report a
+        # timeout, never a (stale-data) Accepted.
+        return [{
+            "status_msg": "Time Limit Exceeded", "runtime_ms": None,
+            "memory_mb": None, "runtime_energy_j": None,
+            "machine": machine, "config": _measure_config(),
+            "raw_response": {"stage": "clbg-make-measure",
+                             "note": "CLBG `make measure` did not leave a "
+                                     "complete fresh sample set (killed or "
+                                     "timed out)",
                              "error_log": str(e), "cell": str(cell)}}]
 
     want_t = "time" in requested
@@ -1809,7 +1872,33 @@ def measure_once(
                             f"in {time.perf_counter() - _t_run:.2f}s → "
                             f"{len(results)} sample(s)")
             else:
+                # LeetCode measurement ceiling (default 7 min). Bound the WHOLE
+                # per-op measurement, not one run: stop launching runs once the
+                # accumulated wall clock reaches the ceiling and record the rest
+                # as Time Limit Exceeded, so a slow solution can't run for the
+                # full CLBG-sized budget. Each individual run is separately
+                # bounded by PERFARENA_CASE_TIMEOUT_S.
+                _lc_ceiling = float(
+                    os.environ.get("PERFARENA_LC_MEASURE_TIMEOUT_S", "420"))
+                _loop_start = time.perf_counter()
                 for i in range(n_runs):
+                    if i > 0 and (time.perf_counter() - _loop_start) >= _lc_ceiling:
+                        _log_always(
+                            f"LC measure ceiling {_lc_ceiling:.0f}s hit for "
+                            f"{title_slug} ({language}) after {i}/{n_runs} run(s)"
+                            f" — remaining marked Time Limit Exceeded")
+                        for _ in range(i, n_runs):
+                            results.append({
+                                "status_msg": "Time Limit Exceeded",
+                                "runtime_ms": None, "memory_mb": None,
+                                "runtime_energy_j": None,
+                                "machine": _machine_descriptor(),
+                                "config": _measure_config(),
+                                "raw_response": {
+                                    "stage": "lc-measure",
+                                    "note": f"LeetCode measurement exceeded the "
+                                            f"{_lc_ceiling:.0f}s ceiling"}})
+                        break
                     run_mem = do_mem and (not do_measure or i < mem_cap)
                     _t_run = time.perf_counter()
                     results.append(

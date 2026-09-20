@@ -181,6 +181,54 @@ _ISOLATION_SAMPLE_S: float = float(
     os.environ.get("PERFARENA_ISOLATION_SAMPLE_S", "0.3") or 0.3)
 
 
+class _TeeStream:
+    """Write to the real stream and a log file at once. Used to persist the
+    runner's stderr/stdout (startup banner, RX/START/DONE lines, handler output,
+    tracebacks) so an operator can inspect them after the fact."""
+
+    def __init__(self, real, logfile):
+        self._real = real
+        self._logfile = logfile
+
+    def write(self, data):
+        for s in (self._real, self._logfile):
+            try:
+                s.write(data)
+            except Exception:  # noqa: BLE001
+                pass
+        return len(data)
+
+    def flush(self):
+        for s in (self._real, self._logfile):
+            try:
+                s.flush()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def isatty(self):
+        return getattr(self._real, "isatty", lambda: False)()
+
+
+def _install_file_logging() -> None:
+    """Tee stderr and stdout to PERFARENA_LOG_FILE (line-buffered, append) so all
+    runner output is persisted to a file for debugging. No-op when unset."""
+    path = os.environ.get("PERFARENA_LOG_FILE")
+    if not path:
+        return
+    try:
+        d = os.path.dirname(path)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        f = open(path, "a", buffering=1)             # line-buffered
+        real_err, real_out = sys.stderr, sys.stdout
+        sys.stderr = _TeeStream(real_err, f)
+        sys.stdout = _TeeStream(real_out, f)
+        print(f"[harness-runner] logging to {path}", file=sys.stderr)
+    except Exception as e:                            # noqa: BLE001
+        print(f"[harness-runner] could not open log file {path!r}: {e}",
+              file=sys.stderr)
+
+
 def _log(msg: str) -> None:
     """Always-on, timestamped operational line to stderr. Distinct from the
     optional per-request access log (gated by --verbose): these mark request
@@ -267,30 +315,48 @@ def _assert_measurement_isolation() -> dict:
             "max_core_pct": max_core, "reason": None}
 
 
-def _run_with_watchdog(fn: "Callable[[], Any]", label: str) -> Any:
-    """Run `fn` (a handler invocation) under the request watchdog. If it exceeds
-    _REQUEST_TIMEOUT_S, a timer thread SIGKILLs the runner's child processes —
-    unblocking the handler's subprocess.communicate/poll so it returns quickly —
-    while `fn` keeps running to build its (now-failed) response. No-op when the
-    cap is 0/unset."""
+def _run_with_watchdog(fn: "Callable[[], Any]", label: str) -> "tuple[Any, bool]":
+    """Run `fn` (a handler invocation) under the request watchdog and return
+    `(value, fired)` where `fired` is True iff the watchdog expired.
+
+    On expiry a timer thread SIGKILLs the runner's child processes AND re-arms
+    every few seconds, so any subprocess the handler spawns AFTER the first kill
+    (a multi-step CLBG measure runs several) is also killed — the run cannot keep
+    burning time past the deadline. The caller MUST treat `fired=True` as a
+    timeout and never report the (now unreliable) result as Accepted. No-op when
+    the cap is 0/unset."""
     if _REQUEST_TIMEOUT_S <= 0:
-        return fn()
-    fired = {"v": False}
+        return fn(), False
+    state = {"fired": False, "stop": False, "timer": None}
+
+    def _kill(first: bool) -> None:
+        n = _kill_own_children()
+        if first:
+            print(f"[runner] request watchdog: {label} exceeded "
+                  f"{_REQUEST_TIMEOUT_S:.0f}s — SIGKILLed {n} test-suite "
+                  f"process(es)", file=sys.stderr, flush=True)
+        if not state["stop"]:
+            # Re-arm: keep reaping anything the handler spawns after the first
+            # kill so a multi-subprocess handler can't outrun the deadline.
+            state["timer"] = threading.Timer(5.0, lambda: _kill(False))
+            state["timer"].daemon = True
+            state["timer"].start()
 
     def _fire() -> None:
-        fired["v"] = True
-        n = _kill_own_children()
-        print(f"[runner] request watchdog: {label} exceeded "
-              f"{_REQUEST_TIMEOUT_S:.0f}s — SIGKILLed {n} test-suite "
-              f"process(es)", file=sys.stderr, flush=True)
+        state["fired"] = True
+        _kill(True)
 
     t = threading.Timer(_REQUEST_TIMEOUT_S, _fire)
     t.daemon = True
     t.start()
     try:
-        return fn()
+        value = fn()
+        return value, state["fired"]
     finally:
+        state["stop"] = True
         t.cancel()
+        if state["timer"] is not None:
+            state["timer"].cancel()
 
 
 # ---------- reference measurement backend ----------------------------------
@@ -609,6 +675,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 batch_ok = False
                 meta_ok = False
+            _wd_fired = False
             if batch_ok:
                 # Batch handler: ONE call, returns a list of `repeats` results.
                 def _run_batch() -> Any:
@@ -618,7 +685,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                     return _MEASURE_HANDLER(
                         body["title_slug"], body["language"], body["code"], **kw)
                 try:
-                    batch = _run_with_watchdog(_run_batch, "measure")
+                    batch, _wd_fired = _run_with_watchdog(_run_batch, "measure")
                 except Exception as e:                               # noqa: BLE001
                     batch = [{"status_msg": "Runtime Error",
                               "raw_response": {"note": f"handler raised: "
@@ -626,7 +693,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             else:
                 # Back-compat handler (no batch support): loop the per-call shape.
                 _mkw = {**metrics_kw, "meta": meta} if meta_ok else metrics_kw
-                batch = _run_with_watchdog(
+                batch, _wd_fired = _run_with_watchdog(
                     lambda: [self._call_handler(_MEASURE_HANDLER, body,
                                                 extra_kwargs=_mkw)
                              for _ in range(repeats)],
@@ -642,6 +709,25 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             if len(batch) < repeats:
                 batch = batch + [batch[-1]] * (repeats - len(batch))
             runs = [_normalise(b) for b in batch[:repeats]]
+            if _wd_fired:
+                # The watchdog killed this run mid-flight, so whatever the
+                # handler managed to assemble (possibly from stale/partial
+                # samples) is unreliable. Overwrite EVERY sample with a timeout
+                # verdict so an over-budget measure is never recorded as
+                # Accepted. This is the authoritative backstop for the
+                # handler-side completeness check.
+                tle = _normalise({
+                    "status_msg": "Time Limit Exceeded",
+                    "raw_response": {
+                        "note": f"measurement exceeded the "
+                                f"{_REQUEST_TIMEOUT_S:.0f}s runner watchdog "
+                                f"and was killed",
+                    },
+                    "error_log": (f"measurement exceeded the "
+                                  f"{_REQUEST_TIMEOUT_S:.0f}s runner watchdog "
+                                  f"and was killed"),
+                })
+                runs = [dict(tle) for _ in range(max(1, len(runs) or repeats))]
         finally:
             self._release()
         _verdict = runs[0].get("status_msg") if runs else "?"
@@ -675,9 +761,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 _vmeta_ok = False
             _vkw = {"meta": meta} if _vmeta_ok else None
-            r = _run_with_watchdog(
+            r, _wd_fired = _run_with_watchdog(
                 lambda: self._call_handler(_VALIDATE_HANDLER, body, extra_kwargs=_vkw),
                 "validate")
+            if _wd_fired:
+                # A validate that blew the watchdog is inconclusive, not a
+                # verdict — report a timeout instead of the handler's half-run.
+                r = {"status_msg": "Time Limit Exceeded",
+                     "error_log": (f"validate exceeded the "
+                                   f"{_REQUEST_TIMEOUT_S:.0f}s runner watchdog "
+                                   f"and was killed"),
+                     "raw_response": {"note": "validate killed by watchdog"}}
         finally:
             self._release()
         _log(f"DONE validate {body['language']}/{body['title_slug']} "
@@ -787,6 +881,8 @@ def main() -> None:
     global _MEASURE_HANDLER, _MEASUREMENT_LABEL
     global _VALIDATE_HANDLER, _CORRECTNESS_LABEL
     global _REJECT_WHEN_BUSY, _VERBOSE, _REQUEST_TIMEOUT_S
+
+    _install_file_logging()   # tee stderr/stdout to PERFARENA_LOG_FILE if set
 
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)

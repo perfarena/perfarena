@@ -94,28 +94,50 @@ install_toolchains() {
       pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip
       pm_install gcc g++ clang
       pm_install libboost-dev libgmp-dev   # C++ pidigits (Boost.Multiprecision) + Python gmpy2 (GMP)
+      pm_install libpcre2-dev              # C/C++ regex-redux (PCRE2)
       pm_install openjdk-21-jdk-headless
       install_node
-      pm_install php-cli
+      pm_install php-cli php-gmp           # php-gmp: PHP pidigits (GMP bignum)
       pm_install ruby
       pm_install golang-go
       pm_install python3 python3-pip python3-venv python3-dev
       ;;
     dnf)
       pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip
-      pm_install boost-devel gmp-devel
+      pm_install boost-devel gmp-devel pcre2-devel
       pm_install java-21-openjdk-devel
       install_node
-      pm_install php-cli
+      pm_install php-cli php-gmp
       pm_install ruby
       pm_install golang
       pm_install python3 python3-pip python3-devel
       ;;
     brew)
-      pm_install gcc llvm openjdk@21 node php ruby go python@3.12 boost gmp
+      pm_install gcc llvm openjdk@21 node php ruby go python@3.12 boost gmp pcre2
       warn "macOS: C/C++ uses Apple clang from Xcode CLT (xcode-select --install)"
       ;;
   esac
+
+  # PHP short_open_tag — several CLBG PHP references open with `<?` (not
+  # `<?php`). With the default (off) PHP echoes the source instead of running
+  # it, so every such cell fails. Enable it via a conf.d drop-in in the ini dir
+  # this PHP scans (falls back to the loaded ini).
+  if command -v php >/dev/null 2>&1; then
+    _php_scan="$(php -i 2>/dev/null | sed -n 's/^Scan this dir for additional \.ini files => //p' | head -1)"
+    if [ -n "$_php_scan" ]; then
+      run "$SUDO mkdir -p \"$_php_scan\""
+      run "printf 'short_open_tag=On\\n' | $SUDO tee \"$_php_scan/99-perfarena.ini\" >/dev/null"
+      log "enabled PHP short_open_tag ($_php_scan/99-perfarena.ini)"
+    else
+      _php_ini="$(php -i 2>/dev/null | sed -n 's/^Loaded Configuration File => //p' | head -1)"
+      if [ -n "$_php_ini" ] && [ "$_php_ini" != "(none)" ]; then
+        run "printf 'short_open_tag=On\\n' | $SUDO tee -a \"$_php_ini\" >/dev/null"
+        log "enabled PHP short_open_tag ($_php_ini)"
+      else
+        warn "could not locate a PHP ini to enable short_open_tag"
+      fi
+    fi
+  fi
 
   # TypeScript compiler — harness_ts.js resolves it via 'npm root -g'.
   if command -v npm >/dev/null 2>&1; then

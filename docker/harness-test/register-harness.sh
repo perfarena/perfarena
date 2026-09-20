@@ -15,16 +15,23 @@ from app.db import engine
 from app.models import Harness, CorrectnessOracle
 
 ENDPOINT = "http://harness:8787"     # compose service name, not localhost
+# Backend httpx timeout for /measure. MUST exceed the runner watchdog
+# (PERFARENA_REQUEST_TIMEOUT_S, 1320s) so the backend waits for the runner's
+# verdict — including a Time Limit Exceeded — instead of giving up early and
+# recording "dispatch failed" while the measurement is still running. (Validate
+# is separately capped at 300s in arena_local_runner, so this large value only
+# affects /measure.)
+CONFIG = {"endpoint": ENDPOINT, "timeout_s": 1380}
 with Session(engine) as s:
     for Model, name in ((Harness, "Local Docker runner (perf)"),
                         (CorrectnessOracle, "Local Docker runner (correctness)")):
         row = s.exec(select(Model).where(Model.slug == "arena-local")).first()
         if row is None:
             row = Model(slug="arena-local", name=name, kind="arena-local",
-                        config={"endpoint": ENDPOINT}, status="active")
+                        config=CONFIG, status="active")
         else:
             row.kind = "arena-local"
-            row.config = {"endpoint": ENDPOINT}
+            row.config = CONFIG
             row.status = "active"
         s.add(row)
     s.commit()

@@ -31,6 +31,7 @@ from sqlmodel import Session, select
 
 from .auth import (
     current_admin, current_user, generate_api_key,
+    hash_api_key, looks_hashed, issue_session,
     hash_password, verify_password, maybe_user,
 )
 from . import captcha
@@ -510,10 +511,27 @@ def _slug(value: str) -> str:
     return "-".join(value.lower().split())
 
 
-app = FastAPI(title="PerfArena", version="0.1.0")
+# SECURITY: hide the OpenAPI schema and interactive docs unless explicitly
+# enabled (ARENA_ENABLE_DOCS=1). They disclose the full API surface, so they
+# default off in any deployment; a dev enables them locally when needed.
+_enable_docs = os.environ.get("ARENA_ENABLE_DOCS", "").strip().lower() in ("1", "true", "yes")
+app = FastAPI(
+    title="PerfArena", version="0.1.0",
+    docs_url="/docs" if _enable_docs else None,
+    redoc_url="/redoc" if _enable_docs else None,
+    openapi_url="/openapi.json" if _enable_docs else None,
+)
+# CORS origins are config-driven (comma-separated ARENA_CORS_ORIGINS); the
+# default is the local Vite dev server. Production is served same-origin, so it
+# needs no cross-origin allowance.
+_cors_origins = [
+    o.strip() for o in
+    os.environ.get("ARENA_CORS_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_cors_origins,
     allow_methods=["*"], allow_headers=["*"],
 )
 
@@ -641,9 +659,27 @@ def admin_diagnostics(_: User = Depends(current_admin)):
     }
 
 
+def _migrate_api_keys_to_hashed() -> None:
+    """One-time, idempotent: replace any plaintext API key in the DB with its
+    hash. Presenting the original key still authenticates (the token is hashed
+    at lookup), so this does not lock anyone out. Safe to run on every boot."""
+    from sqlmodel import Session
+    with Session(engine) as s:
+        n = 0
+        for u in s.exec(select(User).where(User.api_key.isnot(None))).all():
+            if u.api_key and not looks_hashed(u.api_key):
+                u.api_key = hash_api_key(u.api_key)
+                s.add(u); n += 1
+        if n:
+            s.commit()
+            print(f"[migrate] hashed {n} plaintext API key(s) at rest",
+                  file=sys.stderr)
+
+
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+    _migrate_api_keys_to_hashed()
     _install_crash_diagnostics()
     # WAL self-heal: if a prior boot was killed mid-transaction (OOM, kill -9,
     # docker stop -t 0, …) the WAL can be left holding tens of MB of
@@ -808,7 +844,7 @@ def _seed_bootstrap_admin() -> None:
                 display_name=os.environ.get("ARENA_BOOTSTRAP_ADMIN_NAME", "Admin"),
                 role=UserRole.admin,
                 status=UserStatus.approved,
-                api_key=api_key,
+                api_key=hash_api_key(api_key),
                 password_hash=hash_password(password) if password else None,
             )
             s.add(u); s.commit()
@@ -835,7 +871,7 @@ def _seed_bootstrap_admin() -> None:
             display_name="Admin",
             role=UserRole.admin,
             status=UserStatus.approved,
-            api_key=api_key,
+            api_key=hash_api_key(api_key),
         )
         s.add(u); s.commit()
         print(
@@ -5059,15 +5095,15 @@ def login(req: LoginRequest, session: Session = Depends(get_session)):
         raise HTTPException(401, "invalid email or password")
     if user.status != UserStatus.approved:
         raise HTTPException(403, "account is not approved yet")
-    if not user.api_key:
-        # User previously discarded their key — issue a fresh one on login so
-        # they're not locked out of API access just because they cleared it.
-        user.api_key = generate_api_key()
-        session.add(user); session.commit(); session.refresh(user)
+    # Return a short-lived SESSION token, not the API key. API keys are hashed
+    # at rest and cannot be handed back; the browser authenticates with a
+    # session, while scripts use the (separately issued) API key. The token
+    # goes in the api_key field so the existing client stores and sends it as
+    # the bearer unchanged, and current_user routes it to the session path.
     return LoginResponse(
         email=user.email, display_name=user.display_name, org=user.org,
         role=user.role.value if hasattr(user.role, "value") else str(user.role),
-        api_key=user.api_key,
+        api_key=issue_session(user.id),
     )
 
 
@@ -5079,9 +5115,10 @@ def regenerate_api_key(
     """Issues a fresh API key and revokes the previous one. The caller MUST
     swap the new key into their client immediately — the current Bearer dies
     on this call."""
-    user.api_key = generate_api_key()
-    session.add(user); session.commit(); session.refresh(user)
-    return {"api_key": user.api_key}
+    new_key = generate_api_key()
+    user.api_key = hash_api_key(new_key)
+    session.add(user); session.commit()
+    return {"api_key": new_key}
 
 
 @app.delete("/api/me/api-key", status_code=status.HTTP_204_NO_CONTENT)
@@ -6886,13 +6923,15 @@ def approve_user(user_id: int, _: User = Depends(current_admin), session: Sessio
     if not u:
         raise HTTPException(404, "not found")
     if u.status == UserStatus.approved:
-        return {"api_key": u.api_key}
+        # Key is hashed at rest and not recoverable; admin can regenerate.
+        return {"api_key": None}
     u.status = UserStatus.approved
     u.approved_at = datetime.utcnow()
-    u.api_key = generate_api_key()
+    new_key = generate_api_key()
+    u.api_key = hash_api_key(new_key)
     session.add(u)
     session.commit()
-    return {"api_key": u.api_key}
+    return {"api_key": new_key}
 
 
 @app.post("/api/admin/users/{user_id}/reject")
