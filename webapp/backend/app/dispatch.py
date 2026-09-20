@@ -34,6 +34,7 @@ from typing import Callable
 from sqlmodel import Session, select
 
 from . import leetcode_dist
+from . import app_settings
 from .db import engine
 from . import arena_local_runner as _arena
 from .models import (
@@ -414,11 +415,23 @@ def _leetbot_validate(problem: "Problem", language: str, code: str,
                 "raw_response": {"note": f"leetbot correctness gate error: {e}"}}
     r = runs[0] if runs else {}
     status = r.get("status_msg", "Unknown")
+    # Pull LeetCode's diagnostic fields (leetbot lifts them to the top level of
+    # the run dict) into raw_response so the UI's _build_error_log can render
+    # *why* it failed (which test case, the traceback). Without this the gate
+    # stored a bare verdict and the submission-detail page showed no error.
+    detail = {k: r.get(k) for k in (
+        "compile_error", "full_compile_error", "runtime_error",
+        "full_runtime_error", "last_testcase", "input", "expected_output",
+        "code_output", "std_output") if r.get(k)}
+    raw = detail or r.get("raw_response") or r.get("leetcode_full_response") or {}
     return {
         "status_msg": status,
         "total_correct": r.get("total_correct"),
         "total_testcases": r.get("total_testcases"),
-        "raw_response": r.get("raw_response") or r.get("leetcode_full_response") or {},
+        "raw_response": raw,
+        # Full verbatim LC /check payload — persisted on Run.leetcode_full_response
+        # and shown for unfamiliar error shapes on non-Accepted runs.
+        "leetcode_full_response": r.get("leetcode_full_response"),
         # A system failure (LC outage / transient) must NOT read as a real
         # verdict — the caller keeps the attempt pending, same as /validate.
         "system_failure": status in _TRANSIENT_STATUSES,
@@ -472,7 +485,7 @@ def _correctness_gate(session: "Session", sub: Submission, code: str,
         return None
 
     last: "dict | None" = None
-    for i in range(_CORRECTNESS_GATE_RETRIES + 1):
+    for i in range(app_settings.get_int("dispatch.correctness_gate_retries", _CORRECTNESS_GATE_RETRIES) + 1):
         vr = _one()
         if vr is None:
             return None
@@ -550,7 +563,7 @@ def _repeats_for_harness(h: "Harness | None") -> int:
         n = (h.config or {}).get("repeats")
         if isinstance(n, int) and n >= 1:
             return n
-    return REPEATS
+    return app_settings.get_int("dispatch.repeats", REPEATS)
 # On a Time Limit Exceeded verdict, leetbot re-submits up to this many extra
 # times before accepting the TLE — TLE is judge-load-flaky and a borderline
 # solution often passes on retry. Applied per repeat (so the worst case is
@@ -917,7 +930,8 @@ def _real_dispatch_single(title_slug: str, language: str, path: str,
                     title_slug, language, path,
                     "--repeat", "1",
                     "--poll-timeout", str(POLL_TIMEOUT),
-                    "--tle-retries", str(TLE_RETRIES),
+                    "--tle-retries",
+                    str(app_settings.get_int("dispatch.tle_retries", TLE_RETRIES)),
                 ],
                 capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT,
                 cwd=str(LEETBOT.parent),
@@ -1556,6 +1570,9 @@ def dispatch_submission(submission_id: int) -> None:
                             raw_response=vr.get("raw_response") or {
                                 "note": "correctness oracle rejected",
                             },
+                            # Persist the full LC payload too, so the SPA can
+                            # show the raw verdict on non-Accepted gate runs.
+                            leetcode_full_response=vr.get("leetcode_full_response"),
                             harness_id=None,       # no /measure happened
                             correctness_oracle_id=effective_correctness.id,
                         ))
@@ -1568,7 +1585,7 @@ def dispatch_submission(submission_id: int) -> None:
                             "total_correct": vr.get("total_correct"),
                             "total_testcases": vr.get("total_testcases"),
                             "raw_response": vr.get("raw_response"),
-                            "leetcode_full_response": None,
+                            "leetcode_full_response": vr.get("leetcode_full_response"),
                         }]
                         validate_gate_rejected = True
                         print(f"[dispatch] attempt {a.id}: /validate → "
@@ -1720,7 +1737,7 @@ def dispatch_submission(submission_id: int) -> None:
                     # every other submission goes through a sibling
                     # account that's already cooled down.
                     from . import leetcode_accounts as _lca
-                    pick = _lca.pick_for_submission(min_gap_s=INTER_DELAY)
+                    pick = _lca.pick_for_submission(min_gap_s=app_settings.get_float("dispatch.inter_delay_s", INTER_DELAY))
                     chosen_name: str | None = None
                     if pick is None:
                         # Pool drained mid-sweep (every account exhausted

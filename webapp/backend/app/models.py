@@ -635,3 +635,16 @@ class TraceLogEntry(SQLModel, table=True):
     prev_hash: str = Field(description="entry_hash of seq-1 (genesis = 64 zeros)")
     entry_hash: str = Field(description="sha256 over {seq,prev_hash,leaf_hash,attempt_id,logged_at}")
     logged_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class AppSetting(SQLModel, table=True):
+    """Runtime-editable configuration overrides, keyed by a dotted setting name
+    (e.g. `dispatch.repeats`). An override here wins over the environment
+    variable / code default at USE time, so an admin can tune dispatch behaviour
+    from the Variables tab without an env change or a restart. A missing row
+    means "use the env/default" — so an empty table reproduces legacy behaviour
+    exactly. See app.app_settings for the registry and typed accessors."""
+    key: str = Field(primary_key=True, description="dotted setting name")
+    value: str = Field(description="stringified value; cast per the registry")
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_by_user_id: int | None = Field(default=None, foreign_key="user.id")

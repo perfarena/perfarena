@@ -43,6 +43,16 @@ function datasetDownloadUrl(params: DatasetParams = {}): string {
   return `/api/datasets/solutions${qs.toString() ? "?" + qs.toString() : ""}`;
 }
 
+export interface AppSettingRow {
+  key: string; label: string; type: string; group: string; help: string;
+  default: unknown; env?: string; min: number | null; max: number | null;
+  value: unknown; source: "override" | "env" | "default"; override: string | null;
+}
+export interface HarnessHealthRow {
+  id: number; slug: string; name: string; kind: string;
+  endpoint: string | null; ok: boolean | null; status: string; message: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
@@ -360,6 +370,15 @@ export const api = {
   languageDetail: (name: string) => request<LanguageDetailPayload>(`/api/languages/${encodeURIComponent(name)}`),
   adminPending: () => request<PendingUser[]>(`/api/admin/pending`),
   adminExportTables: () => request<{ tables: string[] }>(`/api/admin/export/tables`),
+
+  // Runtime-editable settings (Variables tab).
+  adminGetSettings: () =>
+    request<{ settings: AppSettingRow[] }>(`/api/admin/settings`),
+  adminPutSettings: (updates: { key: string; value: unknown }[]) =>
+    request<{ results: { key: string; ok: boolean; value?: unknown; error?: string }[] }>(
+      `/api/admin/settings`, { method: "PUT", body: JSON.stringify(updates) }),
+  adminHarnessesHealth: () =>
+    request<{ harnesses: HarnessHealthRow[] }>(`/api/admin/harnesses/health`),
   /** Builds the download URL with auth fold-in so the admin can just click.
    * `includeCredentials` only has effect when `leetcode_accounts` is in the
    * tables list — when true, the bundle ships raw session cookies; when

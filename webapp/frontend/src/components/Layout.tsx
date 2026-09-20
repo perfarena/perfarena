@@ -26,6 +26,7 @@ const ADMIN_LINKS = [
   { to: "/admin",                   label: "Admin" },
   { to: "/admin/leetcode-accounts", label: "LeetCode accounts" },
   { to: "/admin/export",            label: "Export & Import" },
+  { to: "/admin/settings",          label: "Variables" },
 ];
 
 export default function Layout() {

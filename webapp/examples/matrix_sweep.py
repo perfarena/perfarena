@@ -322,7 +322,8 @@ def _drop_cached_code(output_path: Path, tuple_key: str, salt: str = "") -> None
               file=sys.stderr)
 
 
-def _reconcile_progress(progress: dict, base: str, api_key: str | None) -> dict:
+def _reconcile_progress(progress: dict, base: str, api_key: str | None,
+                        deep: bool = False) -> dict:
     """Drop progress entries whose submission was deleted server-side.
 
     The progress log is a CLIENT-only record of what we believe completed
@@ -353,38 +354,48 @@ def _reconcile_progress(progress: dict, base: str, api_key: str | None) -> dict:
     print(f"  reconciling progress log against {len(ids)} submission(s)…")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    alive: dict[int, set[str]] = {}    # sub_id → set of slugs still attempted
+    alive: dict[int, set[str] | None] = {}  # sub_id → set of slugs still attempted
     gone: set[int] = set()
 
-    for sid in ids:
-        url = f"{base.rstrip('/')}/api/submissions/{sid}"
-        req = urllib.request.Request(url, headers=headers, method="GET")
-        try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                data = json.loads(r.read() or "{}")
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                gone.add(sid)
-                continue
-            print(f"  WARN: GET /submissions/{sid} → HTTP {e.code}; "
-                  f"keeping its progress entries", file=sys.stderr)
-            alive[sid] = None      # sentinel: unknown coverage, skip slug pruning
-            continue
-        except (urllib.error.URLError, OSError) as e:
-            print(f"  WARN: GET /submissions/{sid} → {e}; "
-                  f"keeping its progress entries", file=sys.stderr)
-            alive[sid] = None
-            continue
-        # Per-attempt granularity: collect the slugs the submission still
-        # has a record for. The /api/submissions/{id} response carries one
-        # row per (attempt, run) pair under "runs", each keyed by
-        # problem_slug — so a deleted attempt simply has no row here.
-        runs_in = data.get("runs") or []
-        slugs = {r.get("problem_slug") for r in runs_in if r.get("problem_slug")}
-        alive[sid] = slugs
+    # ONE bulk call for the live submission-id set instead of N per-id GETs.
+    # GET /api/submissions returns only non-deleted submissions, so any id in
+    # our log that's absent from it was deleted server-side. This handles the
+    # common case (whole-submission deletion) in a single request.
+    try:
+        req = urllib.request.Request(f"{base.rstrip('/')}/api/submissions",
+                                     headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=60) as r:
+            live = json.loads(r.read() or "[]")
+        live_ids = {s.get("id") for s in live if isinstance(s, dict)}
+        gone = {sid for sid in ids if sid not in live_ids}
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:
+        print(f"  WARN: bulk GET /api/submissions → {e}; keeping ALL progress "
+              f"entries (skipping reconcile this run)", file=sys.stderr)
+        return progress
 
-    if not gone and all(v is None for v in alive.values()):
-        print(f"    nothing to prune (all submissions still present)")
+    # Per-attempt (slug-coverage) pruning needs each submission's runs, so it
+    # costs one GET per still-alive submission — opt-in via --deep-reconcile-
+    # progress. Off by default: the bulk check above already covers deletion of
+    # whole submissions, which is what a server-side purge does.
+    if deep:
+        for sid in (i for i in ids if i not in gone):
+            url = f"{base.rstrip('/')}/api/submissions/{sid}"
+            try:
+                with urllib.request.urlopen(
+                        urllib.request.Request(url, headers=headers, method="GET"),
+                        timeout=15) as r:
+                    data = json.loads(r.read() or "{}")
+            except (urllib.error.HTTPError, urllib.error.URLError, OSError) as e:
+                print(f"  WARN: GET /submissions/{sid} → {e}; keeping its "
+                      f"entries", file=sys.stderr)
+                alive[sid] = None      # sentinel: unknown coverage, skip pruning
+                continue
+            runs_in = data.get("runs") or []
+            alive[sid] = {r.get("problem_slug")
+                          for r in runs_in if r.get("problem_slug")}
+
+    if not gone and not alive:
+        print(f"    nothing to prune (all {len(ids)} submissions still present)")
         return progress
 
     pruned: dict = {}
@@ -1480,6 +1491,12 @@ def main() -> None:
                          "entries pointing at deleted submissions/attempts. "
                          "Default: enabled — keeps resume honest after a "
                          "server-side delete. Pass this when running offline.")
+    ap.add_argument("--deep-reconcile-progress", dest="deep_reconcile_progress",
+                    action="store_true", default=False,
+                    help="also prune per-ATTEMPT (slug-level) deletions — costs "
+                         "one GET per live submission. Default: off (the bulk "
+                         "existence check already catches whole-submission "
+                         "deletes in a single request).")
     ap.add_argument("--prefetch", type=int, default=1, metavar="N",
                     help="how many tuples ahead the background generator may "
                          "stay. With --prefetch 1 (default), while main is "
@@ -1603,7 +1620,8 @@ def main() -> None:
     # --no-reconcile-progress run still benefits from the cleanup.
     if args.reconcile_progress and progress and not args.dry_run:
         before = len(progress)
-        progress = _reconcile_progress(progress, base, args.api_key)
+        progress = _reconcile_progress(progress, base, args.api_key,
+                                        deep=args.deep_reconcile_progress)
         if len(progress) != before:
             _save_progress(args.output, progress)
     # Build (submission_id → competition_slug) so the resume filter can

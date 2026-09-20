@@ -2896,6 +2896,65 @@ def probe_harness(
     return {"ok": ok, "message": info}
 
 
+@app.get("/api/admin/harnesses/health")
+def admin_harnesses_health(
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Probe EVERY harness's runner /healthz so an operator (and the Variables
+    tab) sees at a glance which harnesses are reachable. LeetCode harnesses have
+    no runner endpoint and report status 'n/a'."""
+    from . import arena_local_runner as _arena
+    out = []
+    for h in session.exec(select(Harness).order_by(Harness.slug)).all():
+        cfg = h.config or {}
+        row = {"id": h.id, "slug": h.slug, "name": h.name, "kind": h.kind,
+               "endpoint": cfg.get("endpoint")}
+        if h.kind == "leetcode":
+            row.update(ok=None, status="n/a",
+                       message="LeetCode harness has no runner endpoint")
+        elif not cfg.get("endpoint"):
+            row.update(ok=False, status="unconfigured",
+                       message="config.endpoint not set")
+        else:
+            try:
+                ok, info = _arena.probe_healthz(h)
+            except Exception as e:  # noqa: BLE001
+                ok, info = False, f"probe error: {type(e).__name__}: {e}"
+            row.update(ok=bool(ok), status=("up" if ok else "down"),
+                       message=str(info)[:300])
+        out.append(row)
+    return {"harnesses": out}
+
+
+@app.get("/api/admin/settings")
+def admin_get_settings(_: User = Depends(current_admin)):
+    """Runtime-editable settings: registry + current effective value + source."""
+    from . import app_settings
+    return {"settings": app_settings.all_effective()}
+
+
+@app.put("/api/admin/settings")
+def admin_put_settings(
+    updates: list[dict],
+    user: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Set or clear runtime overrides. Body: [{"key": ..., "value": ...}]. A
+    null/missing value clears the override (reverts to env/default)."""
+    from . import app_settings
+    results = []
+    for u in updates:
+        key = u.get("key")
+        try:
+            eff = app_settings.set_value(session, key, u.get("value"),
+                                         user_id=user.id)
+            results.append({"key": key, "ok": True, "value": eff})
+        except (ValueError, KeyError) as e:
+            results.append({"key": key, "ok": False, "error": str(e)})
+    return {"results": results}
+
+
 @app.delete("/api/admin/harnesses/{hid}",
             status_code=status.HTTP_204_NO_CONTENT)
 def delete_harness(
