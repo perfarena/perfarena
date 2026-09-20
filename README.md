@@ -450,16 +450,24 @@ sudo -u perfrunner env \
   PERFARENA_HANDLER_TIMEOUT_S=1200 PERFARENA_LC_MEASURE_TIMEOUT_S=420 \
   PERFARENA_REQUEST_TIMEOUT_S=1320 \
   ~/.venvs/perfrunner/bin/python harness_runner_server.py \
-    --host 127.0.0.1 --port 8787 \
+    --host 0.0.0.0 --port 8787 \
     --auth-token "$PERFARENA_RUNNER_TOKEN" \
     --measure-handler perfarena_handler:measure_once \
     --validate-handler perfarena_handler:validate_once \
     --request-timeout 1320 --verbose
 ```
 
+**Bind address (this bit matters — a wrong choice looks like "dispatch failed / empty runner logs"):** bind an interface the backend can actually reach.
+- Use `--host 127.0.0.1` ONLY when the backend runs on the SAME host and reaches the runner over loopback (bare-metal backend, or `docker run --network host`). Register the harness endpoint as `http://127.0.0.1:8787`.
+- Use `--host 0.0.0.0` when the backend is a container with port-mapping OR on a different host. Register the endpoint as the runner's reachable address, e.g. `http://<host-lan-ip>:8787`. The `--auth-token` is what protects the (RCE-capable) runner in this case, so it is mandatory here.
+
+If the runner binds `127.0.0.1` but the harness endpoint is a non-loopback address, every connection is refused, nothing reaches the runner, and the backend synthesises failures — with an empty runner log.
+
 Measurement ceilings: a CLBG measure may run 20 min (`PERFARENA_HANDLER_TIMEOUT_S=1200`) and a LeetCode measure 7 min (`PERFARENA_LC_MEASURE_TIMEOUT_S=420`); either overrun is reported as Time Limit Exceeded, never averaged into "Accepted". `--request-timeout 1320` is the global backstop above both.
 
-Register it in the backend (Harnesses page or `register-harness.sh`) with endpoint `http://127.0.0.1:8787` and the same `auth_token`. Set the harness `config.timeout_s` above the watchdog (e.g. `1380` for a `1320` watchdog); otherwise the backend gives up at its 300 s default and marks attempts "dispatch failed" while the runner is still measuring. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
+Register it in the backend (Harnesses page or `register-harness.sh`) with the endpoint matching the bind above. The harness `config.auth_token` MUST equal the runner's `--auth-token`, or dispatch gets 401. Set the harness `config.timeout_s` above the watchdog (e.g. `1380` for a `1320` watchdog); otherwise the backend gives up at its 300 s default and marks attempts "dispatch failed" while the runner is still measuring. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
+
+Runtime knobs (repeats, TLE retries, correctness-gate retries, per-account gap) are also editable live from the admin **Variables** tab (`/admin/settings`) without an env change or restart — an override there wins over the env var. The same tab shows live health of every registered harness.
 
 ### 4. Run a sweep
 
