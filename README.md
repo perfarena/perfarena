@@ -415,12 +415,15 @@ docker run -d --name perfarena-backend \
   --network host \
   -v perfarena-data:/data \
   -e ARENA_DB=/data/arena.db \
+  -e ARENA_DISPATCH_ENABLED=1 \
   -e ARENA_BOOTSTRAP_ADMIN_EMAIL=admin@perfarena.dev \
   -e ARENA_BOOTSTRAP_ADMIN_API_KEY='<strong random>' \
   -e ARENA_SESSION_SECRET='<random, stable>' \
   --restart unless-stopped \
   perfarena-backend:latest
 ```
+
+**`ARENA_DISPATCH_ENABLED=1` is REQUIRED for real dispatch.** Without it the backend runs a built-in fake judge: it synthesizes plausible runs (real-looking `avg_rt`, Accepted/WA/TLE with no detail) and never contacts the runner or LeetCode. If your sweep produces verdicts but the runner log stays empty, this flag is missing.
 
 With `--network host` the app listens on `0.0.0.0:8000` directly on the host (drop `-p`; it's ignored). Keep it off the LAN with `sudo ufw deny 8000` — loopback (your reverse proxy / ngrok tunnel) still reaches it. Register the harness/oracle endpoint as `http://127.0.0.1:8787`. Verify the link: `docker exec perfarena-backend curl -sS -m5 http://127.0.0.1:8787/healthz`.
 
