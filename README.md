@@ -407,10 +407,12 @@ The runner sits on an internal, egress-less network (reachable only by the backe
 
 ### 2. Backend container (standalone)
 
+**Networking (this is the one that bites): the backend container must be able to reach the harness runner.** When the runner is bare-metal on the SAME host (the usual prod layout, §3), a bridge-networked container (`-p 127.0.0.1:8000:8000`) generally CANNOT reach a service on its own host — with a default `INPUT DROP` + ufw not covering `docker0`, container→host traffic on the runner port is dropped, so dispatch silently fails and the runner log stays empty. Use **`--network host`** so the container shares the host stack and reaches the runner on `127.0.0.1:8787`:
+
 ```bash
 docker build -t perfarena-backend:latest .
 docker run -d --name perfarena-backend \
-  -p 127.0.0.1:8000:8000 \
+  --network host \
   -v perfarena-data:/data \
   -e ARENA_DB=/data/arena.db \
   -e ARENA_BOOTSTRAP_ADMIN_EMAIL=admin@perfarena.dev \
@@ -420,7 +422,11 @@ docker run -d --name perfarena-backend \
   perfarena-backend:latest
 ```
 
-Bind to `127.0.0.1` behind a reverse proxy or tunnel. Leave `ARENA_ENABLE_DOCS` unset so `/docs` and `/openapi.json` return 404.
+With `--network host` the app listens on `0.0.0.0:8000` directly on the host (drop `-p`; it's ignored). Keep it off the LAN with `sudo ufw deny 8000` — loopback (your reverse proxy / ngrok tunnel) still reaches it. Register the harness/oracle endpoint as `http://127.0.0.1:8787`. Verify the link: `docker exec perfarena-backend curl -sS -m5 http://127.0.0.1:8787/healthz`.
+
+Bridge-networking alternative (only if you can't use host networking): keep `-p 127.0.0.1:8000:8000`, then open the bridge→host path with `sudo ufw allow in on docker0 to any port 8787 proto tcp` and register the endpoint as `http://172.17.0.1:8787` (the docker0 gateway).
+
+Leave `ARENA_ENABLE_DOCS` unset so `/docs` and `/openapi.json` return 404.
 
 ### 3. Harness runner on a bare-metal measurement host
 
