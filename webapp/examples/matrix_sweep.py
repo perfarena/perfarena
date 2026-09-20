@@ -1530,6 +1530,15 @@ def main() -> None:
                          "skipped by the resume filter — add --no-resume (or "
                          "--retry-failed) to re-generate AND re-submit those "
                          "too. Mutually exclusive with --submit-from-cache.")
+    ap.add_argument("--keep-cache", action="store_true",
+                    help="Persist each tuple's generated code in the cache AFTER "
+                         "its verdict lands (default: the entry is dropped once a "
+                         "verdict is recorded). Keeps the cache reusable across "
+                         "re-runs, so re-measuring the same solutions (e.g. after "
+                         "deleting submissions to re-run at a new N) reuses the "
+                         "cached code instead of re-calling the model. Use "
+                         "--refresh-cache to force regeneration when you do want "
+                         "fresh code.")
     ap.add_argument("--inference-timeout", type=int, default=None, metavar="SEC",
                     help="Per-request timeout (seconds) for ONE model inference "
                          "call (default 600). Raise it for slow local models that "
@@ -2367,9 +2376,11 @@ def main() -> None:
         # LC returned a verdict for this tuple — the cached code we
         # may have written during prefetch is now obsolete. Drop it
         # so the next sweep's cache directory doesn't accumulate
-        # forever-stale entries. Exception: --submit-from-cache keeps the
-        # cache so the same generations can be re-submitted elsewhere.
-        if not args.submit_from_cache:
+        # forever-stale entries. Exceptions: --submit-from-cache keeps the
+        # cache so the same generations can be re-submitted elsewhere, and
+        # --keep-cache keeps it so a re-run reuses generations instead of
+        # re-calling the model.
+        if not args.submit_from_cache and not getattr(args, "keep_cache", False):
             _drop_cached_code(args.output, key, _cache_salt(args))
         n_ok += 1
 
