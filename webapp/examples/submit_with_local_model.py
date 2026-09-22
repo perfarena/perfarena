@@ -1571,7 +1571,16 @@ def main() -> None:
                          "for templates like experiment-system / "
                          "experiment-system-with-shape that reference the "
                          "placeholder.")
-    ap.add_argument("--poll-seconds", type=int, default=60)
+    ap.add_argument("--poll-seconds", type=int, default=None, metavar="SEC",
+                    help="how long to wait for the whole submission (all "
+                         "--samples-per-problem attempts) to finish judging. "
+                         "The wait covers each attempt's server-side validate + "
+                         "measure. Default scales with the competition and the "
+                         "sample count: ~120s/attempt for LeetCode, "
+                         "~1800s/attempt for arena-local CLBG (1 warmup + 7 "
+                         "measure whole-program runs at ~150s each, plus "
+                         "validate). Too short a budget stops the wait while the "
+                         "server is still measuring.")
     ap.add_argument("--inference-timeout", type=int, default=None, metavar="SEC",
                     help="Per-request timeout (seconds) for ONE model inference "
                          "call (default 600). Raise it for slow local models; "
@@ -1579,6 +1588,13 @@ def main() -> None:
     args = ap.parse_args()
     if args.inference_timeout is not None:
         os.environ["ARENA_INFERENCE_TIMEOUT_S"] = str(args.inference_timeout)
+
+    # Poll budget covers every attempt's validate + measure, run serially. CLBG
+    # measures far longer than a LeetCode verdict, so scale the default by the
+    # competition and the sample count. An explicit --poll-seconds always wins.
+    if args.poll_seconds is None:
+        _per_attempt = 1800 if "clbg" in (args.competition or "").lower() else 120
+        args.poll_seconds = _per_attempt * max(1, args.samples_per_problem)
 
     if args.gen_key:
         gen_key(args.gen_key)

@@ -357,6 +357,7 @@ def _killpg(proc: subprocess.Popen, pgid: int | None = None) -> None:
 def _run_grouped(
     cmd: list[str], cwd: Path, timeout: float,
     env: "dict[str, str] | None" = None,
+    on_stderr_line: "Any" = None,
 ) -> subprocess.CompletedProcess:
     """Group-safe drop-in for `subprocess.run(capture_output=True, timeout=…)`.
 
@@ -368,7 +369,15 @@ def _run_grouped(
     whole server is killed. Launch the child as a session leader and SIGKILL
     the WHOLE process group both on timeout and in a finally, so no descendant
     survives the call. Contract matches subprocess.run: returns a
-    CompletedProcess and re-raises subprocess.TimeoutExpired on timeout."""
+    CompletedProcess and re-raises subprocess.TimeoutExpired on timeout.
+
+    When `on_stderr_line` is given, the child's stderr is streamed line by line
+    to that callback as each line arrives, so a long step (a 20-min CLBG
+    measure) can report live progress instead of looking hung. The full stdout
+    and stderr are still captured for the return value, and the
+    group-kill-on-timeout contract is unchanged. When it is None the fast
+    `communicate()` path is used, byte-for-byte the previous behaviour for every
+    existing caller."""
     proc = subprocess.Popen(
         cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, start_new_session=True, env=env,
@@ -376,20 +385,63 @@ def _run_grouped(
     # The child's group id IS its pid (start_new_session). Use proc.pid rather
     # than os.getpgid — see _killpg for why (never risk killing our own group).
     pgid = proc.pid
+    if on_stderr_line is None:
+        try:
+            try:
+                out, err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _killpg(proc, pgid)
+                try:
+                    out, err = proc.communicate(timeout=5)  # drain the dead group
+                except subprocess.TimeoutExpired:
+                    # A process OUTSIDE the group still holds the pipe open. The
+                    # child itself is dead; do NOT block the single-threaded
+                    # runner waiting for a straggler's EOF — drop the output.
+                    out, err = None, None
+                raise
+            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+        finally:
+            _killpg(proc, pgid)
+
+    # Streaming path: drain both pipes in reader threads so stderr progress
+    # lines surface live, while still accumulating the complete output.
+    out_buf: "list[str]" = []
+    err_buf: "list[str]" = []
+
+    def _drain(pipe, sink, cb):
+        try:
+            for line in pipe:
+                sink.append(line)
+                if cb is not None:
+                    try:
+                        cb(line.rstrip("\n"))
+                    except Exception:  # noqa: BLE001 — logging must not kill the run
+                        pass
+        finally:
+            try:
+                pipe.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf, None),
+                             daemon=True)
+    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf,
+                                                  on_stderr_line), daemon=True)
+    t_out.start()
+    t_err.start()
     try:
         try:
-            out, err = proc.communicate(timeout=timeout)
+            proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             _killpg(proc, pgid)
-            try:
-                out, err = proc.communicate(timeout=5)  # drain the now-dead group
-            except subprocess.TimeoutExpired:
-                # A process OUTSIDE the group still holds the pipe open. The
-                # child itself is dead; do NOT block the single-threaded runner
-                # waiting for a straggler's EOF — give up the output and move on.
-                out, err = None, None
+            proc.wait(timeout=5)
             raise
-        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+        # Let the readers flush the tail. Daemon + bounded join so a straggler
+        # holding the pipe open never wedges the single-threaded runner.
+        t_out.join(5)
+        t_err.join(5)
+        return subprocess.CompletedProcess(
+            cmd, proc.returncode, "".join(out_buf), "".join(err_buf))
     finally:
         _killpg(proc, pgid)
 
@@ -1190,7 +1242,8 @@ def _fail_dict(
     )
 
 
-def _run(cmd: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProcess:
+def _run(cmd: list[str], cwd: Path, timeout: float,
+         on_stderr_line: "Any" = None) -> subprocess.CompletedProcess:
     # Inject PYTHONPATH so the Makefile's `python3 -m perfarena.runners…`
     # step finds the perfarena package without requiring a pip-install
     # into the arena-runner's Python env. Also forward the tuning knobs
@@ -1215,7 +1268,7 @@ def _run(cmd: list[str], cwd: Path, timeout: float) -> subprocess.CompletedProce
     # Group-safe: `make`/`bash run_harness.sh` spawn compilers and the looping
     # measurement binary as grandchildren; _run_grouped SIGKILLs the whole
     # group on timeout and on return so none of them outlive this call.
-    return _run_grouped(cmd, cwd, timeout, env=env)
+    return _run_grouped(cmd, cwd, timeout, env=env, on_stderr_line=on_stderr_line)
 
 
 def _compile_with_flag_fallback(
@@ -1690,8 +1743,20 @@ def _measure_clbg_samples(
     # Snapshot how many measure rows already exist so _parse_metrics can count
     # ONLY the samples this run appends (the JSONL is never truncated).
     baseline = _count_measure_rows(cell, folder, title_slug)
+
+    def _progress(line: str) -> None:
+        # codecarbon_runner prints one "[codecarbon-runner] <phase> k/total..."
+        # line per warmup/measure iteration. Re-emit each as a timestamped
+        # heartbeat so a 20-min CLBG measure shows live progress (warmup 1/8,
+        # measure 2/8, …) instead of a single silent 20-min gap.
+        s = line.strip()
+        if s.startswith("[codecarbon-runner]") and "/" in s:
+            _log_always(f"{title_slug} ({language}) "
+                        f"{s[len('[codecarbon-runner]'):].strip()}")
+
     try:
-        mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout)
+        mr = _run(["make", "-s", "measure"], cwd=cell, timeout=timeout,
+                  on_stderr_line=_progress)
     except subprocess.TimeoutExpired:
         return [{
             "status_msg": "Time Limit Exceeded", "runtime_ms": None,
@@ -1732,6 +1797,12 @@ def _measure_clbg_samples(
         en = (energies[i] if i < len(energies) else None) if want_e else None
         # Attach the single memory reading to the first sample only.
         results.append(_one(rt, en, src, memory_mb if i == 0 else None, any_nonzero))
+        # Per-sample breakdown so each measured run's metrics are visible.
+        _rt = f"{rt:.1f}ms" if rt is not None else "n/a"
+        _en = f"{en:.2f}J" if en is not None else "n/a"
+        _mem = f" mem={memory_mb:.1f}MB" if (i == 0 and memory_mb is not None) else ""
+        _log_always(f"sample {i + 1}/{n} for {title_slug} ({language}): "
+                    f"rt={_rt} energy={_en}{_mem}")
     return results
 
 
@@ -1906,12 +1977,21 @@ def measure_once(
                                              do_measure, run_mem,
                                              energy_backend=shared_backend))
                     # Always-on progress line (independent of PERFARENA_LOG) so the
-                    # local perf server reports every test-suite run's iteration and
-                    # elapsed time — the primary signal for how long a submission takes.
+                    # local perf server reports every test-suite run's iteration,
+                    # elapsed time, and the metrics it produced — the primary
+                    # signal for how long a submission takes and what it measured.
+                    _r = results[-1]
+                    _st = _r.get("status_msg")
+                    _rt = _r.get("runtime_ms")
+                    _en = _r.get("runtime_energy_j")
+                    _mem = _r.get("memory_mb")
+                    _rt_s = f"{_rt:.1f}ms" if isinstance(_rt, (int, float)) else "n/a"
+                    _en_s = f"{_en:.2f}J" if isinstance(_en, (int, float)) else "n/a"
+                    _mem_s = f" mem={_mem:.1f}MB" if isinstance(_mem, (int, float)) else ""
                     _log_always(f"test-suite run {i + 1}/{n_runs} done for "
                                 f"{title_slug} ({language}) in "
-                                f"{time.perf_counter() - _t_run:.2f}s"
-                                f"{' (+mem)' if run_mem else ''}")
+                                f"{time.perf_counter() - _t_run:.2f}s → {_st} "
+                                f"rt={_rt_s} energy={_en_s}{_mem_s}")
         finally:
             if shared_backend is not None:
                 shared_backend.close()

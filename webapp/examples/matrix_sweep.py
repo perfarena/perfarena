@@ -52,12 +52,17 @@ Three layers of delay:
     between attempts of different problems WITHIN one dispatch_submission
     call. Enforced server-side, additive with the above when applicable.
 
-`--poll-seconds` (default 300 s = 5 min) is the per-tuple dispatch-wait
-budget. When a tuple's verdict doesn't land in this window we skip it
+`--poll-seconds` is the per-tuple dispatch-wait budget (default 300 s for
+LeetCode, 1800 s for arena-local CLBG, which measures far longer). The wait
+covers the whole server-side dispatch: correctness validate then every
+measure run. When a tuple's verdict doesn't land in this window we skip it
 (logged as `poll_timeout`, auto-retried on the next sweep run by the
 resume classifier — the server keeps the attempt pending and the
 stale-marker / dispatcher recovery thread will eventually re-poll it
-from the SPA's perspective).
+from the SPA's perspective). Set the budget shorter than the real measure
+time and every slow CLBG attempt times out client-side and is re-dispatched
+while the first attempt still finishes Accepted, so duplicate attempts pile
+up in the system.
 
 RESUMABILITY
 ------------
@@ -1448,17 +1453,21 @@ def main() -> None:
                          "WITHIN one submission's dispatch).")
     ap.add_argument("--poll-seconds", type=int, default=None, metavar="SEC",
                     help="how long to wait for each tuple's dispatch to settle "
-                         "before giving up and moving to the next tuple. "
-                         "Default depends on the run: 300s for LeetCode, 900s "
-                         "for arena-local (whole-program CLBG measures can take "
-                         "a few minutes per attempt). On "
-                         "timeout the tuple is logged as `status=poll_timeout` "
-                         "(auto-retried by the resume classifier next run; no "
-                         "operator action required) and the sweep continues. "
-                         "Default 300 s (5 min) — long enough for one LC "
-                         "verdict + the dispatcher's 5.5-min retry budget to "
-                         "overlap, short enough that a wedged dispatch doesn't "
-                         "park the sweep on one cell forever.")
+                         "before giving up and moving to the next tuple. The "
+                         "wait covers the whole server-side dispatch: "
+                         "correctness validate THEN every measure run. Default "
+                         "depends on the run: 300s for LeetCode, 1800s (30 min) "
+                         "for arena-local. A CLBG measure runs 1 warmup + 7 "
+                         "measure whole-program executions with ~150s host "
+                         "overhead each, so one attempt legitimately takes "
+                         "~20 min plus validate. A too-short budget expires "
+                         "while the server is still measuring, so the attempt "
+                         "gets logged as `poll_timeout` and re-dispatched next "
+                         "run while the first one still finishes Accepted, "
+                         "piling up duplicate attempts. On timeout the tuple is "
+                         "logged as `status=poll_timeout` (auto-retried by the "
+                         "resume classifier next run; no operator action "
+                         "required) and the sweep continues.")
     ap.add_argument("--output", type=Path,
                     default=Path("data/sweep_log.json"),
                     help="resumable progress log; rerunning skips completed tuples.")
@@ -1557,16 +1566,24 @@ def main() -> None:
     elif not args.correctness_oracle:
         ap.error("--correctness-oracle is required unless --skip-correctness is passed")
 
-    # Poll-timeout default by run type. LeetCode's judge settles a verdict in
-    # ~12s/repeat, so 300s is ample. Arena-local measurement (CLBG whole-program
-    # benchmarks × WARMUP+MEASURE iterations) can take a few minutes per attempt
-    # — after the CLBG input-size reductions the slowest fits well under 15 min,
-    # so default those to 900s and avoid the spurious `poll timeout after 300s
-    # ... recording as in-progress`. An explicit --poll-seconds always wins.
+    # Poll-timeout default by run type. The poll covers the WHOLE server-side
+    # dispatch (correctness validate THEN all measure runs); the client only
+    # stops polling once the attempt reaches a terminal status. LeetCode's judge
+    # settles a verdict in ~12s/repeat, so 300s is ample. Arena-local CLBG is
+    # far slower: each attempt runs `make measure` = 1 warmup + 7 measure = 8
+    # whole-program executions, and each execution carries ~150s of host
+    # measurement overhead, so a single CLBG measure legitimately takes ~20 min
+    # (observed: reverse-complement/csharp finished Accepted at 1258s), plus the
+    # correctness validate before it. The old 900s default expired while the
+    # server was still measuring, so every slow CLBG attempt was logged as
+    # `poll_timeout` and re-dispatched next run — duplicate attempts piled up in
+    # the system even though the first attempt finished Accepted. Default
+    # arena-local to 1800s (30 min) so one full validate + measure cycle
+    # completes before the client gives up. An explicit --poll-seconds wins.
     if args.poll_seconds is None:
         _touches_lc = (args.correctness_oracle == "leetcode"
                        or "leetcode" in (args.harness or "").lower())
-        args.poll_seconds = 300 if _touches_lc else 900
+        args.poll_seconds = 300 if _touches_lc else 1800
 
     if not args.dry_run and not args.api_key:
         raise SystemExit("set --api-key or ARENA_API_KEY (skip with --dry-run)")
