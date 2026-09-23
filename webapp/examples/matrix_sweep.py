@@ -630,6 +630,49 @@ def _is_pool_exhaustion_warning(warn: str) -> bool:
     )
 
 
+# One-shot wait (seconds) when the perf harness / correctness oracle host is
+# unreachable, before re-dispatching the same attempt. The harness is a single
+# bare-metal box, and a transient outage (a restart, a network blip, the
+# operator fixing config on the SPA) usually clears within a couple of minutes.
+# We pause once and retry rather than immediately burning the tuple as
+# dispatch_failed, which would waste the generation cost already paid.
+_HARNESS_DOWN_RETRY_WAIT_S = 180
+
+
+def _is_harness_unreachable_warning(warn: str) -> bool:
+    """Heuristic: does this dispatch_warning mean the perf harness / correctness
+    oracle host was DOWN (unreachable, timed out, connection refused), rather
+    than a per-attempt failure? The server stamps text such as "Runner
+    unreachable: transport error hitting http://…/healthz: timed out" when it
+    cannot contact the runner at all."""
+    if not warn:
+        return False
+    needle = warn.lower()
+    return (
+        "runner unreachable" in needle
+        or "harness unreachable" in needle
+        or "oracle unreachable" in needle
+        or "/healthz" in needle
+        or "connection refused" in needle
+        or "transport error" in needle
+    )
+
+
+def _redispatch_and_repoll(base: str, api_key: str, sub_id: int, slug: str,
+                           round_idx: int, poll_seconds: int) -> dict | None:
+    """Ask the server to re-dispatch the submission's pending attempts, then
+    re-poll for the same round. Returns the retried attempt dict, or None on
+    poll timeout. Shared by the inline-recovery branches (pool exhaustion,
+    harness unreachable)."""
+    try:
+        http_json("POST", f"{base}/api/admin/submissions/{sub_id}/dispatch",
+                  token=api_key, body={})
+    except SystemExit as e:
+        print(f"  !! couldn't trigger re-dispatch: {e}")
+    return _poll_for_attempt(base, api_key, sub_id, slug,
+                             round_attempt_idx=round_idx, timeout_s=poll_seconds)
+
+
 def _wait_for_pool_or_fail(base: str, api_key: str, *, max_wait_s: int = 8 * 3600,
                            ) -> str:
     """Inspect the LC credential pool. Return one of:
@@ -2325,6 +2368,40 @@ def main() -> None:
                         progress[key] = {
                             "status": "dispatch_failed",
                             "reason": f"dispatch_warning: {warn[:200]}",
+                            "at": _now_iso(),
+                            "rounds_used": round_idx + 1,
+                            "submission_id": sub_id,
+                        }
+                        _save_progress(args.output, progress)
+                        n_fail += 1
+                        tuple_failed_unrecoverably = True
+                        break
+                elif _is_harness_unreachable_warning(warn):
+                    # The perf harness / correctness oracle host was
+                    # unreachable. It is a single box, and a transient outage
+                    # usually clears in a couple of minutes. Wait ONCE, then
+                    # re-dispatch this submission's pending attempts and re-poll
+                    # the same round. If it is still down, fall back to the old
+                    # behaviour (mark dispatch_failed; the resume filter retries
+                    # it on the next sweep run).
+                    print(f"     ↳ harness/oracle is down; waiting "
+                          f"{_HARNESS_DOWN_RETRY_WAIT_S}s once, then one retry.")
+                    time.sleep(_HARNESS_DOWN_RETRY_WAIT_S)
+                    retry_att = _redispatch_and_repoll(
+                        base, args.api_key, sub_id, slug, round_idx,
+                        args.poll_seconds)
+                    if retry_att is not None and not retry_att.get("dispatch_warning"):
+                        # Harness recovered — fall through with the retried
+                        # attempt as the verdict source (no break/continue).
+                        att = retry_att
+                    else:
+                        new_warn = (retry_att or {}).get(
+                            "dispatch_warning", "still unreachable after wait")
+                        print(f"  ⚠ harness still down after "
+                              f"{_HARNESS_DOWN_RETRY_WAIT_S}s wait: {new_warn}")
+                        progress[key] = {
+                            "status": "dispatch_failed",
+                            "reason": f"harness_unreachable_after_wait: {str(new_warn)[:200]}",
                             "at": _now_iso(),
                             "rounds_used": round_idx + 1,
                             "submission_id": sub_id,
