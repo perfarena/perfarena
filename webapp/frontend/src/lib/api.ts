@@ -52,6 +52,12 @@ export interface HarnessHealthRow {
   id: number; slug: string; name: string; kind: string;
   endpoint: string | null; ok: boolean | null; status: string; message: string;
 }
+export interface PendingAttemptRow {
+  attempt_id: number; submission_id: number; model: string; language: string;
+  competition_slug: string | null; problem_slug: string; state: string;
+  n_runs: number; round_index: number; logged_at: string | null;
+  dispatch_warning: string | null;
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -141,6 +147,7 @@ export const api = {
   deleteAttempt: (id: number) =>
     request<{ deleted_attempt_id: number; deleted_runs: number }>(
       `/api/admin/attempts/${id}`, { method: "DELETE" }),
+  version: () => request<{ version: string }>(`/api/version`),
   me: () => request<MePayload>(`/api/me`),
   mySubmissions: () => request<SubmissionPublic[]>(`/api/me/submissions`),
   modelDetail: (name: string) => request<ModelDetail>(`/api/models/${encodeURIComponent(name)}`),
@@ -379,6 +386,9 @@ export const api = {
       `/api/admin/settings`, { method: "PUT", body: JSON.stringify(updates) }),
   adminHarnessesHealth: () =>
     request<{ harnesses: HarnessHealthRow[] }>(`/api/admin/harnesses/health`),
+  adminPendingAttempts: () =>
+    request<{ pending: PendingAttemptRow[]; count: number }>(
+      `/api/admin/attempts/pending`),
   /** Builds the download URL with auth fold-in so the admin can just click.
    * `includeCredentials` only has effect when `leetcode_accounts` is in the
    * tables list — when true, the bundle ships raw session cookies; when

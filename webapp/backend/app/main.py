@@ -515,12 +515,35 @@ def _slug(value: str) -> str:
 # enabled (ARENA_ENABLE_DOCS=1). They disclose the full API surface, so they
 # default off in any deployment; a dev enables them locally when needed.
 _enable_docs = os.environ.get("ARENA_ENABLE_DOCS", "").strip().lower() in ("1", "true", "yes")
+# Single source of truth for the platform version (semver): the VERSION file at
+# the webapp root. A release bumps it once; the API, the frontend footer, and
+# measurement provenance report the same string, so a stale deploy is a
+# one-glance diagnosis.
+def _read_version() -> str:
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "VERSION")
+    try:
+        with open(path) as f:
+            return f.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+APP_VERSION = _read_version()
+
 app = FastAPI(
-    title="PerfArena", version="0.1.0",
+    title="PerfArena", version=APP_VERSION,
     docs_url="/docs" if _enable_docs else None,
     redoc_url="/redoc" if _enable_docs else None,
     openapi_url="/openapi.json" if _enable_docs else None,
 )
+
+
+@app.get("/api/version")
+def api_version():
+    """Deployed platform version (semver), so a client can tell which code is
+    live and spot a stale frontend or backend at a glance."""
+    return {"version": APP_VERSION}
 # CORS origins are config-driven (comma-separated ARENA_CORS_ORIGINS); the
 # default is the local Vite dev server. Production is served same-origin, so it
 # needs no cross-origin allowance.
@@ -6898,6 +6921,51 @@ def admin_purge_failed_attempts(
             ]),
         },
     }
+
+
+@app.get("/api/admin/attempts/pending")
+def admin_list_pending_attempts(_: User = Depends(current_admin)):
+    """Every attempt that has not finalized yet, across all submissions, newest
+    first. These are the queued / Pending / dispatch-warning rows that make up
+    the backend queue. Powers the admin Pending page (view state and delete)."""
+    from .models import Attempt, Competition, Problem, Submission
+    out: list[dict] = []
+    with Session(engine) as session:
+        comp_slug = {c.id: c.slug for c in session.exec(select(Competition)).all()}
+        rows = session.exec(
+            select(Attempt)
+            .where(Attempt.final_status.is_(None))
+            .order_by(Attempt.logged_at.desc())
+        ).all()
+        subs: dict[int, Submission | None] = {}
+        prob_slug: dict[int, str] = {}
+        for a in rows:
+            if a.submission_id not in subs:
+                subs[a.submission_id] = session.get(Submission, a.submission_id)
+            sub = subs[a.submission_id]
+            if sub is None or sub.deleted_at is not None:
+                continue
+            if a.problem_id not in prob_slug:
+                p = session.get(Problem, a.problem_id)
+                prob_slug[a.problem_id] = p.title_slug if p else "?"
+            if a.n_runs == 0:
+                state = "Dispatch failed" if a.dispatch_warning else "queued"
+            else:
+                state = "Pending"
+            out.append({
+                "attempt_id": a.id,
+                "submission_id": a.submission_id,
+                "model": sub.model_name,
+                "language": sub.language,
+                "competition_slug": comp_slug.get(sub.competition_id),
+                "problem_slug": prob_slug[a.problem_id],
+                "state": state,
+                "n_runs": a.n_runs,
+                "round_index": a.round_index,
+                "logged_at": a.logged_at.isoformat() if a.logged_at else None,
+                "dispatch_warning": a.dispatch_warning,
+            })
+    return {"pending": out, "count": len(out)}
 
 
 @app.delete("/api/admin/attempts/{attempt_id}", status_code=status.HTTP_200_OK)

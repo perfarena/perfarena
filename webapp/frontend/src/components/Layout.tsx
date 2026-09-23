@@ -24,6 +24,7 @@ const ACCOUNT_LINKS = [
 ];
 const ADMIN_LINKS = [
   { to: "/admin",                   label: "Admin" },
+  { to: "/admin/pending",           label: "Pending" },
   { to: "/admin/leetcode-accounts", label: "LeetCode accounts" },
   { to: "/admin/export",            label: "Export & Import" },
   { to: "/admin/settings",          label: "Variables" },
@@ -32,6 +33,10 @@ const ADMIN_LINKS = [
 export default function Layout() {
   const [me, setMe] = useState<MePayload | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [apiVersion, setApiVersion] = useState("");
+  useEffect(() => {
+    api.version().then(v => setApiVersion(v.version)).catch(() => {});
+  }, []);
   const nav = useNavigate();
   const loc = useLocation();
 
@@ -126,6 +131,14 @@ export default function Layout() {
         <div>
           Licensed under the Apache License 2.0. Problem statements © LeetCode;
           this site is not affiliated with LeetCode.
+        </div>
+        <div style={{ opacity: 0.7 }}>
+          Build v{__APP_VERSION__}
+          {apiVersion
+            ? apiVersion === __APP_VERSION__
+              ? ` (API v${apiVersion})`
+              : ` (API v${apiVersion}, deploy mismatch)`
+            : ""}
         </div>
       </footer>
     </div>
