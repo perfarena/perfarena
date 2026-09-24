@@ -746,7 +746,7 @@ _MAKE_OWN_BACKEND: Any = object()
 def _measure_curated_looped(
     cell: Path, arena_lang: str, slug: str, budget: float, per_case_timeout: float,
     *, measure_energy: bool = True, measure_memory: bool = False,
-    energy_backend: Any = _MAKE_OWN_BACKEND,
+    energy_backend: Any = _MAKE_OWN_BACKEND, deadline: float | None = None,
 ) -> dict[str, Any]:
     """Run every curated case and aggregate to weighted PER-OP metrics.
 
@@ -783,7 +783,22 @@ def _measure_curated_looped(
     if own_backend:
         energy_backend = _make_energy_backend() if measure_energy else None
 
+    # Optional wall-clock deadline for this whole pass. The caller (measure_once)
+    # sets it on the FIRST repeat so a solution too slow to finish all repeats
+    # within the budget is caught on run 1. Stop launching cases once the
+    # deadline passes, and clamp each case's timeout to the time left so one slow
+    # case cannot overshoot the cap by a whole per_case_timeout.
+    deadline_exceeded = False
+
+    def _case_timeout() -> float:
+        if deadline is None:
+            return per_case_timeout
+        return max(1.0, min(per_case_timeout, deadline - time.perf_counter()))
+
     for (idx, w, name) in cases:
+        if deadline is not None and time.perf_counter() >= deadline:
+            deadline_exceeded = True
+            break
         row: dict[str, Any] = {
             "idx": idx, "weight": w, "name": name,
             "iters": 0, "meas_s": None, "wall_s": 0.0,
@@ -794,7 +809,7 @@ def _measure_curated_looped(
 
         if measure_energy:
             r = _run_harness_measured(cell, harness_lang, budget, idx,
-                                      per_case_timeout, energy=energy_backend,
+                                      _case_timeout(), energy=energy_backend,
                                       poll_rss=False)
             iters = r.get("iters") or 0
             meas_s = r.get("meas_s")
@@ -822,7 +837,7 @@ def _measure_curated_looped(
 
         if measure_memory:
             m = _run_harness_measured(cell, harness_lang, mem_budget, idx,
-                                      per_case_timeout, energy=None,
+                                      _case_timeout(), energy=None,
                                       poll_rss=True)
             peak_rss_kb = max(peak_rss_kb, m.get("peak_rss_kb") or 0)
             row["peak_rss_kb_case"] = m.get("peak_rss_kb")
@@ -855,6 +870,7 @@ def _measure_curated_looped(
         "per_case": per_case,
         "n_cases": len(cases),
         "any_nonzero_exit": any_nonzero_exit,
+        "deadline_exceeded": deadline_exceeded,
     }
 
 
@@ -1038,8 +1054,18 @@ def _strip_kotlin_class(code: str, name: str) -> str:
         out = out[:i] + out[end:]
 
 
-def _normalize_solution_code(language: str, code: str) -> str:
+def _normalize_solution_code(language: str, code: str, is_clbg: bool = False) -> str:
     """Best-effort fixups so common model-output quirks still compile."""
+    if language == "php" and is_clbg:
+        # CLBG runs the .php file standalone, and PHP only executes code inside a
+        # `<?php ... ?>` block. A program without the opening tag is printed as
+        # text, so it fails every case. Clients strip `<?php` for the LeetCode
+        # PHP harness, which wraps user code in an already-open tag. The CLBG
+        # standalone file needs it back, so add it when it is missing. Leetcode
+        # PHP (is_clbg=False) keeps the stripped shape its harness expects.
+        if not re.match(r"\s*<\?(php\b|=)", code, re.IGNORECASE):
+            code = "<?php\n" + code
+        return code
     if language == "java":
         code = _JAVA_PUBLIC_TYPE_RE.sub(r"\1\2", code)
         # LeetCode's judge implicitly imports the common java.util / stream /
@@ -1512,7 +1538,8 @@ def validate_once(
         # no backup, so the next attempt has a source and restores normally.
         if source.exists():
             shutil.copy2(source, backup)
-        source.write_text(_normalize_solution_code(language, code))
+        source.write_text(_normalize_solution_code(
+            language, code, _is_clbg_cell(cell, title_slug)))
 
         rc, flag_fb = _compile_with_flag_fallback(
             ["make", "-s", "clean", "compile"], cell, 60.0)
@@ -1604,7 +1631,8 @@ def _resolve_metrics(metrics: Any) -> frozenset[str]:
 
 def _run_one_measurement(cell, language: str, title_slug: str,
                          requested, do_measure: bool, do_mem: bool,
-                         energy_backend: Any = _MAKE_OWN_BACKEND) -> dict[str, Any]:
+                         energy_backend: Any = _MAKE_OWN_BACKEND,
+                         deadline: float | None = None) -> dict[str, Any]:
     """ONE measurement pass (the curated per-op loop + result dict).
     measure_once calls this N times AFTER a single compile — it never
     recompiles, so a compiled language pays the build cost once per batch.
@@ -1620,7 +1648,7 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         looped = _measure_curated_looped(
             cell, language, title_slug, budget, per_case_timeout,
             measure_energy=do_measure, measure_memory=do_mem,
-            energy_backend=energy_backend)
+            energy_backend=energy_backend, deadline=deadline)
         looped_wall_s = time.perf_counter() - t0
         _log(f"curated measure total {looped_wall_s:.2f}s")
 
@@ -1687,6 +1715,7 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         energy_tool=energy_tool_out,
         machine=machine,
         config=_measure_config(),
+        deadline_exceeded=looped.get("deadline_exceeded", False),
         raw_response=raw_response,
     )
 
@@ -1751,7 +1780,7 @@ def _measure_clbg_samples(
         # measure 2/8, …) instead of a single silent 20-min gap.
         s = line.strip()
         if s.startswith("[codecarbon-runner]") and "/" in s:
-            _log_always(f"{title_slug} ({language}) "
+            _log_always(f"{title_slug} ({folder}) "
                         f"{s[len('[codecarbon-runner]'):].strip()}")
 
     try:
@@ -1801,7 +1830,7 @@ def _measure_clbg_samples(
         _rt = f"{rt:.1f}ms" if rt is not None else "n/a"
         _en = f"{en:.2f}J" if en is not None else "n/a"
         _mem = f" mem={memory_mb:.1f}MB" if (i == 0 and memory_mb is not None) else ""
-        _log_always(f"sample {i + 1}/{n} for {title_slug} ({language}): "
+        _log_always(f"sample {i + 1}/{n} for {title_slug} ({folder}): "
                     f"rt={_rt} energy={_en}{_mem}")
     return results
 
@@ -1869,7 +1898,8 @@ def measure_once(
         # no backup, so the next attempt has a source and restores normally.
         if source.exists():
             shutil.copy2(source, backup)
-        source.write_text(_normalize_solution_code(language, code))
+        source.write_text(_normalize_solution_code(
+            language, code, _is_clbg_cell(cell, title_slug)))
 
         # 1. compile — ONCE, only when explicitly requested. Default /measure
         # assumes the artifact is already built (compile once, then measure
@@ -1951,6 +1981,28 @@ def measure_once(
                 # bounded by PERFARENA_CASE_TIMEOUT_S.
                 _lc_ceiling = float(
                     os.environ.get("PERFARENA_LC_MEASURE_TIMEOUT_S", "420"))
+
+                def _tle_dict(note: str) -> "dict[str, Any]":
+                    return {
+                        "status_msg": "Time Limit Exceeded",
+                        "runtime_ms": None, "memory_mb": None,
+                        "runtime_energy_j": None,
+                        "machine": _machine_descriptor(),
+                        "config": _measure_config(),
+                        "raw_response": {"stage": "lc-measure", "note": note}}
+
+                # First-run canary. If run 1 alone eats more than its share of the
+                # whole measurement budget, the n_runs repeats cannot fit, so cap
+                # run 1 and bail early instead of waiting out the full ceiling.
+                # Cap = max(even split across runs, a third of the budget): a
+                # third leaves room for at least three runs, and the even split
+                # covers fewer than three runs. PERFARENA_FIRST_RUN_CAP_FRACTION=0
+                # disables the cap.
+                _first_run_frac = float(
+                    os.environ.get("PERFARENA_FIRST_RUN_CAP_FRACTION", "3"))
+                _first_run_cap = (
+                    max(_lc_ceiling / n_runs, _lc_ceiling / _first_run_frac)
+                    if _first_run_frac > 0 else None)
                 _loop_start = time.perf_counter()
                 for i in range(n_runs):
                     if i > 0 and (time.perf_counter() - _loop_start) >= _lc_ceiling:
@@ -1959,28 +2011,37 @@ def measure_once(
                             f"{title_slug} ({language}) after {i}/{n_runs} run(s)"
                             f" — remaining marked Time Limit Exceeded")
                         for _ in range(i, n_runs):
-                            results.append({
-                                "status_msg": "Time Limit Exceeded",
-                                "runtime_ms": None, "memory_mb": None,
-                                "runtime_energy_j": None,
-                                "machine": _machine_descriptor(),
-                                "config": _measure_config(),
-                                "raw_response": {
-                                    "stage": "lc-measure",
-                                    "note": f"LeetCode measurement exceeded the "
-                                            f"{_lc_ceiling:.0f}s ceiling"}})
+                            results.append(_tle_dict(
+                                f"LeetCode measurement exceeded the "
+                                f"{_lc_ceiling:.0f}s ceiling"))
                         break
                     run_mem = do_mem and (not do_measure or i < mem_cap)
                     _t_run = time.perf_counter()
-                    results.append(
-                        _run_one_measurement(cell, language, title_slug, requested,
-                                             do_measure, run_mem,
-                                             energy_backend=shared_backend))
+                    _deadline = (_t_run + _first_run_cap) if (
+                        i == 0 and _first_run_cap is not None) else None
+                    _res = _run_one_measurement(
+                        cell, language, title_slug, requested,
+                        do_measure, run_mem, energy_backend=shared_backend,
+                        deadline=_deadline)
+                    # First-run canary tripped: run 1 could not finish within its
+                    # cap, so the repeats will not fit the budget. Mark every run
+                    # Time Limit Exceeded and stop, rather than measuring on.
+                    if i == 0 and _res.get("deadline_exceeded"):
+                        _log_always(
+                            f"first-run cap {_first_run_cap:.0f}s hit for "
+                            f"{title_slug} ({language}) — marking all {n_runs} "
+                            f"run(s) Time Limit Exceeded")
+                        for _ in range(n_runs):
+                            results.append(_tle_dict(
+                                f"first measurement run exceeded its "
+                                f"{_first_run_cap:.0f}s cap"))
+                        break
+                    results.append(_res)
                     # Always-on progress line (independent of PERFARENA_LOG) so the
                     # local perf server reports every test-suite run's iteration,
                     # elapsed time, and the metrics it produced — the primary
                     # signal for how long a submission takes and what it measured.
-                    _r = results[-1]
+                    _r = _res
                     _st = _r.get("status_msg")
                     _rt = _r.get("runtime_ms")
                     _en = _r.get("runtime_energy_j")

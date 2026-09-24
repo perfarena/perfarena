@@ -649,35 +649,42 @@ def sanitize_compile_flags(flags: str) -> str:
     return " ".join(out)
 
 
-def _normalize_code_for_lc(code: str, language: str) -> str:
-    """Per-language post-extraction cleanup for the few cases where
-    LC's submission format diverges from how models naturally write
+def _normalize_code_for_lc(code: str, language: str, is_clbg: bool = False) -> str:
+    """Per-language post-extraction cleanup for the few cases where a
+    harness's submission format diverges from how models naturally write
     the code in a fenced block.
 
-    Currently handles ONE case:
+    **PHP** needs opposite shapes for the two harnesses:
 
-      * **PHP**: LC's PHP runner wraps the user code in an already-open
-        `<?php ... ?>` context, so user code must NOT start with `<?php`
-        (and must not end with `?>`). When the model emits the natural
-        full-file shape, LC trips a parse error on every submission
-        ("unexpected token `<`, expecting end of file") — which is what
-        caused submission #54 to fail on all 99 PHP attempts. We strip
-        a leading `<?php` (with optional `declare(...)` line right
-        after) and any trailing `?>`. Idempotent: a code body that's
-        already in LC's expected shape is a no-op.
+      * **LeetCode** wraps the user code in an already-open `<?php ... ?>`
+        context, so user code must NOT start with `<?php` (and must not
+        end with `?>`). When the model emits the natural full-file shape,
+        LC trips a parse error on every submission ("unexpected token
+        `<`, expecting end of file") — which is what caused submission
+        #54 to fail on all 99 PHP attempts. We strip a leading `<?php`
+        (with optional `declare(...)` line right after) and any trailing
+        `?>`.
+      * **CLBG** runs the `.php` file standalone, so it MUST open with
+        `<?php` — PHP prints anything outside a `<?php ... ?>` block as
+        text, so a stripped or tag-less program fails every case. Here we
+        add the tag when the model omitted it instead of stripping it.
 
-    Add other languages here only if/when LC's wrapper requires a
-    similarly non-obvious stripping pass — most languages accept the
-    natural full-file shape unchanged.
+    Both branches are idempotent. Add other languages here only if/when a
+    harness wrapper requires a similarly non-obvious pass — most languages
+    accept the natural full-file shape unchanged.
     """
     if not code:
         return code
     if language == "php":
-        # Strip a leading `<?php` tag plus any blank or
-        # `declare(strict_types=1);`-style line that conventionally
-        # follows it. We anchor to the start of the string AFTER
-        # stripping any whitespace the extractor might have left in.
         stripped = code.lstrip()
+        if is_clbg:
+            # Standalone program: ensure the opening tag is present.
+            if not re.match(r"<\?(php\b|=)", stripped, re.IGNORECASE):
+                code = "<?php\n" + code
+            return code
+        # LeetCode wrapper: strip a leading `<?php` tag plus any
+        # `declare(strict_types=1);`-style line that conventionally
+        # follows it, anchored to the start after leading whitespace.
         m = re.match(
             r"<\?php\s*(?:declare\s*\([^)]*\)\s*;\s*)?",
             stripped, re.IGNORECASE,
@@ -1150,6 +1157,7 @@ class OpenAIProvider(Provider):
             cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
             code = _normalize_code_for_lc(
                 _extract_code(cleaned, fence_lang=fence), language,
+                _is_clbg_statement(statement),
             )
             finish_reason = choice.get("finish_reason")
         trace = {
@@ -1284,6 +1292,7 @@ class OpenAIProvider(Provider):
         cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
         code = _normalize_code_for_lc(
             _extract_code(cleaned, fence_lang=fence), language,
+            _is_clbg_statement(statement),
         )
         # `status` is the lifecycle field on a Responses object —
         # "completed" / "in_progress" / "incomplete". Map to a finish_reason
@@ -1467,6 +1476,7 @@ def _ollama_generate_impl(ollama_url: str, model: str, statement: str, slug: str
     cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
     code = _normalize_code_for_lc(
         _extract_code(cleaned, fence_lang=fence), language,
+        _is_clbg_statement(statement),
     )
     trace = {
         "prompt": user_prompt,
