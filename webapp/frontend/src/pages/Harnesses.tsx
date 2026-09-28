@@ -192,6 +192,9 @@ function HarnessForm({
   const [configText, setConfigText] = useState<string>(
     existing?.config ? JSON.stringify(existing.config, null, 2) : "",
   );
+  const [timeoutS, setTimeoutS] = useState<number>(
+    Number((existing?.config as { timeout_s?: number } | null)?.timeout_s) || 1800,
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -202,6 +205,8 @@ function HarnessForm({
       try { cfg = JSON.parse(configText); }
       catch { setErr("config must be valid JSON"); setBusy(false); return; }
     }
+    // The dedicated field is the source of truth for the dispatch timeout.
+    if (timeoutS > 0) cfg = { ...(cfg ?? {}), timeout_s: timeoutS };
     try {
       const body: HarnessIn = {
         ...f, description: f.description || null, config: cfg,
@@ -240,6 +245,12 @@ function HarnessForm({
             <option value="active">active</option>
             <option value="retired">retired</option>
           </select>
+        </label>
+        <label className="col" style={{ flex: "0 0 160px" }}>
+          <span className="muted">Dispatch timeout (s)</span>
+          <input type="number" min={1} value={timeoutS}
+                 onChange={e => setTimeoutS(Number(e.target.value))}
+                 title="Max seconds the backend waits for a /measure dispatch before it records a Dispatch timeout. Should exceed the runner's own watchdog (--request-timeout). Writes config.timeout_s." />
         </label>
       </div>
       <label className="col">

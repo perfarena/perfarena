@@ -103,6 +103,7 @@ Notes for future us
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from typing import Any, Callable
@@ -120,7 +121,11 @@ def _log(msg: str) -> None:
           file=sys.stderr, flush=True)
 
 
-_DEFAULT_TIMEOUT_S = 300.0
+# Default /measure dispatch timeout when a harness has no explicit
+# config.timeout_s. Set high enough for a whole-program CLBG measurement (which
+# can run for many minutes) so the backend does not give up before the runner's
+# own watchdog. Override per deployment with ARENA_DISPATCH_DEFAULT_TIMEOUT_S.
+_DEFAULT_TIMEOUT_S = float(os.environ.get("ARENA_DISPATCH_DEFAULT_TIMEOUT_S", "1800"))
 # Hard ceiling for a correctness /validate call. Validation is a single
 # short run, so it must never hold a connection longer than this even if an
 # oracle's config.timeout_s is set higher (that larger value is for /measure).
