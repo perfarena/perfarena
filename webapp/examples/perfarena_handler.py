@@ -1482,6 +1482,29 @@ def _parse_validate_counts(stderr: str) -> "tuple[int | None, int | None]":
     return passed, total
 
 
+def _parse_clbg_diff(text: str) -> "tuple[dict[str, str], str]":
+    """Extract the PERFARENA-DIFF-* markers that clbg_validate.sh / perfarena.mk
+    emit on a text-output mismatch, and return (fields, text-without-markers).
+
+    `fields` has `last_testcase`, `expected_output`, and `code_output` (decoded
+    from base64) for the SPA's side-by-side panel. Binary problems emit no
+    markers, so `fields` is empty and the hex diff in stderr stands alone."""
+    import base64
+    fields: dict[str, str] = {}
+    m = re.search(r"(?m)^PERFARENA-DIFF-CASE:(.*)$", text)
+    if m:
+        fields["last_testcase"] = m.group(1).strip()
+    for marker, key in (("EXPECTED", "expected_output"), ("PRODUCED", "code_output")):
+        mm = re.search(rf"(?m)^PERFARENA-DIFF-{marker}-B64:(\S+)\s*$", text)
+        if mm:
+            try:
+                fields[key] = base64.b64decode(mm.group(1)).decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                pass
+    stripped = re.sub(r"(?m)^PERFARENA-DIFF-[A-Z0-9-]+:.*\n?", "", text)
+    return fields, stripped
+
+
 def _full_suite_validate(cell: Path, arena_lang: str,
                          timeout: float = 300.0) -> subprocess.CompletedProcess:
     """Run the full-suite correctness validator (selection/run_validate.sh) FROM
@@ -1574,7 +1597,15 @@ def validate_once(
                 # before the verdict (== LeetCode total_correct), N total.
                 total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         if status != "Accepted":
+            # Pull the expected/produced diff markers (if any) out of the
+            # validator output so the SPA can render a side-by-side panel, and
+            # hide the raw base64 markers from the stderr box.
+            diff_fields, clean_stderr = _parse_clbg_diff(vr.stderr or "")
+            if diff_fields:
+                vr = subprocess.CompletedProcess(
+                    vr.args, vr.returncode, vr.stdout, clean_stderr)
             fd = _fail_dict("validate", status, vr)
+            fd["raw_response"].update(diff_fields)
             if flag_fb:
                 fd["raw_response"].update(flag_fb)
             return {"status_msg": fd["status_msg"],

@@ -43,6 +43,52 @@ function LogBox({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+/** Side-by-side expected-vs-produced view with per-line difference highlight.
+ *  Used for Wrong Answer failures (LeetCode and CLBG) so the mismatch is
+ *  obvious at a glance instead of buried in a stderr blob. */
+function DiffBox(
+  { caseLabel, expected, produced }:
+  { caseLabel?: string | null; expected: string; produced: string },
+) {
+  const exp = expected.split("\n");
+  const prod = produced.split("\n");
+  const n = Math.max(exp.length, prod.length);
+  const rows = (lines: string[]) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const mine = lines[i] ?? "";
+      const differs = (exp[i] ?? "") !== (prod[i] ?? "");
+      out.push(
+        <div key={i} style={{ background: differs ? "rgba(220,90,90,0.22)" : undefined }}>
+          {mine === "" ? " " : mine}
+        </div>,
+      );
+    }
+    return out;
+  };
+  const col = (title: string, text: string, lines: string[]) => (
+    <div className="col" style={{ gap: 4, flex: "1 1 260px", minWidth: 0 }}>
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div className="muted" style={{ fontSize: "0.72rem" }}>{title}</div>
+        <CopyButton text={text} />
+      </div>
+      <div className="code" style={{ margin: 0, maxHeight: 280, overflow: "auto",
+        whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{rows(lines)}</div>
+    </div>
+  );
+  return (
+    <div className="col" style={{ gap: 4 }}>
+      <div className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: 0.5 }}>
+        Expected vs produced{caseLabel ? ` — ${caseLabel}` : ""}
+      </div>
+      <div className="row" style={{ gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
+        {col("Expected", expected, exp)}
+        {col("Produced", produced, prod)}
+      </div>
+    </div>
+  );
+}
+
 export function hasErrorLog(log: RunErrorLog | null | undefined): boolean {
   return !!log && Object.values(log).some(v => v != null && v !== "");
 }
@@ -59,21 +105,37 @@ export function sigBadge(s: string | null | undefined) {
 }
 
 export function ErrorPanel({ log }: { log: RunErrorLog }) {
+  // When both expected and produced output are present, show them side by side
+  // (and drop the separate stacked boxes below to avoid duplication).
+  const sideBySide = !!(log.expected_output && log.code_output);
   const fields: Array<[string, string | null | undefined]> = [
     ["Error log", log.error_log],
     ["Runtime error", log.full_runtime_error || log.runtime_error],
     ["Compile error", log.full_compile_error || log.compile_error],
-    ["Failing test case (input)", log.last_testcase],
-    ["Expected output", log.expected_output],
-    ["Your output", log.code_output],
+    ...(sideBySide
+      ? []
+      : ([
+          ["Failing test case (input)", log.last_testcase],
+          ["Expected output", log.expected_output],
+          ["Your output", log.code_output],
+        ] as Array<[string, string | null | undefined]>)),
     ["Stdout", log.std_output],
     ["Dispatch note", log.note],
     ["leetbot stdout (tail)", log.raw_stdout],
     ["leetbot stderr (tail)", log.raw_stderr],
   ].filter(([, v]) => v) as Array<[string, string]>;
-  if (fields.length === 0) return <div className="muted">No error details captured.</div>;
+  if (fields.length === 0 && !sideBySide) {
+    return <div className="muted">No error details captured.</div>;
+  }
   return (
     <div className="col" style={{ gap: 10, padding: 10 }}>
+      {sideBySide && (
+        <DiffBox
+          caseLabel={log.last_testcase}
+          expected={log.expected_output as string}
+          produced={log.code_output as string}
+        />
+      )}
       {fields.map(([label, value]) => (
         <LogBox key={label} label={label} value={value} />
       ))}
