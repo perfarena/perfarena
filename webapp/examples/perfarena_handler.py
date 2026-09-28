@@ -184,8 +184,12 @@ def _get_tracker_cls() -> Any:
     if not _TRACKER_TRIED:
         _TRACKER_TRIED = True
         try:
-            from codecarbon import EmissionsTracker  # type: ignore
-            _TRACKER_CLS = EmissionsTracker
+            # OFFLINE tracker: skips codecarbon's online geolocation / carbon-
+            # intensity network lookup, which hangs for ~20 min on a host with
+            # restricted or flaky egress (a silent stall before measurement). We
+            # report measured energy, not CO2, so the country is irrelevant.
+            from codecarbon import OfflineEmissionsTracker  # type: ignore
+            _TRACKER_CLS = OfflineEmissionsTracker
         except Exception as e:  # noqa: BLE001
             print(f"[perfarena_handler] codecarbon unavailable ({e}); "
                   f"energy will be None", file=sys.stderr)
@@ -521,8 +525,9 @@ def _new_tracker(cls: Any) -> Any:
     during the measured loop, so 0.5s is a balance (tune via
     PERFARENA_MEASURE_POWER_SECS). Falls back to the default interval if the
     installed codecarbon predates the kwarg."""
-    kw = dict(project_name="perfarena-curated", log_level="error",
-              save_to_file=False, save_to_api=False, save_to_logger=False)
+    kw = dict(project_name="perfarena-curated",
+              country_iso_code=os.environ.get("PERFARENA_COUNTRY_ISO", "USA"),
+              log_level="error", save_to_file=False, save_to_logger=False)
     mps = float(os.environ.get("PERFARENA_MEASURE_POWER_SECS", "0.5"))
     try:
         return cls(measure_power_secs=mps, **kw)
@@ -1805,12 +1810,14 @@ def _measure_clbg_samples(
     baseline = _count_measure_rows(cell, folder, title_slug)
 
     def _progress(line: str) -> None:
-        # codecarbon_runner prints one "[codecarbon-runner] <phase> k/total..."
-        # line per warmup/measure iteration. Re-emit each as a timestamped
-        # heartbeat so a 20-min CLBG measure shows live progress (warmup 1/8,
-        # measure 2/8, …) instead of a single silent 20-min gap.
+        # codecarbon_runner prints a "[codecarbon-runner] <phase>..." line for
+        # every phase: energy-tracker init, idle baseline, and each warmup /
+        # measure k/total iteration. Re-emit ALL of them as timestamped
+        # heartbeats (not just the k/total ones) so a long CLBG measure shows
+        # live progress instead of a silent gap, and any stall is attributable
+        # to the phase whose line printed last.
         s = line.strip()
-        if s.startswith("[codecarbon-runner]") and "/" in s:
+        if s.startswith("[codecarbon-runner]"):
             _log_always(f"{title_slug} ({folder}) "
                         f"{s[len('[codecarbon-runner]'):].strip()}")
 
