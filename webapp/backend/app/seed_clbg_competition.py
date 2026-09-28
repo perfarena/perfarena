@@ -70,8 +70,7 @@ def _render_content(p: dict) -> str:
         p["invocation_hint"].strip(),
         "",
         f"**Default N:** `{p['default_argument']}` · "
-        f"**Validation N:** `{p['validation_n']}` · "
-        f"**Algorithm class:** {p['algorithm_class']}",
+        f"**Validation N:** `{p['validation_n']}`",
     ]
     return "\n".join(parts)
 
