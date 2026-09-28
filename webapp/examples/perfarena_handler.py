@@ -1799,7 +1799,20 @@ def _measure_clbg_samples(
 
     memory_mb = None
     if do_mem:
+        # The memory pass runs `make run` once (peak RSS via getrusage). Log it
+        # as its own timed phase: it precedes `make measure`, so a stall here
+        # (e.g. a stdin-input program blocking on an unredirected stdin) would
+        # otherwise show as a silent gap before any codecarbon output.
+        _log_always(f"{title_slug} ({folder}) measuring peak memory (make run)...")
+        _t_mem = time.monotonic()
         memory_mb, _diag = _measure_mem(cell, timeout)
+        _dt_mem = time.monotonic() - _t_mem
+        if memory_mb is not None:
+            _log_always(f"{title_slug} ({folder}) peak memory = "
+                        f"{memory_mb:.1f} MB in {_dt_mem:.1f}s")
+        else:
+            _log_always(f"{title_slug} ({folder}) peak memory unavailable in "
+                        f"{_dt_mem:.1f}s ({_diag.get('note', '?')})")
 
     if not do_measure:
         # Memory-only request: one result carrying the single memory reading.
