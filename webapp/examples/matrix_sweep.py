@@ -1379,7 +1379,7 @@ def main() -> None:
                          "across all --models; the model NAME already "
                          "distinguishes cells). Defaults to the provider "
                          "name (ollama / openai / …) when omitted.")
-    ap.add_argument("--temperature", type=float, default=1)
+    ap.add_argument("--temperature", type=float, default=0)
     ap.add_argument("--no-think", action="store_true",
                     help="Disable model reasoning by sending Ollama's "
                          "`\"think\": false` in the /api/chat body. Use it for "
