@@ -1136,7 +1136,7 @@ class OpenAIProvider(Provider):
         finish_reason: str | None = None
         if reasoning_model:
             code, content, reasoning, gen_ms, resp, finish_reason = self._call_responses_api(
-                model, sys_p, user_prompt, params, language, fence,
+                model, sys_p, user_prompt, params, language, fence, statement,
             )
         else:
             endpoint = self.base_url + "/chat/completions"
@@ -1212,7 +1212,7 @@ class OpenAIProvider(Provider):
 
     def _call_responses_api(
         self, model: str, sys_p: str, user_prompt: str, params: dict,
-        language: str, fence: str,
+        language: str, fence: str, statement: str,
     ) -> tuple[str, str, str | None, int, dict, str | None]:
         """Reasoning-model path through /v1/responses.
 
