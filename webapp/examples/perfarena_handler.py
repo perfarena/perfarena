@@ -1487,6 +1487,25 @@ def _parse_validate_counts(stderr: str) -> "tuple[int | None, int | None]":
     return passed, total
 
 
+def _make_validate_status(returncode: int, stderr: str) -> str:
+    """Map a `make validate` result to a verdict. A non-zero exit is not always a
+    wrong answer: the model's program can CRASH (Runtime Error) or HANG past the
+    per-case cap (Time Limit Exceeded). The validators name the cause in stderr —
+    `clbg_validate.sh` prints `crashed rc=` / `timed out after`, and
+    `perfarena.mk`'s single-file path (used by CLBG mandelbrot and the LeetCode
+    legacy fallback) prints `program exited` — so read it instead of collapsing
+    every failure to Wrong Answer. Falls back to Wrong Answer for a genuine output
+    mismatch. Shared by the CLBG paths and the LeetCode rc-2 fallback."""
+    if returncode == 0:
+        return "Accepted"
+    s = stderr or ""
+    if "timed out after" in s:
+        return "Time Limit Exceeded"
+    if "crashed rc=" in s or "program exited" in s:
+        return "Runtime Error"
+    return "Wrong Answer"
+
+
 def _parse_clbg_diff(text: str) -> "tuple[dict[str, str], str]":
     """Extract the PERFARENA-DIFF-* markers that clbg_validate.sh / perfarena.mk
     emit on a text-output mismatch, and return (fields, text-without-markers).
@@ -1587,15 +1606,17 @@ def validate_once(
         total_correct = total_testcases = None
         if _is_clbg_cell(cell, title_slug):
             vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-            status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+            status = _make_validate_status(vr.returncode, vr.stderr or "")
             # clbg_validate.sh emits `passed=<K> ncases=<N>` — same shape the
             # full-suite parser reads, so the per-run breakdown is populated too.
             total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         else:
             vr = _full_suite_validate(cell, language)
             if vr.returncode == 2:
+                # rc 2 = full-suite validator can't run; fall back to the legacy
+                # single-case `make validate` and read its cause the same way.
                 vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-                status = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+                status = _make_validate_status(vr.returncode, vr.stderr or "")
             else:
                 status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
                 # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
@@ -1974,12 +1995,14 @@ def measure_once(
             # (which has no workload for CLBG and would crash). See _is_clbg_cell.
             if _is_clbg_cell(cell, title_slug):
                 vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-                _vstatus = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+                _vstatus = _make_validate_status(vr.returncode, vr.stderr or "")
             else:
                 vr = _full_suite_validate(cell, language)
                 if vr.returncode == 2:
+                    # rc 2 = full-suite validator can't run; fall back to the legacy
+                    # single-case `make validate` and read its cause the same way.
                     vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-                    _vstatus = "Accepted" if vr.returncode == 0 else "Wrong Answer"
+                    _vstatus = _make_validate_status(vr.returncode, vr.stderr or "")
                 else:
                     _vstatus = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
             _log(f"validate {_vstatus} in {time.perf_counter() - _tv:.2f}s")
