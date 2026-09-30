@@ -1097,8 +1097,16 @@ def _normalize_solution_code(language: str, code: str, is_clbg: bool = False) ->
 _MEM_HELPER = r"""
 import json, resource, subprocess, sys
 try:
+    # Discard the program's stdout. The mem pass only needs peak RSS from
+    # getrusage (correctness was already checked in the validate pass), and
+    # mandelbrot — the one binary-output CLBG benchmark — writes a raw PBM image
+    # there. Capturing it with text=True decoded that binary as UTF-8 and crashed
+    # the helper (UnicodeDecodeError), which is why memory came back null for
+    # every mandelbrot run. Keep only stderr for the diagnostic tail, decoded
+    # leniently. Discarding stdout does not change the child's RSS.
     rc = subprocess.run(['make', '-s', 'run'], cwd=sys.argv[1],
-                        capture_output=True, text=True, timeout=float(sys.argv[2]))
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                        text=True, errors='replace', timeout=float(sys.argv[2]))
 except subprocess.TimeoutExpired as e:
     print(json.dumps({'ok': False, 'note': f'timeout: {e}'}))
     sys.exit(0)
