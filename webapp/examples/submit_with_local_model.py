@@ -533,8 +533,16 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
                    r"\bConsole\.\w+\("],
     "javascript": [r"^\s*function\s+\w+\s*\(", r"\bvar\s+\w+\s*=",
                    r"\blet\s+\w+\s*=", r"\bconst\s+\w+\s*=", r"=>"],
+    # TypeScript is a SUPERSET of JavaScript: a valid TS solution can carry zero
+    # TS-specific syntax, which is common in terse CLBG numeric code (plain
+    # `const`/`let`/`for` loops, no type annotations). Requiring TS-only syntax
+    # here wrongly rejected such solutions as wrong_language_extracted, so we also
+    # accept the JavaScript shapes. Python/Java/C# etc. still fail (no
+    # const/let/=>/`function` keyword), so gross mismatches are still caught.
     "typescript": [r":\s*(string|number|boolean|void)\b", r"\binterface\s+\w+",
-                   r"^\s*function\s+\w+\s*\(.*:.*\)\s*:"],
+                   r"^\s*function\s+\w+\s*\(.*:.*\)\s*:",
+                   r"^\s*function\s+\w+\s*\(", r"\bvar\s+\w+\s*=",
+                   r"\blet\s+\w+\s*=", r"\bconst\s+\w+\s*=", r"=>"],
     "golang":     [r"^\s*package\s+\w+", r"^\s*func\s+\w+\s*\(",
                    r"^\s*import\s+\("],
     "kotlin":     [r"^\s*fun\s+\w+\s*\(", r"\bval\s+\w+\s*[=:]",

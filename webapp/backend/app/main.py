@@ -6000,15 +6000,23 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             select(Run).where(Run.attempt_id == a.id).order_by(Run.run_index)
         ).all()
         if not runs:
-            # No Run rows yet. Differentiate truly-pending from already-
-            # known-dead. An attempt with `dispatch_warning` set has been
-            # auto-failed by the stale-marker (or explicitly stamped by
-            # the dispatcher when LeetCode auth blew up) — labelling it
-            # "queued" makes the SPA look like there are 20 active
-            # submissions when nothing's actually moving. "Dispatch
-            # failed" matches the dispatch_warning copy on the row.
-            if a.dispatch_warning:
+            # No Run rows. Distinguish the states a runless attempt can be in, so
+            # a client-prefailed or already-verdicted attempt is not mislabelled as
+            # still-in-flight "queued" (which makes the SPA look like there are 20
+            # active submissions when nothing's actually moving, and hid the
+            # wrong_language_extracted prefailures that looked "queued").
+            if a.prefailed_reason:
+                # The client rejected the extracted output before dispatch
+                # (e.g. wrong_language_extracted). It is a failed attempt.
+                status = a.prefailed_reason
+            elif a.dispatch_warning:
+                # Auto-failed by the stale-marker, or stamped by the dispatcher
+                # when LeetCode auth blew up.
                 status = "Dispatch failed"
+            elif a.final_status:
+                # Has a terminal verdict but its Run rows are gone (a measured-
+                # but-unpersisted attempt). Show the verdict, not "queued".
+                status = a.final_status
             else:
                 status = "queued"
         else:

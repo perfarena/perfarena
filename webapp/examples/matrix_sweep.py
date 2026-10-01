@@ -945,6 +945,43 @@ def _poll_for_attempt(base: str, api_key: str, sub_id: int, slug: str,
     return None
 
 
+def _find_inflight_attempt(base: str, api_key: str, sub_id: int, slug: str,
+                           round_idx: int) -> dict | None:
+    """Return the server's still-in-flight attempt for (sub_id, slug, round_idx),
+    or None.
+
+    Makes retries idempotent. A slow CLBG measure can still be running
+    server-side after a prior run's `_poll_for_attempt` gave up at
+    `--poll-seconds`; re-submitting the tuple then creates a DUPLICATE attempt
+    (the "poll_timeout -> re-dispatch -> duplicates piled up even though the first
+    attempt finished Accepted" failure documented in main()). Before submitting,
+    the caller asks this whether an attempt is already in flight and, if so,
+    resumes polling it instead of creating a second one.
+
+    "In flight" means the attempt exists, has no terminal verdict yet (status
+    `queued`/`Pending`), was NOT prefailed by the client, and the dispatcher has
+    NOT given up (no `dispatch_warning`). A prefailed or dispatch-warned attempt
+    returns None, so the caller submits a fresh one for those; the server's
+    stale-marker stamps `dispatch_warning` on a genuinely stuck attempt, which
+    also frees it to be resubmitted."""
+    try:
+        atts = http_json("GET", f"{base}/api/submissions/{sub_id}/attempts",
+                         token=api_key)
+    except SystemExit:
+        return None
+    cand = [
+        a for a in atts
+        if a.get("problem_slug") == slug
+        and (a.get("round_index") or 0) == round_idx
+        and not a.get("dispatch_warning")
+        and not a.get("prefailed_reason")
+        and a.get("status") in ("queued", "Pending")
+    ]
+    if not cand:
+        return None
+    return max(cand, key=lambda a: a["attempt_id"])
+
+
 # ---------- generation prefetcher -------------------------------------------
 #
 # The expensive serial dependency per tuple is:
@@ -2197,9 +2234,24 @@ def main() -> None:
             if model_digest:
                 attempt["model_digest"] = model_digest
 
+            # ---- Idempotent retry guard ----
+            # A prior run may have already submitted THIS round and its slow CLBG
+            # measure could still be running server-side. Resubmitting would create
+            # a DUPLICATE attempt (the poll_timeout -> re-dispatch -> pile-up
+            # failure noted in main()). If an attempt for (sub_id, slug, round_idx)
+            # is already in flight, skip the submit and resume polling it below.
+            resume_att = (
+                _find_inflight_attempt(base, args.api_key, sub_id, slug, round_idx)
+                if sub_id is not None else None
+            )
             # ---- Submit (create cell submission on first round/cell, append after) ----
             try:
-                if sub_id is None:
+                if resume_att is not None:
+                    print(f"  ↻ round {round_idx} for {language}/{slug} already in "
+                          f"flight (attempt {resume_att['attempt_id']}); resuming "
+                          f"poll, not resubmitting (no duplicate)")
+                    cell_covered.setdefault(cell, set()).add(slug)
+                elif sub_id is None:
                     created = http_json(
                         "POST", f"{base}/api/submissions", token=args.api_key,
                         body={
@@ -2294,10 +2346,15 @@ def main() -> None:
                                     round_attempt_idx=round_idx,
                                     timeout_s=args.poll_seconds)
             if att is None:
+                inflight = _find_inflight_attempt(
+                    base, args.api_key, sub_id, slug, round_idx)
+                inflight_id = (inflight or {}).get("attempt_id")
                 print(f"  ⚠ poll timeout after {args.poll_seconds}s on round {round_idx}; "
-                      f"recording as in-progress")
+                      f"attempt {inflight_id if inflight_id else '?'} still measuring — "
+                      f"next run resumes its poll instead of resubmitting")
                 progress[key] = {"status": "poll_timeout",
                                  "submission_id": sub_id,
+                                 "attempt_id": inflight_id,
                                  "at": _now_iso(), "leaf_hash": leaf,
                                  "rounds_used": round_idx + 1}
                 _save_progress(args.output, progress)
