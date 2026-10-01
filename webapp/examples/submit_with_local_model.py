@@ -488,8 +488,19 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
     # Each pattern is a strong signal that the code IS that language; matches
     # against any one is sufficient. Conservative on purpose — false negatives
     # cost a sample retry, false positives let cross-language smuggling through.
+    # Python is whitespace-structured with no mandatory braces / #include /
+    # package line, so a valid CLBG program can be a pure top-level script with
+    # none of the method-shape tokens below (e.g. `import sys` + a top-level loop
+    # + `print(...)`). Add script-style signals, kept Python-specific so a
+    # wrong-language blob is still caught: `^print(` (Java's `System.out.print(`
+    # is not at line start; C's `printf(` has the trailing f), `sys.argv/stdin/
+    # stdout`, `range(`, and BARE stdlib imports (`import java.util.List;` does
+    # not match the module allow-list).
     "python3":    [r"^\s*def\s+\w+\s*\(", r"^\s*class\s+\w+\s*[:\(]",
-                   r"^\s*from\s+\w+\s+import\b", r"->\s*[\w\[]"],
+                   r"^\s*from\s+\w+\s+import\b", r"->\s*[\w\[]",
+                   r"^\s*print\s*\(", r"\bsys\.(?:argv|stdin|stdout)\b",
+                   r"\brange\s*\(",
+                   r"^\s*import\s+(?:sys|math|os|array|itertools|collections|functools|re|heapq|bisect|string|time|decimal|struct|io)\b"],
     "cpp":        [r"^\s*#include", r"\bvector\s*<", r"^\s*class\s+\w+\s*\{",
                    r"\bpublic\s*:", r"\bstd::"],
     # C is hardest to fingerprint by entry point — LeetCode C solutions are
