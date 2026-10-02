@@ -1586,13 +1586,17 @@ def main() -> None:
                          "one GET per live submission. Default: off (the bulk "
                          "existence check already catches whole-submission "
                          "deletes in a single request).")
-    ap.add_argument("--prefetch", type=int, default=1, metavar="N",
+    ap.add_argument("--prefetch", type=int, default=0, metavar="N",
                     help="how many tuples ahead the background generator may "
-                         "stay. With --prefetch 1 (default), while main is "
-                         "paying the inter-problem cooldown and waiting on a "
-                         "verdict, the model is already producing the next "
-                         "tuple's code — turning the sleep into useful work. "
-                         "0 disables the pipeline (sequential, like before).")
+                         "stay. Default 0 = SYNCHRONOUS: generate one tuple's "
+                         "code, submit it, poll for its verdict (up to "
+                         "--poll-seconds), and only THEN start the next tuple, so "
+                         "no generation runs while a slow attempt is still being "
+                         "measured. --prefetch N (N>=1) re-enables the background "
+                         "pipeline that pre-generates N tuples ahead to overlap "
+                         "generation with the verdict/cooldown wait; useful on the "
+                         "rate-limited LeetCode path, but against slow arena-local "
+                         "measures it lets generated tuples pile up.")
     ap.add_argument("--dry-run", action="store_true",
                     help="enumerate the matrix and report; no model calls, no submits.")
     ap.add_argument("--generate-only", action="store_true",
