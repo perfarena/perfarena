@@ -2345,6 +2345,30 @@ def main() -> None:
                 # prev_pair intentionally NOT advanced — see comment above.
                 break
 
+            # A client-prefailed attempt (wrong-language / empty generation) was
+            # submitted with prefailed_reason, so the server records it as failed
+            # WITHOUT dispatching it — there is nothing to measure. Polling it would
+            # burn the full --poll-seconds (1800s on arena-local): a runless attempt's
+            # status stays "queued" and never reaches a terminal value that
+            # _poll_for_attempt recognizes, so the poll always times out. Skip the
+            # poll, record a PERMANENT generator failure (status="failed", not
+            # "poll_timeout"), and move on — otherwise the resume filter auto-retries
+            # it and re-blocks 1800s every sweep. Only when we actually submitted the
+            # prefailed code: if resume_att is set we resumed a genuine in-flight
+            # attempt and must poll it normally.
+            if prefailed_reason and resume_att is None:
+                print(f"  → round {round_idx}: {prefailed_reason} — not dispatched, "
+                      f"skipping poll")
+                progress[key] = {"status": "failed",
+                                 "reason": prefailed_reason,
+                                 "at": _now_iso(), "leaf_hash": leaf,
+                                 "rounds_used": round_idx + 1,
+                                 "submission_id": sub_id}
+                _save_progress(args.output, progress)
+                n_fail += 1
+                tuple_failed_unrecoverably = True
+                break
+
             # ---- Poll for THIS round's verdict ----
             att = _poll_for_attempt(base, args.api_key, sub_id, slug,
                                     round_attempt_idx=round_idx,
