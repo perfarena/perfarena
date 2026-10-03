@@ -31,9 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         unzip zip xz-utils gnupg \
     && rm -rf /var/lib/apt/lists/*
 
-# ---- 2. C / C++ (Boost for pidigits, GMP for gmpy2, PCRE2 for regex-redux) ---
+# ---- 2. C / C++ (Boost for pidigits, GMP for gmpy2, PCRE2 for regex-redux;
+#         C CLBG also needs APR pools (binary-trees), htslib (k-nucleotide),
+#         and legacy PCRE (regex-redux) — mirrors setup-harness-host.sh) --------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc g++ clang libboost-dev libgmp-dev libpcre2-dev \
+        libapr1-dev libaprutil1-dev libhts-dev libpcre3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- 3. Java 21 (also the JRE that Kotlin + Scala run on) --------------------

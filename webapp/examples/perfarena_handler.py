@@ -515,6 +515,69 @@ class _RaplEnergy(_EnergyBackend):
         return delta_uj / 1_000_000.0 if delta_uj >= 0 else None
 
 
+class _PowermetricsEnergy(_EnergyBackend):
+    """macOS powermetrics reader for the per-op path. Starts ONE continuous
+    powermetrics sampler (scoped passwordless sudo, 100 ms) at construction;
+    begin()/end() mark a per-case window and integrate CPU+GPU+ANE power over it
+    into joules — the same integration as
+    perfarena.runners.powermetrics_runner, so a per-op number is comparable to
+    the CLBG one. Needs macOS + `sudo -n /usr/bin/powermetrics`; available()
+    is False anywhere else and the caller falls back."""
+
+    def __init__(self) -> None:
+        self.label = "powermetrics"
+        self._ok = False
+        self._sampler: Any = None
+        self._t0: "int | None" = None
+        try:
+            import tempfile
+            from perfarena.casewise_energy import PowermetricsSampler
+            PowermetricsSampler.preflight()  # raises if not macOS / no scoped sudo
+            fd, raw = tempfile.mkstemp(prefix="perfarena_pm_op_", suffix=".plist")
+            os.close(fd)
+            interval = int(os.environ.get("PERFARENA_PM_INTERVAL_MS", "100"))
+            self._sampler = PowermetricsSampler(Path(raw), interval_ms=interval)
+            self._sampler.start()
+            self._ok = True
+        except Exception as e:  # noqa: BLE001
+            print(f"[perfarena_handler] powermetrics unavailable ({e}); falling back",
+                  file=sys.stderr)
+
+    def available(self) -> bool:
+        return self._ok
+
+    def begin(self) -> None:
+        self._t0 = time.monotonic_ns()
+
+    def end(self) -> "float | None":
+        if not self._ok or self._sampler is None or self._t0 is None:
+            return None
+        t1 = time.monotonic_ns()
+        try:
+            self._sampler.wait_for_window(t1)
+            samples = self._sampler.samples_for_window(self._t0, t1)
+        except Exception:  # noqa: BLE001
+            return None
+        if not samples:
+            return None
+        joules = 0.0
+        for s in samples:
+            dt = s.elapsed_ns / 1e9
+            joules += (s.cpu_w or 0.0) * dt
+            if s.gpu_w:
+                joules += s.gpu_w * dt
+            if s.ane_w:
+                joules += s.ane_w * dt
+        return joules
+
+    def close(self) -> None:
+        if self._sampler is not None:
+            try:
+                self._sampler.stop()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _new_tracker(cls: Any) -> Any:
     """Construct a codecarbon EmissionsTracker with a SHORT power-sampling
     interval. codecarbon's default `measure_power_secs` is 15s — far longer
@@ -604,6 +667,12 @@ def _make_energy_backend() -> _EnergyBackend:
     uses the direct powercap reader (near-zero per-case cost); otherwise a
     reused codecarbon tracker. Falls back to time-only if neither is usable."""
     tool = _energy_tool_name()
+    if tool == "powermetrics":
+        p = _PowermetricsEnergy()
+        if p.available():
+            return p
+        print("[perfarena_handler] PERFARENA_PROFILER=powermetrics but powermetrics "
+              "is not usable; falling back to codecarbon", file=sys.stderr)
     if tool == "rapl":
         r = _RaplEnergy()
         if r.available():

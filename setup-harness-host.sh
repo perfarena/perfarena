@@ -91,10 +91,13 @@ install_toolchains() {
   case "$PKG" in
     apt)
       run "$SUDO apt-get update -y"
-      pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip
+      pm_install ca-certificates curl wget git make pkg-config build-essential unzip zip gnupg
       pm_install gcc g++ clang
       pm_install libboost-dev libgmp-dev   # C++ pidigits (Boost.Multiprecision) + Python gmpy2 (GMP)
       pm_install libpcre2-dev              # C/C++ regex-redux (PCRE2)
+      # C CLBG whole-program references: binary-trees links APR pools (-lapr-1),
+      # k-nucleotide uses htslib/khash, regex-redux links legacy PCRE (-lpcre).
+      pm_install libapr1-dev libaprutil1-dev libhts-dev libpcre3-dev
       pm_install openjdk-21-jdk-headless
       install_node
       pm_install php-cli php-gmp           # php-gmp: PHP pidigits (GMP bignum)
@@ -103,8 +106,11 @@ install_toolchains() {
       pm_install python3 python3-pip python3-venv python3-dev
       ;;
     dnf)
-      pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip
+      pm_install ca-certificates curl wget git make pkgconf-pkg-config gcc gcc-c++ clang unzip zip gnupg2
       pm_install boost-devel gmp-devel pcre2-devel
+      # C CLBG references: APR pools (binary-trees), legacy PCRE (regex-redux).
+      pm_install apr-devel apr-util-devel pcre-devel
+      pm_install htslib-devel || warn "htslib-devel unavailable (may need EPEL); C k-nucleotide clbg needs it"
       pm_install java-21-openjdk-devel
       install_node
       pm_install php-cli php-gmp
@@ -113,8 +119,8 @@ install_toolchains() {
       pm_install python3 python3-pip python3-devel
       ;;
     brew)
-      pm_install gcc llvm openjdk@21 node php ruby go python@3.12 boost gmp pcre2
-      warn "macOS: C/C++ uses Apple clang from Xcode CLT (xcode-select --install)"
+      pm_install gcc llvm libomp openjdk@21 node php ruby go python@3.12 boost gmp pcre pcre2 apr apr-util htslib
+      warn "macOS: C/C++ uses Apple clang from Xcode CLT (xcode-select --install); the C CLBG cells need GNU gcc (CC=gcc-<N>) for -fopenmp/-march=native, and brew apr is keg-only (pass its include/lib paths)."
       ;;
   esac
 
@@ -188,7 +194,9 @@ install_node() {
   case "$PKG" in
     apt)
       info "installing Node.js 20 LTS (NodeSource; apt node is too old for the harnesses)"
-      run "curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO -E bash -"
+      # ${SUDO:+...} so this works as root too: non-root -> `sudo -E bash -`,
+      # root (SUDO empty) -> `bash -` (a bare `-E` would be "command not found").
+      run "curl -fsSL https://deb.nodesource.com/setup_20.x | ${SUDO:+$SUDO -E }bash -"
       pm_install nodejs ;;
     dnf)
       info "installing Node.js 20 LTS (NodeSource)"
@@ -265,15 +273,32 @@ install_venv() {
   run "\"$VENV/bin/pip\" install --upgrade pip"
   run "\"$VENV/bin/pip\" install codecarbon psutil gmpy2"   # gmpy2 for CLBG Python pidigits
   # If the perfarena package ships a pyproject, install it too (CLI + runners).
+  # Best-effort: the arena runner imports `perfarena` via PYTHONPATH on the
+  # measurement host, so a packaging hiccup here must not fail setup.
   if [ -f "$HARNESS_DIR/pyproject.toml" ]; then
-    run "\"$VENV/bin/pip\" install \"$HARNESS_DIR\""
+    run "\"$VENV/bin/pip\" install \"$HARNESS_DIR\"" \
+      || warn "perfarena package pip-install failed (non-fatal; runner imports it via PYTHONPATH)"
   fi
 }
 
 # ---------------------------------------------------------------- energy access
 setup_energy() {
   if [ "$OS" = "Darwin" ]; then
-    warn "macOS energy backend is /usr/bin/powermetrics; it requires sudo. Launch the runner so it can call: sudo powermetrics ..."
+    # macOS energy backend is /usr/bin/powermetrics, which needs root. Grant
+    # scoped, passwordless sudo for JUST that binary via a sudoers drop-in so the
+    # arena runner can sample energy non-interactively. Idempotent.
+    if sudo -n /usr/bin/powermetrics -n1 -i100 --samplers cpu_power >/dev/null 2>&1; then
+      log "powermetrics already runs under passwordless sudo"
+    else
+      info "installing scoped NOPASSWD sudoers rule for /usr/bin/powermetrics"
+      run "printf '%s ALL=(ALL) NOPASSWD: /usr/bin/powermetrics\\n' \"$(id -un)\" | $SUDO tee /etc/sudoers.d/perfarena-powermetrics >/dev/null" \
+        && run "$SUDO chmod 440 /etc/sudoers.d/perfarena-powermetrics"
+      if [ "$DRY_RUN" != 1 ]; then
+        sudo -n /usr/bin/powermetrics -n1 -i100 --samplers cpu_power >/dev/null 2>&1 \
+          && log "powermetrics passwordless sudo configured" \
+          || warn "sudoers rule written but 'sudo -n powermetrics' still fails — check /etc/sudoers.d/perfarena-powermetrics"
+      fi
+    fi
     return
   fi
   # Linux: perf for RAPL + read access to the powercap intel-rapl counters.
