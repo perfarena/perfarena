@@ -717,3 +717,31 @@ validate confirm sweep is the authoritative check.
     memoized winner-set DP), and `number-of-ways-to-reorder-array-to-get-same-bst`
     (`>=` → `> root`, see item 38). Go leetcode is now 98 PASS + 1 DATA-BUG. Go
     clbg was already perfarena-integrated (10/10 Makefiles include perfarena.mk).
+
+
+## All-language coverage for the remaining 2 competitions (2026-10-03)
+
+42. **TODO (DO NOT START until explicitly asked) — extend all-language support to
+    the two competitions beyond `leetcode-99-perf` and `clbg-10`.** The system
+    defines four competitions. Every measurable language (c, cpp, csharp, dart,
+    golang, java, javascript, kotlin, php, python3, ruby, rust, scala, swift,
+    typescript) now has solution cells + arena-local oracle data for
+    `leetcode-99-perf` and `clbg-10`. The other two still need the same work:
+    - `leetcode-99-hard-perf` ("LeetCode 99 Hard Problems", `seed_hard_competition.py`,
+      default slug `leetcode-99-hard-perf`) — a DIFFERENT 99-slug set (the
+      hardest-by-p50 problems from `data/runtime_ranking.json`). Needs per-language
+      solution cells under `<Lang>/leetcode/<hard-slug>/` for every measurable
+      language AND the arena-local reference outputs + workloads
+      (`reference/leetcode/outputs/<slug>.json` and `.../workloads/<slug>.json`
+      with EQUAL `workload_hash`) for each of those slugs.
+    - `leetcode-99-rewritten` ("LeetCode 99 (rewritten)", `rewrite_competition.py`,
+      default slug `leetcode-99-rewritten`) — the same 99 base slugs as
+      `leetcode-99-perf` but with rewritten statements / function names / content
+      (`new_slug` / `new_function_name` / `new_content`). FIRST confirm whether the
+      existing cells + oracle data carry over, or whether the renamed entry points
+      need their own per-language cells and reference outputs/workloads.
+    No new language registration is required (all langs are already in
+    `perfarena_handler._LANG_MAP`, `run_harness.sh`, `run_validate.sh`, and the
+    client's `MEASURABLE_LANGUAGES`); this is purely per-competition problem
+    content: fill each cell, then validate it with `run_validate.sh`, exactly as
+    done for Dart on the first two competitions.

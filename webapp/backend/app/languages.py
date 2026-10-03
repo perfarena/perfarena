@@ -298,6 +298,32 @@ LANGUAGES: dict[str, LanguageInfo] = {
         peak_speed="Within 1.2–2× of C++",
         memory_baseline="Low",
     ),
+    "dart": LanguageInfo(
+        name="dart", display_name="Dart",
+        category="AOT native (dart compile exe) or JIT VM — tracing GC",
+        paradigms=["Multi-paradigm", "Object-oriented", "Functional"],
+        typing="Statically and soundly typed; sound null safety",
+        gc="Yes — generational tracing collector",
+        runtime="Dart VM (JIT) for development; AOT native executable for production",
+        design_notes=(
+            "Dart runs two ways from one toolchain. `dart run` executes on a "
+            "JIT VM with fast startup; `dart compile exe` builds an "
+            "ahead-of-time native executable with no VM warmup. Both use a "
+            "generational tracing garbage collector. Small integers box on the "
+            "VM, so arithmetic-heavy loops trail the native and JVM languages, "
+            "but AOT startup is instant and the memory profile is moderate."
+        ),
+        key_traits=[
+            "One toolchain, two runtimes: JIT VM and AOT native",
+            "Generational tracing GC — brief pauses under allocation churn",
+            "Sound null-safe static typing",
+            "Between Go and the JVM on arithmetic-heavy loops",
+        ],
+        so_used_pct_2024=6.0, so_admired_pct_2024=62.0, tiobe_rank_2025=25,
+        cold_start="AOT: instant; JIT VM: fast",
+        peak_speed="AOT within ~1.5–3× of C++ on arithmetic",
+        memory_baseline="Moderate — VM/GC heap overhead",
+    ),
     "scala": LanguageInfo(
         name="scala", display_name="Scala",
         category="Managed — JVM bytecode (also Scala Native, Scala.js)",

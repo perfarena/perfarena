@@ -94,6 +94,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
     "scala":      ("Scala",      "scala"),
     "ruby":       ("Ruby",       "ruby"),
     "php":        ("PHP",        "php"),
+    "dart":       ("Dart",       "dart"),
 }
 
 # The subset the perf harness can actually validate + measure — MUST track
@@ -105,6 +106,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
 MEASURABLE_LANGUAGES: tuple[str, ...] = (
     "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
     "typescript", "golang", "kotlin", "swift", "scala", "ruby", "php",
+    "dart",
 )
 
 
@@ -152,6 +154,7 @@ _CLBG_ARGV_HINT: dict[str, str] = {
     "scala":      "args(0)",
     "ruby":       "ARGV[0]",
     "php":        "$argv[1]",
+    "dart":       "args[0]",
 }
 
 # Java is the ONLY CLBG language with a NAMED entry class: the harness runs
@@ -567,6 +570,18 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
     "php":        [r"<\?php\b", r"\bfunction\s+\w+\s*\(", r"\$\w+"],
     "rust":       [r"^\s*fn\s+\w+\s*\(", r"\blet\s+(mut\s+)?\w+",
                    r"\bimpl\s+\w+", r"\buse\s+std::"],
+    # Dart shares surface syntax with Java (generics `List<>`, braces), so the
+    # strongest signals are the ones Java/C#/C++ do NOT share: `import 'dart:…'`
+    # and the `main(List<String> …)` entry (Java uses `String[] args`). LeetCode
+    # Dart methods also carry NO access modifier (`int xorOperation(int n) {`),
+    # unlike Java/C# (`public …`), so a method line that STARTS with a bare Dart
+    # return type is a good Dart signal; nullable node types (`TreeNode?`) too.
+    "dart":       [r"import\s+['\"]dart:",
+                   r"\bvoid\s+main\s*\(\s*List<String>",
+                   r"(?m)^\s*(?:int|double|bool|String|void|num)\s+\w+\s*\([^)]*\)\s*(?:\{|=>)",
+                   r"\bList<[\w<>?,\s]+>\s+\w+",
+                   r"\b\w+\?\s+\w+\s*[=,);]",
+                   r"=>"],
 }
 
 

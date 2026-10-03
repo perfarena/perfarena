@@ -122,6 +122,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         && ln -sf /opt/swiftly/bin/swiftc /usr/local/bin/swiftc ) \
     || echo "WARNING: Swift install failed — swift cells will not run in this image"
 
+# ---- 12. Dart (official SDK zip) ---------------------------------------------
+# One `dart` CLI covers `dart run` (per-op leetcode harness, JIT) and
+# `dart compile exe` (CLBG whole-program harness, AOT). Container is amd64.
+ARG DART_VERSION=3.13.5
+RUN ( curl -fsSL -o /tmp/dart-sdk.zip \
+        "https://storage.googleapis.com/dart-archive/channels/stable/release/${DART_VERSION}/sdk/dartsdk-linux-x64-release.zip" \
+      && unzip -q /tmp/dart-sdk.zip -d /opt \
+      && ln -sf /opt/dart-sdk/bin/dart /usr/local/bin/dart \
+      && rm -f /tmp/dart-sdk.zip ) \
+    || echo "WARNING: Dart install failed — dart cells will not run in this image"
+
 # ---- sudo passthrough shim ---------------------------------------------------
 # perfarena.mk's Linux `measure` target prefixes `sudo` (RAPL MSR access on bare
 # metal). This container runs as root and measures with codecarbon (no
@@ -146,7 +157,7 @@ RUN { \
       for p in 'gcc --version' 'g++ --version' 'python3 --version' 'node --version' \
                'tsc --version' 'javac -version' 'dotnet --version' 'php --version' \
                'ruby --version' 'go version' 'rustc --version' \
-               'kotlinc -version' 'scalac -version' 'swiftc --version'; do \
+               'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version'; do \
         printf '%-10s ' "${p%% *}:"; eval "$p" 2>&1 | head -1 || echo MISSING; \
       done; \
       /opt/venv/bin/python -c 'import codecarbon,psutil;print("codecarbon",codecarbon.__version__,"psutil",psutil.__version__)'; \

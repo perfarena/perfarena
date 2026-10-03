@@ -37,6 +37,7 @@ HARNESS_DIR="$REPO_ROOT/Energy-Languages"
 VENV="${HOME}/.venvs/perfrunner"
 DOTNET_CHANNEL="10.0"
 KOTLIN_VERSION="${KOTLIN_VERSION:-}"   # empty => resolve the latest release tag
+DART_VERSION="${DART_VERSION:-}"       # empty => resolve the latest stable release
 DO_TUNE=0; SKIP_TOOLCHAINS=0; SKIP_ENERGY=0; DRY_RUN=0
 
 while [ $# -gt 0 ]; do
@@ -180,6 +181,7 @@ install_toolchains() {
   install_kotlin
   install_scala
   install_swift
+  install_dart
 }
 
 # Node.js — Debian/Ubuntu apt ships an ANCIENT Node (12 on 20.04) that can't
@@ -266,6 +268,27 @@ install_swift() {
     && log "swift installed" || warn "swift install failed — swift cells will not compile"
 }
 
+# Dart — the official SDK zip from Google's dart-archive (same source on every
+# OS/arch; avoids Homebrew's "untrusted tap" refusal and apt-repo key setup).
+# The single `dart` CLI provides both `dart run` (the per-op leetcode harness,
+# JIT) and `dart compile exe` (the CLBG whole-program harness, AOT), so one
+# symlink into /usr/local/bin is all the runner needs.
+install_dart() {
+  command -v dart >/dev/null 2>&1 && { log "dart already present"; return; }
+  local dos="linux"; [ "$OS" = "Darwin" ] && dos="macos"
+  local darch="x64"; case "$ARCH" in aarch64|arm64) darch="arm64" ;; esac
+  local ver="$DART_VERSION"
+  [ -n "$ver" ] || ver="$(curl -fsSL https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION 2>/dev/null \
+        | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$ver" ] || ver="3.13.5"   # fallback pin if the VERSION endpoint is unreachable
+  info "installing Dart SDK $ver ($dos-$darch) -> /opt/dart-sdk"
+  run "curl -fsSL -o /tmp/dart-sdk.zip https://storage.googleapis.com/dart-archive/channels/stable/release/${ver}/sdk/dartsdk-${dos}-${darch}-release.zip" \
+    && run "$SUDO rm -rf /opt/dart-sdk" \
+    && run "$SUDO unzip -q /tmp/dart-sdk.zip -d /opt" \
+    && run "$SUDO ln -sf /opt/dart-sdk/bin/dart /usr/local/bin/dart" \
+    && log "dart $ver installed" || warn "dart install failed — dart cells will not compile"
+}
+
 # ---------------------------------------------------------------- python venv
 install_venv() {
   info "creating measurement venv at $VENV (codecarbon + psutil)"
@@ -345,7 +368,7 @@ write_versions() {
       'gcc --version' 'g++ --version' 'clang --version' 'python3 --version' \
       'node --version' 'tsc --version' 'javac -version' 'dotnet --version' \
       'php --version' 'ruby --version' 'go version' 'rustc --version' 'cargo --version' \
-      'kotlinc -version' 'scalac -version' 'swiftc --version'; do
+      'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version'; do
       printf '%-20s ' "${probe%% *}:"
       eval "$probe" 2>&1 | head -1 || echo "MISSING"
     done
@@ -380,10 +403,10 @@ $(c '1;32')Done.$(c 0) Add the toolchains to your PATH (append to ~/.bashrc or ~
 
     export PATH="\$HOME/.cargo/bin:\$HOME/.dotnet:\$PATH"
 
-Kotlin, Scala and Swift are symlinked into /usr/local/bin (already on PATH), so
-the runner's subprocesses find kotlinc/scalac/swiftc without extra setup. Confirm
-all three appear in harness-host-versions.txt below; if kotlinc is still "not
-found" for the runner, restart it so it inherits the updated PATH.
+Kotlin, Scala, Swift and Dart are symlinked into /usr/local/bin (already on PATH),
+so the runner's subprocesses find kotlinc/scalac/swiftc/dart without extra setup.
+Confirm all four appear in harness-host-versions.txt below; if kotlinc is still
+"not found" for the runner, restart it so it inherits the updated PATH.
 
 Launch the arena-local runner from the measurement venv so it can measure energy:
 
