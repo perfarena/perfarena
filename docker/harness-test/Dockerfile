@@ -133,6 +133,14 @@ RUN ( curl -fsSL -o /tmp/dart-sdk.zip \
       && rm -f /tmp/dart-sdk.zip ) \
     || echo "WARNING: Dart install failed — dart cells will not run in this image"
 
+# ---- 13. Erlang/OTP + Elixir (the BEAM) --------------------------------------
+# The harness parses JSON with a hand-rolled ordered parser, so the apt OTP is
+# fine (no bleeding-edge OTP needed). `elixir` pulls in `erlang` on Ubuntu.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        erlang elixir \
+    && rm -rf /var/lib/apt/lists/* \
+    || echo "WARNING: Erlang/Elixir install failed — elixir & erlang cells will not run"
+
 # ---- sudo passthrough shim ---------------------------------------------------
 # perfarena.mk's Linux `measure` target prefixes `sudo` (RAPL MSR access on bare
 # metal). This container runs as root and measures with codecarbon (no
@@ -157,7 +165,8 @@ RUN { \
       for p in 'gcc --version' 'g++ --version' 'python3 --version' 'node --version' \
                'tsc --version' 'javac -version' 'dotnet --version' 'php --version' \
                'ruby --version' 'go version' 'rustc --version' \
-               'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version'; do \
+               'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version' \
+               'elixir --version' 'erl -version'; do \
         printf '%-10s ' "${p%% *}:"; eval "$p" 2>&1 | head -1 || echo MISSING; \
       done; \
       /opt/venv/bin/python -c 'import codecarbon,psutil;print("codecarbon",codecarbon.__version__,"psutil",psutil.__version__)'; \

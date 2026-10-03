@@ -95,6 +95,8 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
     "ruby":       ("Ruby",       "ruby"),
     "php":        ("PHP",        "php"),
     "dart":       ("Dart",       "dart"),
+    "elixir":     ("Elixir",     "elixir"),
+    "erlang":     ("Erlang",     "erlang"),
 }
 
 # The subset the perf harness can actually validate + measure — MUST track
@@ -106,7 +108,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
 MEASURABLE_LANGUAGES: tuple[str, ...] = (
     "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
     "typescript", "golang", "kotlin", "swift", "scala", "ruby", "php",
-    "dart",
+    "dart", "elixir", "erlang",
 )
 
 
@@ -155,6 +157,8 @@ _CLBG_ARGV_HINT: dict[str, str] = {
     "ruby":       "ARGV[0]",
     "php":        "$argv[1]",
     "dart":       "args[0]",
+    "elixir":     "hd(System.argv())",
+    "erlang":     "the first element of the Args list passed to main/1",
 }
 
 # Java is the ONLY CLBG language with a NAMED entry class: the harness runs
@@ -582,6 +586,19 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
                    r"\bList<[\w<>?,\s]+>\s+\w+",
                    r"\b\w+\?\s+\w+\s*[=,);]",
                    r"=>"],
+    # Elixir: defmodule / def...do / the pipe / @spec are all distinctive (and
+    # the `do` keyword after `def` separates it from Python's `def foo():`).
+    "elixir":     [r"^\s*defmodule\s+",
+                   r"(?m)^\s*defp?\s+\w+.*\bdo(\s|$)",
+                   r"\|>",
+                   r"@spec\b"],
+    # Erlang: module/export/spec attributes and the `Name(Args) ->` clause are
+    # unique; nothing in the other languages matches these.
+    "erlang":     [r"(?m)^\s*-module\(",
+                   r"(?m)^\s*-export\(",
+                   r"(?m)^\s*-spec\s",
+                   r"(?m)^\s*-include\(",
+                   r"(?m)^[a-z][a-zA-Z0-9_]*\([^)]*\)\s*->"],
 }
 
 

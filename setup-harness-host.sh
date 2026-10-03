@@ -182,6 +182,7 @@ install_toolchains() {
   install_scala
   install_swift
   install_dart
+  install_beam
 }
 
 # Node.js — Debian/Ubuntu apt ships an ANCIENT Node (12 on 20.04) that can't
@@ -289,6 +290,23 @@ install_dart() {
     && log "dart $ver installed" || warn "dart install failed — dart cells will not compile"
 }
 
+# Erlang/OTP + Elixir — the BEAM. Both leetcode cells (per-op loop harness
+# selection/harness.exs + perf_harness.erl) and CLBG programs run here. The
+# harness parses the shared JSON with a hand-rolled ordered parser, so no
+# bleeding-edge OTP is required; the distro/brew packages are fine.
+install_beam() {
+  if command -v elixir >/dev/null 2>&1 && command -v erl >/dev/null 2>&1; then
+    log "elixir + erlang already present"; return
+  fi
+  case "$PKG" in
+    brew) pm_install elixir ;;                       # pulls erlang as a dependency
+    apt)  pm_install erlang elixir ;;
+    dnf)  pm_install erlang elixir || { pm_install epel-release; pm_install erlang elixir; } ;;
+  esac
+  if command -v elixir >/dev/null 2>&1; then log "elixir $(elixir --version 2>/dev/null | sed -n 's/^Elixir //p' | head -1) installed"
+  else warn "elixir/erlang install failed — elixir & erlang cells will not run"; fi
+}
+
 # ---------------------------------------------------------------- python venv
 install_venv() {
   info "creating measurement venv at $VENV (codecarbon + psutil)"
@@ -368,7 +386,8 @@ write_versions() {
       'gcc --version' 'g++ --version' 'clang --version' 'python3 --version' \
       'node --version' 'tsc --version' 'javac -version' 'dotnet --version' \
       'php --version' 'ruby --version' 'go version' 'rustc --version' 'cargo --version' \
-      'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version'; do
+      'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version' \
+      'elixir --version' 'erl -version'; do
       printf '%-20s ' "${probe%% *}:"
       eval "$probe" 2>&1 | head -1 || echo "MISSING"
     done

@@ -393,6 +393,56 @@ LANGUAGES: dict[str, LanguageInfo] = {
         peak_speed="With JIT: within ~5–10× of C++ on tight loops",
         memory_baseline="Moderate — Zend Engine per-request overhead",
     ),
+    "elixir": LanguageInfo(
+        name="elixir", display_name="Elixir",
+        category="Managed — compiled to BEAM bytecode (Erlang VM; BeamAsm JIT)",
+        paradigms=["Functional", "Concurrent", "Immutable"],
+        typing="Dynamically and strongly typed; optional typespecs (@spec)",
+        gc="Per-process generational collector — no global stop-the-world pauses",
+        runtime="BEAM (the Erlang VM); shares bytecode with Erlang",
+        design_notes=(
+            "Elixir compiles to the same BEAM bytecode as Erlang and inherits its "
+            "lightweight processes and per-process garbage collector, so collection "
+            "never stops the whole system. BeamAsm compiles hot bytecode to native "
+            "code. Data is immutable, so updates allocate new terms; raw arithmetic "
+            "trails the native and JVM languages, but concurrency, fault isolation, "
+            "and tail-latency are the language's strengths."
+        ),
+        key_traits=[
+            "Immutable data — frequent small allocations on the per-process heap",
+            "Per-process GC: low, predictable pause times",
+            "BeamAsm JIT narrows the gap on hot bytecode",
+            "Built for concurrency and I/O, not tight numeric loops",
+        ],
+        so_used_pct_2024=2.6, so_admired_pct_2024=72.0, tiobe_rank_2025=40,
+        cold_start="Fast — BEAM boots quickly",
+        peak_speed="Several× to ~10× slower than C++ on arithmetic",
+        memory_baseline="Moderate — per-process heaps + BEAM runtime",
+    ),
+    "erlang": LanguageInfo(
+        name="erlang", display_name="Erlang",
+        category="Managed — BEAM bytecode (Erlang VM; BeamAsm JIT)",
+        paradigms=["Functional", "Concurrent"],
+        typing="Dynamically and strongly typed; Dialyzer specs are optional",
+        gc="Per-process generational collector — no global stop-the-world pauses",
+        runtime="BEAM (the Erlang VM)",
+        design_notes=(
+            "Erlang was built for massively concurrent, fault-tolerant, soft-real-"
+            "time systems. It runs on the BEAM with the same lightweight processes, "
+            "per-process GC, and BeamAsm JIT as Elixir. Numeric throughput is not its "
+            "goal; it wins on concurrency, distribution, and predictable latency."
+        ),
+        key_traits=[
+            "Lightweight processes with isolated per-process heaps",
+            "Per-process GC: no global pause, low latency",
+            "BeamAsm JIT compiles hot bytecode to native",
+            "Pattern matching and recursion over loops; immutable data",
+        ],
+        so_used_pct_2024=1.0, so_admired_pct_2024=57.0, tiobe_rank_2025=50,
+        cold_start="Fast — BEAM boots quickly",
+        peak_speed="Several× to ~10× slower than C++ on arithmetic",
+        memory_baseline="Moderate — per-process heaps + BEAM runtime",
+    ),
 }
 
 

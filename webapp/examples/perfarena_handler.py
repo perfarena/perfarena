@@ -125,6 +125,8 @@ _LANG_MAP: dict[str, tuple[str, str]] = {
     "php":        ("PHP",        ".php"),
     "kotlin":     ("Kotlin",     ".kt"),
     "dart":       ("Dart",       ".dart"),
+    "elixir":     ("Elixir",     ".ex"),
+    "erlang":     ("Erlang",     ".erl"),
 }
 
 
@@ -138,6 +140,7 @@ _HARNESS_LANG: dict[str, str] = {
     "javascript": "javascript", "typescript": "typescript",
     "go": "golang", "golang": "golang", "rust": "rust", "ruby": "ruby",
     "php": "php", "kotlin": "kotlin", "dart": "dart",
+    "elixir": "elixir", "erlang": "erlang",
 }
 
 
