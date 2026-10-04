@@ -58,6 +58,14 @@ export interface PendingAttemptRow {
   n_runs: number; round_index: number; logged_at: string | null;
   dispatch_warning: string | null;
 }
+export interface SpeedOutlierRow {
+  attempt_id: number; submission_id: number; problem_slug: string;
+  language: string; model_name: string; model_version: string | null;
+  best_runtime_ms: number; peer_median_ms: number; ratio: number; n_peers: number;
+}
+export interface SpeedOutliersResponse {
+  factor: number; min_peers: number; count: number; flagged: SpeedOutlierRow[];
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -389,6 +397,15 @@ export const api = {
   adminPendingAttempts: () =>
     request<{ pending: PendingAttemptRow[]; count: number }>(
       `/api/admin/attempts/pending`),
+  /** Accepted attempts that ran implausibly faster than their (problem,
+   * language) peers — a measurement-integrity review signal. */
+  adminSpeedOutliers: (factor?: number, minPeers?: number) => {
+    const qs = new URLSearchParams();
+    if (factor !== undefined) qs.set("factor", String(factor));
+    if (minPeers !== undefined) qs.set("min_peers", String(minPeers));
+    return request<SpeedOutliersResponse>(
+      `/api/admin/integrity/speed-outliers${qs.toString() ? "?" + qs.toString() : ""}`);
+  },
   /** Builds the download URL with auth fold-in so the admin can just click.
    * `includeCredentials` only has effect when `leetcode_accounts` is in the
    * tables list — when true, the bundle ships raw session cookies; when

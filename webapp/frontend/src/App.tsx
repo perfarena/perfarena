@@ -16,6 +16,7 @@ import Admin from "./pages/Admin";
 import AdminExport from "./pages/AdminExport";
 import AdminSettings from "./pages/AdminSettings";
 import AdminPending from "./pages/AdminPending";
+import AdminSpeedOutliers from "./pages/AdminSpeedOutliers";
 import ApiKey from "./pages/ApiKey";
 import MyByLanguage from "./pages/MyByLanguage";
 import Compare from "./pages/Compare";
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="admin/export" element={<Gated><AdminExport /></Gated>} />
         <Route path="admin/settings" element={<Gated><AdminSettings /></Gated>} />
         <Route path="admin/pending" element={<Gated><AdminPending /></Gated>} />
+        <Route path="admin/speed-outliers" element={<Gated><AdminSpeedOutliers /></Gated>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

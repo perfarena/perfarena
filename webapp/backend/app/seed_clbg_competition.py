@@ -19,6 +19,7 @@ Or bind-mount the fork read-only at /workspace and drop `--problems-yaml`.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import yaml
@@ -49,10 +50,21 @@ _COMPETITION_DESC = (
 _HARNESS_SLUG = "arena-local"
 
 
+def _sanitize_hint(hint: str) -> str:
+    """Never leak the concrete N into the prompt — a literal N invites a model
+    to hardcode the output instead of reading N from argv and computing it. The
+    program must work for any N, so the hint shows the placeholder `N`."""
+    return re.sub(r"(<prog>\s+)\d+", r"\1N", hint)
+
+
 def _render_content(p: dict) -> str:
     """Turn one problems.yaml entry into a self-contained markdown blob
     used as `problem.content` (the SPA renders this on the problem
-    detail page)."""
+    detail page).
+
+    Deliberately omits the Default N / Validation N values: exposing them lets a
+    model hardcode the expected output for that specific N. The harness supplies
+    N on the command line at measure time; the program reads it from argv."""
     parts = [
         f"# {p['name']}",
         "",
@@ -67,10 +79,7 @@ def _render_content(p: dict) -> str:
         "```",
         "",
         "## Invocation",
-        p["invocation_hint"].strip(),
-        "",
-        f"**Default N:** `{p['default_argument']}` · "
-        f"**Validation N:** `{p['validation_n']}`",
+        _sanitize_hint(p["invocation_hint"].strip()),
     ]
     return "\n".join(parts)
 

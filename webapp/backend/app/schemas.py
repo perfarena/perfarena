@@ -1248,6 +1248,12 @@ class AttemptResult(BaseModel):
     # attempts.
     avg_runtime_energy_j: float | None = None
     best_runtime_energy_j: float | None = None
+    # Measurement-integrity flag: this accepted attempt ran implausibly faster
+    # than other accepted solutions for the same (problem, language), which
+    # usually means it skipped the benchmark's intended work. speed_ratio is how
+    # many times faster than the peer median it was. See app.integrity.
+    speed_outlier: bool = False
+    speed_ratio: float | None = None
     submitted_at: datetime | None
     runs: list[AttemptRunDetail]
     # Same shape submission_detail returns on its traces[] — so the

@@ -128,12 +128,12 @@ def system_prompt(language: str) -> str:
 
 def _is_clbg_statement(statement: str) -> bool:
     """A CLBG benchmark problem ships a self-describing statement with an
-    `## Invocation` section and a `Default N:` line (see
-    app.seed_clbg_competition._render_content) — markers no LeetCode problem
-    carries. Detecting them lets the client swap the LeetCode `Solution`-shape
-    instruction for the standalone-program one these benchmarks need."""
+    `## Invocation` section (see app.seed_clbg_competition._render_content) — a
+    marker no LeetCode problem carries. Detecting it lets the client swap the
+    LeetCode `Solution`-shape instruction for the standalone-program one these
+    benchmarks need."""
     s = statement or ""
-    return "## Invocation" in s and "Default N:" in s
+    return "## Invocation" in s
 
 
 # The FIRST command-line argument sits at a different index per language:
@@ -207,8 +207,8 @@ def clbg_system_prompt(language: str, slug: str = "") -> str:
         f"INPUT/OUTPUT CONTRACT — follow it EXACTLY. The harness always invokes "
         f"the program as `<program> N`:\n"
         f"1. Read N as the FIRST command-line argument, i.e. `{argv}`, and parse "
-        f"it as an integer. N equals the Default N shown below. Do NOT read N "
-        f"from standard input and do NOT hardcode it.\n"
+        f"it as an integer. Your program must work for ANY N: do NOT hardcode N "
+        f"or hardcode/precompute the output, and do NOT read N from standard input.\n"
         f"2. Read from standard input ONLY if the Input section below describes "
         f"an input stream (for example FASTA data on stdin); otherwise read "
         f"nothing from standard input.\n"

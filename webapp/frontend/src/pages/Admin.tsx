@@ -54,7 +54,10 @@ export default function Admin() {
           one during registration). For replica work, the{" "}
           <Link to="/admin/export">Export &amp; Import</Link> page lets you
           download a JSON bundle of the platform's content and merge it back
-          into another instance.
+          into another instance. The{" "}
+          <Link to="/admin/speed-outliers">Too-fast outliers</Link> page flags
+          accepted attempts that ran implausibly faster than their peers — a
+          measurement-integrity check for solutions that skipped the workload.
         </p>
       </div>
       <h2 style={{ marginBottom: 4 }}>Pending registrations</h2>
