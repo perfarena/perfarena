@@ -183,6 +183,7 @@ install_toolchains() {
   install_swift
   install_dart
   install_beam
+  install_racket
 }
 
 # Node.js — Debian/Ubuntu apt ships an ANCIENT Node (12 on 20.04) that can't
@@ -307,6 +308,24 @@ install_beam() {
   else warn "elixir/erlang install failed — elixir & erlang cells will not run"; fi
 }
 
+# Racket — the Chez Scheme VM. Distro/brew package; the harness needs Racket
+# 8.1+ (current-inexact-monotonic-milliseconds). minimal-racket is sufficient
+# (no `json` dependency — the harness parses JSON itself).
+install_racket() {
+  command -v racket >/dev/null 2>&1 && { log "racket already present"; return; }
+  case "$PKG" in
+    brew) pm_install minimal-racket ;;
+    apt)  pm_install racket ;;
+    dnf)  pm_install racket ;;
+  esac
+  if command -v racket >/dev/null 2>&1; then
+    # minimal-racket (brew) lacks `raco make` (needed by the CLBG Makefiles);
+    # compiler-lib supplies it. No-op if already present (distro `racket`).
+    run "raco pkg install --auto --skip-installed compiler-lib >/dev/null 2>&1 || true"
+    log "racket $(racket --version 2>/dev/null | sed -n 's/.*v\([0-9.]*\).*/\1/p' | head -1) installed"
+  else warn "racket install failed — racket cells will not run"; fi
+}
+
 # ---------------------------------------------------------------- python venv
 install_venv() {
   info "creating measurement venv at $VENV (codecarbon + psutil)"
@@ -387,7 +406,7 @@ write_versions() {
       'node --version' 'tsc --version' 'javac -version' 'dotnet --version' \
       'php --version' 'ruby --version' 'go version' 'rustc --version' 'cargo --version' \
       'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version' \
-      'elixir --version' 'erl -version'; do
+      'elixir --version' 'erl -version' 'racket --version'; do
       printf '%-20s ' "${probe%% *}:"
       eval "$probe" 2>&1 | head -1 || echo "MISSING"
     done

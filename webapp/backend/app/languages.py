@@ -443,6 +443,32 @@ LANGUAGES: dict[str, LanguageInfo] = {
         peak_speed="Several× to ~10× slower than C++ on arithmetic",
         memory_baseline="Moderate — per-process heaps + BEAM runtime",
     ),
+    "racket": LanguageInfo(
+        name="racket", display_name="Racket",
+        category="Compiled to bytecode on the Chez Scheme VM (Racket CS)",
+        paradigms=["Functional", "Multi-paradigm", "Language-oriented"],
+        typing="Dynamically typed; optional contracts (define/contract) and Typed Racket",
+        gc="Yes — generational (inherited from the Chez Scheme runtime)",
+        runtime="Racket CS — the Chez Scheme VM (since Racket 8)",
+        design_notes=(
+            "Racket is a Scheme descendant built for language-oriented programming. "
+            "Since version 8 it compiles to Chez Scheme bytecode (Racket CS) with a "
+            "generational collector. Its `define/contract` forms add runtime "
+            "boundary checks (kept here, as that is the LeetCode Racket shape), and "
+            "immutable pairs plus dynamic dispatch mean arithmetic-heavy code trails "
+            "the native and JVM languages; its strength is expressiveness and macros."
+        ),
+        key_traits=[
+            "S-expression homoiconicity and a powerful macro system",
+            "Contracts add runtime checks at function boundaries",
+            "Generational GC; singly-linked lists favor cons/recur over indexing",
+            "Chez-backed JIT-style compilation; startup boots the VM + modules",
+        ],
+        so_used_pct_2024=1.1, so_admired_pct_2024=52.0, tiobe_rank_2025=50,
+        cold_start="Moderate — VM boot + module load",
+        peak_speed="Several× to ~15× slower than C++ on arithmetic",
+        memory_baseline="Moderate — Racket CS runtime + heap",
+    ),
 }
 
 

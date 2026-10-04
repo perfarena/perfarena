@@ -97,6 +97,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
     "dart":       ("Dart",       "dart"),
     "elixir":     ("Elixir",     "elixir"),
     "erlang":     ("Erlang",     "erlang"),
+    "racket":     ("Racket",     "racket"),
 }
 
 # The subset the perf harness can actually validate + measure — MUST track
@@ -108,7 +109,7 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
 MEASURABLE_LANGUAGES: tuple[str, ...] = (
     "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
     "typescript", "golang", "kotlin", "swift", "scala", "ruby", "php",
-    "dart", "elixir", "erlang",
+    "dart", "elixir", "erlang", "racket",
 )
 
 
@@ -159,6 +160,7 @@ _CLBG_ARGV_HINT: dict[str, str] = {
     "dart":       "args[0]",
     "elixir":     "hd(System.argv())",
     "erlang":     "the first element of the Args list passed to main/1",
+    "racket":     "(vector-ref (current-command-line-arguments) 0)",
 }
 
 # Java is the ONLY CLBG language with a NAMED entry class: the harness runs
@@ -599,6 +601,14 @@ _LANGUAGE_FINGERPRINTS: dict[str, list[str]] = {
                    r"(?m)^\s*-spec\s",
                    r"(?m)^\s*-include\(",
                    r"(?m)^[a-z][a-zA-Z0-9_]*\([^)]*\)\s*->"],
+    # Racket: #lang, the s-expression define/require/struct/class forms — none
+    # of which appear in the other languages.
+    "racket":     [r"#lang\s+racket",
+                   r"\(define(/contract)?\s+\(",
+                   r"\(require\b",
+                   r"\(struct\b",
+                   r"\(class\s+object%",
+                   r"\(provide\b"],
 }
 
 

@@ -141,6 +141,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     || echo "WARNING: Erlang/Elixir install failed — elixir & erlang cells will not run"
 
+# ---- 14. Racket (the Chez Scheme VM) -----------------------------------------
+# apt's racket on 24.04 is 8.x (>= 8.1, which the harness needs). The harness
+# parses JSON itself, so no extra packages are required.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        racket \
+    && rm -rf /var/lib/apt/lists/* \
+    || echo "WARNING: Racket install failed — racket cells will not run in this image"
+
 # ---- sudo passthrough shim ---------------------------------------------------
 # perfarena.mk's Linux `measure` target prefixes `sudo` (RAPL MSR access on bare
 # metal). This container runs as root and measures with codecarbon (no
@@ -166,7 +174,7 @@ RUN { \
                'tsc --version' 'javac -version' 'dotnet --version' 'php --version' \
                'ruby --version' 'go version' 'rustc --version' \
                'kotlinc -version' 'scalac -version' 'swiftc --version' 'dart --version' \
-               'elixir --version' 'erl -version'; do \
+               'elixir --version' 'erl -version' 'racket --version'; do \
         printf '%-10s ' "${p%% *}:"; eval "$p" 2>&1 | head -1 || echo MISSING; \
       done; \
       /opt/venv/bin/python -c 'import codecarbon,psutil;print("codecarbon",codecarbon.__version__,"psutil",psutil.__version__)'; \
