@@ -2954,18 +2954,26 @@ def admin_harnesses_health(
 def admin_speed_outliers(
     factor: float = 8.0,
     min_peers: int = 3,
+    min_median_ms: float = 20.0,
+    min_runtime_ms: float = 1.0,
     _: User = Depends(current_admin),
     session: Session = Depends(get_session),
 ):
     """Accepted attempts that ran >= `factor`x faster than the median of the
-    other accepted solutions for the same (problem, language) — a review signal
-    for solutions that skipped the benchmark's intended work (e.g. a closed-form
-    CLBG checksum instead of actually allocating). Needs >= `min_peers` peers to
-    form a baseline. Not an auto-reject: a genuine optimization can also land
-    here, so each row is for a human to judge."""
+    other accepted solutions for the same (problem, language, harness) — a review
+    signal for solutions that skipped the benchmark's intended work (e.g. a
+    closed-form CLBG checksum instead of actually allocating). Needs >=
+    `min_peers` peers and a peer median of >= `min_median_ms` to form a baseline,
+    and ignores attempts below `min_runtime_ms` (below measurement resolution, so
+    per-op times rounding to ~0 don't flood the list). Not an auto-reject: a
+    genuine optimization can also land here, so each row is for a human to judge."""
     from . import integrity
-    rows = integrity.speed_outliers(session, factor=factor, min_peers=min_peers)
-    return {"factor": factor, "min_peers": min_peers, "count": len(rows), "flagged": rows}
+    rows = integrity.speed_outliers(
+        session, factor=factor, min_peers=min_peers,
+        min_median_ms=min_median_ms, min_runtime_ms=min_runtime_ms)
+    return {"factor": factor, "min_peers": min_peers,
+            "min_median_ms": min_median_ms, "min_runtime_ms": min_runtime_ms,
+            "count": len(rows), "flagged": rows}
 
 
 @app.get("/api/admin/settings")
@@ -6011,9 +6019,10 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
     # `_recompute_attempt_cost` calls O(1) lookups and avoids hammering
     # the RegisteredModel table N times. The map is small (≪ 1000 rows).
     _pricing = _model_pricing_lookup(session)
-    # Per-(problem, language) runtime baselines for the too-fast-outlier flag
-    # (accepted solutions that ran implausibly faster than their peers — usually
-    # a skipped workload). Computed once for the whole response.
+    # Per-(problem, language, harness) runtime baselines for the too-fast-outlier
+    # flag (accepted solutions that ran implausibly faster than their peers —
+    # usually a skipped workload). Grouping by harness keeps the comparison within
+    # one measurement basis. Computed once for the whole response.
     from . import integrity
     _speed_baselines = integrity.speed_baselines(session)
     out: list[AttemptResult] = []
@@ -6045,7 +6054,8 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
         else:
             status = a.final_status or "Pending"
         _so, _sr, _, _ = integrity.is_outlier(
-            a.best_runtime_ms, _speed_baselines.get((a.problem_id, sub.language), []))
+            a.best_runtime_ms,
+            _speed_baselines.get((a.problem_id, sub.language, sub.harness_id), []))
         out.append(AttemptResult(
             attempt_id=a.id,
             problem_slug=p.title_slug if p else "?",

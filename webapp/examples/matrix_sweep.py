@@ -1572,6 +1572,17 @@ def main() -> None:
                          "covered) or when the previous submission's "
                          "budget is exhausted and you don't want to purge "
                          "its rows.")
+    ap.add_argument("--append-fully-accepted", action="store_true",
+                    help="Also attach to a FULLY-ACCEPTED (100%%-solved) "
+                         "submission for a cell instead of creating a fresh "
+                         "one. By default a completed submission is treated as "
+                         "'done' and skipped by the auto-attach search, so "
+                         "re-running a cell the model already aced spawns a "
+                         "duplicate 1-attempt submission. Pass this on "
+                         "re-measurement passes to avoid that fragmentation: "
+                         "the sweep attaches to the existing submission, sees "
+                         "every problem already covered, and does nothing for "
+                         "that cell. No effect with --no-auto-append.")
     ap.add_argument("--retry-failed", action="store_true",
                     help="also re-attempt previously-failed tuples (default: skip them).")
     ap.add_argument("--no-reconcile-progress", dest="reconcile_progress",
@@ -1898,6 +1909,10 @@ def main() -> None:
                 # rows (no harness_slug on /me/submissions) match any
                 # requested harness to preserve back-compat.
                 harness_slug=args.harness,
+                # When set, attach to an already-complete submission instead of
+                # letting it fall through to a fresh-submission create (which
+                # fragments a re-run of an aced cell into duplicate rows).
+                include_fully_accepted=args.append_fully_accepted,
             )
             if existing is None:
                 continue

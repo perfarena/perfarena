@@ -400,12 +400,17 @@ def find_existing_submission(
     n_rounds: int = 1,
     competition_slug: str | None = None,
     harness_slug: str | None = None,
+    include_fully_accepted: bool = False,
 ) -> dict | None:
     """Most recent ongoing submission for this user that matches the FULL
     experiment cell — model + language + prompt + every placeholder-affecting
     knob + competition.
 
     "Ongoing" = `fully_accepted` is False (still room to add more problems).
+    When `include_fully_accepted` is True, a 100%-solved submission also
+    matches — so a re-run of an already-complete cell attaches to its existing
+    submission instead of spawning a duplicate (the sweep then sees every
+    problem already covered and does nothing for that cell).
 
     Two submissions with the same model+language but different prompts (or
     different `--hints` / `--target` / `--n-rounds` settings) are different
@@ -443,7 +448,7 @@ def find_existing_submission(
         if s.get("model_name") != model_name: continue
         if s.get("model_version") != model_version: continue
         if s.get("language") != language: continue
-        if s.get("fully_accepted", False): continue
+        if not include_fully_accepted and s.get("fully_accepted", False): continue
         if (s.get("prompt_id") or None) != (prompt_id or None): continue
         if bool(s.get("include_hints", False)) != bool(include_hints): continue
         if (s.get("optimization_target") or None) != (optimization_target or None): continue
