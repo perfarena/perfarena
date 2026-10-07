@@ -327,6 +327,53 @@ def _drop_cached_code(output_path: Path, tuple_key: str, salt: str = "") -> None
               file=sys.stderr)
 
 
+def _rejected_log_path(output_path: Path) -> Path:
+    """Append-only log of generations that were NOT cached as a usable
+    attempt (wrong-language or empty output). Sibling of sweep_log.json and
+    the sweep_cache/ dir, deliberately OUTSIDE the success cache so the
+    resumable code cache and --submit-from-cache never read it."""
+    return output_path.parent / "generate_rejected.jsonl"
+
+
+def _record_rejected_generation(output_path: Path, tuple_key: str,
+                                model: str, prompt_name: str,
+                                language: str, slug: str, status: str,
+                                code: str | None, trace: dict | None,
+                                seconds: float) -> None:
+    """Persist a rejected generation (wrong-language / 0-char) for later
+    inspection. These are expensive failures — a long generation that yielded
+    nothing usable — and they are otherwise dropped, especially in
+    --generate-only mode which never submits. We keep the model's full
+    `raw_response` (and `reasoning` when a provider returns it separately) so
+    the operator can see WHY the output was unusable. Appended as one JSON line
+    so the full retry history survives. Never caches the code (so the
+    "re-generate next resume" behavior is untouched), and never raises — a log
+    failure must not break the sweep."""
+    trace = trace or {}
+    record = {
+        "rejected_at": _now_iso(),
+        "tuple_key": tuple_key,
+        "model": model,
+        "prompt": prompt_name,
+        "language": language,
+        "slug": slug,
+        "status": status,
+        "chars": len(code or ""),
+        "seconds": round(seconds, 1),
+        "extracted_code": code,
+        "reasoning": trace.get("reasoning"),
+        "raw_response": trace.get("raw_response"),
+    }
+    try:
+        path = _rejected_log_path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except OSError as e:
+        print(f"  ⚠ rejected-generation log failed for {tuple_key!r}: {e}",
+              file=sys.stderr)
+
+
 def _reconcile_progress(progress: dict, base: str, api_key: str | None,
                         deep: bool = False) -> dict:
     """Drop progress entries whose submission was deleted server-side.
@@ -1231,7 +1278,17 @@ class _Prefetcher:
         if not _looks_like(code, language):
             # Wrong-language output: don't cache — re-generating may
             # give us a clean attempt next time. Caching the broken
-            # code would just preserve the bug across resumes.
+            # code would just preserve the bug across resumes. We DO log
+            # the raw response to the rejected-generation side file so an
+            # expensive empty/wrong-language generation stays inspectable,
+            # especially under --generate-only (which never submits, so the
+            # server never sees it either).
+            _record_rejected_generation(
+                self._args.output,
+                _tuple_key(model, prompt["name"], language, slug),
+                model, prompt["name"], language, slug,
+                "wrong_language", code, trace, time.time() - _gen_t0,
+            )
             return _Prefetched(tup=tup, problem=problem, code=code, trace=trace,
                                status="wrong_language")
         # SUCCESS — persist for re-use on the next resume, in case this
@@ -1982,6 +2039,10 @@ def main() -> None:
                       + (f": {detail}" if detail else ""))
         print(f"\ngenerate-only: {n_gen} generation(s) cached under "
               f"{_cache_dir(args.output)}; {n_other} skipped, nothing submitted.")
+        _rej = _rejected_log_path(args.output)
+        if _rej.exists():
+            print(f"  wrong-language / empty generations logged for inspection "
+                  f"in {_rej}")
         print("Submit them with the SAME command plus --submit-from-cache "
               "(no model calls, cache kept for re-submission).")
         return
