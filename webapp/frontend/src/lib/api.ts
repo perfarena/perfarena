@@ -89,6 +89,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface EfficiencyRankEntry { model: string; ratio: number; }
+export interface EfficiencyRanks {
+  competition: string;
+  languages: string[];               // languages present, in display order
+  metrics: string[];                 // e.g. ["latency", "energy"]
+  ranks: Record<string, Record<string, EfficiencyRankEntry[]>>;  // metric -> language -> ranked (best first)
+}
+
 export const api = {
   problems: (params: { level?: string; tag?: string; competition?: string } = {}) => {
     const qs = new URLSearchParams(
@@ -146,6 +154,12 @@ export const api = {
     ).toString();
     return request<RankingEntry[]>(`/api/rankings${qs ? "?" + qs : ""}`);
   },
+  /** Per-language model rankings (median ratio to the best correct solution)
+   * by latency and energy for one competition — drives the home-page bump
+   * charts. See GET /api/efficiency-ranks. */
+  efficiencyRanks: (competition: string) =>
+    request<EfficiencyRanks>(
+      `/api/efficiency-ranks?competition=${encodeURIComponent(competition)}`),
   submissions: () => request<SubmissionPublic[]>(`/api/submissions`),
   submissionDetail: (id: number | string) => request<SubmissionDetail>(`/api/submissions/${id}`),
   deleteSubmission: (id: number | string) =>

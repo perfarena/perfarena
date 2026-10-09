@@ -270,6 +270,18 @@ class SubmissionIn(BaseModel):
                     "Accepted. When null, correctness comes from the "
                     "perf harness's own response.",
     )
+    # Optional producer — the agentic harness / workflow that drove the model.
+    # Null (the default) means "direct": the model was prompted once with no
+    # agent loop. Every legacy client omits this, so it must stay optional; an
+    # omitted or unknown-but-null value resolves to the seeded "direct" agent,
+    # which keeps pre-feature submissions comparable. Use the agent's slug from
+    # /api/agents.
+    agent_slug: str | None = Field(
+        default=None,
+        description="Optional agentic-harness producer slug. Null = direct "
+                    "(no agent loop). The leaderboard ranks the (agent, model) "
+                    "pair, so an agentic run is distinguished from a direct one.",
+    )
     attempts: list[AttemptIn] = Field(default_factory=list)
 
 
@@ -398,6 +410,12 @@ class SubmissionPublic(BaseModel):
     # "which harness measured how fast it was".
     correctness_oracle_slug: str | None = None
     correctness_oracle_name: str | None = None
+    # PRODUCER — the agentic harness / workflow that drove the model. Resolved
+    # from the submission's agent_id, defaulting to "direct" (no agent loop).
+    # Always populated after the startup backfill. Together with model_name it
+    # forms the leaderboard competitor identity.
+    agent_slug: str | None = None
+    agent_name: str | None = None
     # Measurement provenance (Parts 2+3): the single energy tool + machine
     # this submission was measured on. Energy/time numbers are only
     # comparable within one (energy_tool, machine) pair. NULL on
@@ -471,6 +489,12 @@ class RankingEntry(BaseModel):
     # of "measured perf by Y".
     correctness_oracle_slug: str | None = None
     correctness_oracle_name: str | None = None
+    # PRODUCER — the agentic harness / workflow that drove the model (or
+    # "direct" for a plain one-shot prompt). With model_name it forms the
+    # leaderboard competitor identity, so an agentic run ranks apart from a
+    # direct run of the same model.
+    agent_slug: str | None = None
+    agent_name: str | None = None
     # Token + cost accounting — surfaced as sortable columns on the SPA
     # rankings table. `total_*` is the sum across every attempt in this
     # submission; `median_*_per_attempt` is the per-attempt median so two
@@ -1031,6 +1055,47 @@ class HarnessIn(BaseModel):
     name: str = Field(min_length=1)
     description: str | None = None
     kind: str = "custom"                        # leetcode | arena-local | custom | …
+    status: str = "active"                      # active | retired
+    config: dict | None = None
+
+
+class AgentRef(BaseModel):
+    """Light-weight pointer to an agent (producer) — slug + name only. Rendered
+    as a pill + link on ranking rows and submission cards, the same role
+    HarnessRef plays for the performance oracle."""
+    slug: str
+    name: str
+
+
+class AgentPublic(BaseModel):
+    id: int
+    slug: str
+    name: str
+    description: str | None
+    kind: str                                   # direct | agentic | custom
+    version: str | None = None                  # agent TOOL version (not the model)
+    status: str
+    created_at: datetime
+    config: dict | None = None
+    # Activity rollup — same shape as HarnessPublic so the SPA renders a
+    # matching card on /agents.
+    n_submissions: int = 0
+    n_models: int = 0
+
+
+class AgentDetail(AgentPublic):
+    """Slug-keyed detail view: identity + the models this agent has driven +
+    its top leaderboard entries. Companion to HarnessDetail."""
+    languages: list[str] = []
+    top_models: list[dict] = []
+
+
+class AgentIn(BaseModel):
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str | None = None
+    kind: str = "agentic"                       # direct | agentic | custom
+    version: str | None = None
     status: str = "active"                      # active | retired
     config: dict | None = None
 

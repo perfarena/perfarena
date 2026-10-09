@@ -105,3 +105,54 @@ def test_import_with_invalid_body_returns_400(client):
     r = client.post("/api/admin/import", headers=ADMIN, json={"oops": True})
     assert r.status_code == 400
     assert "data" in r.text.lower()
+
+
+# ---------- compressed and slim JSON export ---------------------------------
+
+import gzip                                                      # noqa: E402
+
+from app import export_import                                    # noqa: E402
+from app.auth import current_admin                               # noqa: E402
+from app.main import app                                         # noqa: E402
+
+
+def test_batched_keeps_content_and_joins_small_chunks():
+    parts = ["a" * 300, "b" * 300, "c" * 300, "d"]
+    out = list(export_import.batched(parts, size=500))
+    assert "".join(out) == "".join(parts)
+    assert len(out) == 2
+
+
+def test_gzip_stream_round_trips():
+    parts = ['{"x": ', "[1, 2, 3]", "}"]
+    blob = b"".join(export_import.gzip_stream(parts))
+    assert gzip.decompress(blob) == "".join(parts).encode()
+
+
+def test_gzip_slim_export(client):
+    app.dependency_overrides[current_admin] = lambda: None
+    try:
+        r = client.get("/api/admin/export", params={
+            "tables": "problems", "compress": "gzip", "exclude_columns": "content,hints"})
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/gzip"
+        bundle = json.loads(gzip.decompress(r.content))
+        rows = bundle["data"]["problems"]
+        assert rows and bundle["counts"]["problems"] == len(rows)
+        assert all("content" not in p and "hints" not in p for p in rows)
+        assert all("title_slug" in p for p in rows)
+        # the default export is unchanged: plain JSON with every column
+        plain = client.get("/api/admin/export", params={"tables": "problems"})
+        assert plain.headers["content-type"] == "application/json"
+        assert all("content" in p for p in plain.json()["data"]["problems"])
+    finally:
+        app.dependency_overrides.pop(current_admin, None)
+
+
+def test_unknown_exclude_column_400(client):
+    app.dependency_overrides[current_admin] = lambda: None
+    try:
+        r = client.get("/api/admin/export", params={"exclude_columns": "no_such_column"})
+        assert r.status_code == 400
+    finally:
+        app.dependency_overrides.pop(current_admin, None)

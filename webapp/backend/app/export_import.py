@@ -26,6 +26,7 @@ import csv
 import io
 import json
 import zipfile
+import zlib
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Callable
@@ -241,8 +242,40 @@ def export_json(session: Session, tables: list[str],
     return envelope
 
 
+def export_columns() -> set[str]:
+    """Every column name of the exportable tables (validates `exclude_columns`)."""
+    return {c for _, m in EXPORTABLE for c in m.__table__.columns.keys()}  # type: ignore[attr-defined]
+
+
+def batched(chunks, size: int = 1 << 20):
+    """Join small string chunks into ~`size`-character pieces, so a large
+    export goes out in ~1 MB writes instead of one write per row."""
+    buf: list[str] = []
+    n = 0
+    for c in chunks:
+        buf.append(c)
+        n += len(c)
+        if n >= size:
+            yield "".join(buf)
+            buf, n = [], 0
+    if buf:
+        yield "".join(buf)
+
+
+def gzip_stream(chunks, level: int = 6):
+    """Gzip a stream of string chunks on the fly (wbits=31 writes the gzip
+    container), so the bundle can be streamed compressed without buffering."""
+    z = zlib.compressobj(level, zlib.DEFLATED, 31)
+    for c in chunks:
+        out = z.compress(c.encode())
+        if out:
+            yield out
+    yield z.flush()
+
+
 def export_json_iter(tables: list[str], *,
-                     include_credentials: bool = False):
+                     include_credentials: bool = False,
+                     exclude_columns: set[str] = frozenset()):
     """Stream the export envelope as JSON string chunks, row by row.
 
     `export_json` builds the whole bundle as one dict and then json.dumps it in
@@ -253,7 +286,11 @@ def export_json_iter(tables: list[str], *,
 
     Opens its OWN session (not the request-scoped one) because a StreamingResponse
     is consumed after the endpoint returns, by which point a `Depends`-injected
-    session would already be closed."""
+    session would already be closed.
+
+    `exclude_columns` drops those column names from every row (e.g. the large
+    trace and raw-response blobs). Such a slim bundle is for analysis: an
+    import fills the dropped columns with NULL."""
     selected = [(name, m) for name, m in EXPORTABLE if name in tables]
     include_lc = LC_ACCOUNTS_NAME in tables
     lc_rows = (_serialize_leetcode_accounts(include_credentials=include_credentials)
@@ -285,6 +322,8 @@ def export_json_iter(tables: list[str], *,
             q = select(model).execution_options(stream_results=True, yield_per=500)
             for r in session.exec(q):
                 d = _row_to_dict(r)
+                for c in exclude_columns:
+                    d.pop(c, None)
                 if name == "users" and not include_credentials:
                     d = _redact_user_rows([d], include_credentials=False)[0]
                 yield ('' if first_row else ', ') + json.dumps(d, default=str)

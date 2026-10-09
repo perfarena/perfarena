@@ -45,6 +45,7 @@ from .dispatch import (
 )
 from .ratelimit import enforce_submission_limit
 from .models import (
+    Agent,
     Attempt, Baseline, BaselineRefreshState, BlogPost,
     Competition, CompetitionProblem, CorrectnessOracle, Harness, Machine, Problem,
     PromptTemplate, RegisteredModel,
@@ -56,6 +57,7 @@ from . import provenance
 from . import snapshot as snapshot_mod
 from .validation import validate_code
 from .schemas import (
+    AgentDetail, AgentIn, AgentPublic, AgentRef,
     AnalysisPoint, AnalysisResponse, LangAnalysisRow,
     DiscriminationCrossRow, DiscriminationLangSummary, DiscriminationResponse,
     AppendAttemptsIn, AttemptIn, AttemptResult, AttemptRunDetail,
@@ -1549,6 +1551,14 @@ def rankings(
     correctness_by_id: dict[int, CorrectnessOracle] = {
         o.id: o for o in session.exec(select(CorrectnessOracle)).all()
     } if subs else {}
+    # Agent (producer) lookup + the "direct" default, prefetched once so each
+    # row can render its producer pill without an N+1.
+    agent_by_id: dict[int, Agent] = {
+        a.id: a for a in session.exec(select(Agent)).all()
+    } if subs else {}
+    _direct_aid = next(
+        (a.id for a in agent_by_id.values() if a.slug == "direct"), None,
+    )
     # Machine lookup (B4) — prefetch once so the leaderboard can show which
     # machine each entry was measured on without an N+1 query per row.
     machine_by_id: dict[int, Machine] = {
@@ -1579,6 +1589,8 @@ def rankings(
         correctness_row = (
             correctness_by_id.get(cid_correct) if cid_correct else None
         )
+        aid = _resolve_submission_agent_id(s, _direct_aid)
+        agent_row = agent_by_id.get(aid) if aid else None
         atts = sub_attempts.get(s.id, [])
         # Per-attempt cost: live recompute when possible, else snapshot.
         per_cost: list[float] = []
@@ -1632,6 +1644,8 @@ def rankings(
             harness_name=harness_row.name if harness_row else None,
             correctness_oracle_slug=correctness_row.slug if correctness_row else None,
             correctness_oracle_name=correctness_row.name if correctness_row else None,
+            agent_slug=agent_row.slug if agent_row else None,
+            agent_name=agent_row.name if agent_row else None,
             total_response_tokens=total_tokens,
             median_response_tokens_per_attempt=_median_or_none(per_tokens),
             total_cost_usd=total_cost,
@@ -1655,7 +1669,17 @@ def list_submissions(session: Session = Depends(get_session)):
         select(Submission)
         .where(Submission.deleted_at.is_(None))
     ).all()
-    rows = [_submission_public(s, session) for s in subs]
+    # One pass over the light attempt columns for ALL submissions, plus the
+    # problem ids and pricing once per request, instead of a full Attempt and
+    # Problem load per submission (trace/code blobs made the list take seconds).
+    atts_by_sub: dict[int, list] = {s.id: [] for s in subs}
+    for a in session.exec(select(*_SUBMISSION_ATTEMPT_COLS)).all():
+        if a.submission_id in atts_by_sub:
+            atts_by_sub[a.submission_id].append(a)
+    all_pids = set(session.exec(select(Problem.id)).all())
+    pricing = _model_pricing_lookup(session)
+    rows = [_submission_public(s, session, atts=atts_by_sub[s.id],
+                               all_pids=all_pids, pricing=pricing) for s in subs]
     rows.sort(
         key=lambda r: r.last_attempt_at or r.created_at,
         reverse=True,
@@ -2662,6 +2686,23 @@ def _resolve_submission_harness_id(sub: Submission,
     return None
 
 
+def _direct_agent_id(session: Session) -> int | None:
+    """Id of the seeded "direct" agent — the producer default. None only if
+    the seed has not run yet (first-boot race); callers then treat the
+    producer as unknown."""
+    row = session.exec(select(Agent.id).where(Agent.slug == "direct")).first()
+    return int(row) if row is not None else None
+
+
+def _resolve_submission_agent_id(sub: Submission,
+                                 direct_agent_id: int | None) -> int | None:
+    """Effective producer for a submission: its own agent_id, falling back to
+    the seeded "direct" agent. There is no competition-level default on the
+    producer axis (unlike harness), so this is just a NULL guard for a row
+    created between the ADD COLUMN and the seed backfill."""
+    return sub.agent_id if sub.agent_id is not None else direct_agent_id
+
+
 def _harness_stats(
     session: Session, harness_id: int,
 ) -> tuple[int, int, int, list[str], list[Submission]]:
@@ -2755,6 +2796,136 @@ def _public_harness_config(config: dict | None, viewer: "User | None") -> dict |
         return config
     return {k: ("***" if k.lower() in _SECRET_CONFIG_KEYS else v)
             for k, v in config.items()}
+
+
+def _agent_stats(
+    session: Session, agent_id: int, direct_agent_id: int | None,
+) -> tuple[int, int, list[str], list[Submission]]:
+    """Rollup over one agent (producer). Returns (n_submissions, n_models,
+    languages_sorted, judged_subs). A submission's effective agent is its own
+    agent_id, falling back to the "direct" default, so the counts match what
+    the leaderboard groups on."""
+    subs = session.exec(
+        select(Submission).where(Submission.deleted_at.is_(None))
+    ).all()
+    in_scope = [
+        s for s in subs
+        if _resolve_submission_agent_id(s, direct_agent_id) == agent_id
+    ]
+    n_models = len({s.model_name for s in in_scope})
+    langs = sorted({s.language for s in in_scope})
+    judged = [s for s in in_scope if s.status == SubmissionStatus.judged]
+    return (len(in_scope), n_models, langs, judged)
+
+
+@app.get("/api/agents", response_model=list[AgentPublic])
+def list_agents(
+    include_retired: bool = False,
+    session: Session = Depends(get_session),
+):
+    """List every agent (producer) the platform tracks, with activity stats
+    per row. Retired rows hidden unless `include_retired=true`. The seeded
+    "direct" agent is always present — it is the producer of every one-shot,
+    non-agentic submission."""
+    direct_aid = _direct_agent_id(session)
+    q = select(Agent).order_by(Agent.created_at.desc())
+    if not include_retired:
+        q = q.where(Agent.status == "active")
+    out: list[AgentPublic] = []
+    for a in session.exec(q).all():
+        n_subs, n_models, _langs, _judged = _agent_stats(session, a.id, direct_aid)
+        out.append(AgentPublic(
+            id=a.id, slug=a.slug, name=a.name, description=a.description,
+            kind=a.kind, version=a.version, status=a.status,
+            created_at=a.created_at, config=a.config,
+            n_submissions=n_subs, n_models=n_models,
+        ))
+    return out
+
+
+@app.get("/api/agents/{slug}", response_model=AgentDetail)
+def get_agent(slug: str, session: Session = Depends(get_session)):
+    a = session.exec(select(Agent).where(Agent.slug == slug)).first()
+    if a is None:
+        raise HTTPException(404, "agent not found")
+    direct_aid = _direct_agent_id(session)
+    n_subs, n_models, langs, judged = _agent_stats(session, a.id, direct_aid)
+    # Per-model rollup scoped to this agent's judged submissions — the same
+    # shape HarnessDetail uses so the SPA can render a matching table.
+    by_model: dict[tuple[str, str], list[Submission]] = {}
+    for s in judged:
+        by_model.setdefault((s.model_name, s.model_version), []).append(s)
+    top: list[dict] = []
+    for (name, ver), subs in by_model.items():
+        pass1 = [s.pass_at_1 for s in subs if s.pass_at_1 is not None]
+        rt = [s.avg_runtime_ms for s in subs if s.avg_runtime_ms is not None]
+        mem = [s.avg_memory_mb for s in subs if s.avg_memory_mb is not None]
+        top.append({
+            "model_name": name,
+            "model_version": ver,
+            "best_pass_at_1": max(pass1) if pass1 else 0.0,
+            "n_submissions": len(subs),
+            "avg_runtime_ms": _mean_or_none(rt),
+            "avg_memory_mb": _mean_or_none(mem),
+        })
+    top.sort(key=lambda r: -(r["best_pass_at_1"] or 0))
+    return AgentDetail(
+        id=a.id, slug=a.slug, name=a.name, description=a.description,
+        kind=a.kind, version=a.version, status=a.status,
+        created_at=a.created_at, config=a.config,
+        n_submissions=n_subs, n_models=n_models,
+        languages=langs, top_models=top[:5],
+    )
+
+
+@app.post("/api/admin/agents",
+          response_model=AgentPublic,
+          status_code=status.HTTP_201_CREATED)
+def add_agent(
+    payload: AgentIn,
+    admin: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    if session.exec(select(Agent).where(Agent.slug == payload.slug)).first():
+        raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    a = Agent(**payload.model_dump(), created_by_user_id=admin.id)
+    session.add(a); session.commit(); session.refresh(a)
+    return AgentPublic(
+        id=a.id, slug=a.slug, name=a.name, description=a.description,
+        kind=a.kind, version=a.version, status=a.status,
+        created_at=a.created_at, config=a.config,
+        n_submissions=0, n_models=0,
+    )
+
+
+@app.put("/api/admin/agents/{aid}", response_model=AgentPublic)
+def edit_agent(
+    aid: int, payload: AgentIn,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    a = session.get(Agent, aid)
+    if a is None:
+        raise HTTPException(404, "agent not found")
+    if payload.slug != a.slug:
+        clash = session.exec(select(Agent).where(Agent.slug == payload.slug)).first()
+        if clash and clash.id != aid:
+            raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    # The seeded "direct" agent is the backfill default for every legacy row;
+    # renaming its slug would orphan that attribution, so pin it.
+    if a.slug == "direct" and payload.slug != "direct":
+        raise HTTPException(400, "the built-in 'direct' agent slug cannot be changed")
+    for k, v in payload.model_dump().items():
+        setattr(a, k, v)
+    session.add(a); session.commit(); session.refresh(a)
+    direct_aid = _direct_agent_id(session)
+    n_subs, n_models, _l, _j = _agent_stats(session, a.id, direct_aid)
+    return AgentPublic(
+        id=a.id, slug=a.slug, name=a.name, description=a.description,
+        kind=a.kind, version=a.version, status=a.status,
+        created_at=a.created_at, config=a.config,
+        n_submissions=n_subs, n_models=n_models,
+    )
 
 
 @app.get("/api/harnesses", response_model=list[HarnessPublic])
@@ -3375,6 +3546,102 @@ def _competition_problem_slugs(session: Session, comp_slug: str) -> set[str] | N
     return set(session.exec(
         select(Problem.title_slug).where(Problem.id.in_(pids))
     ).all())
+
+
+# Octoverse-2025 language order (most to least used on GitHub), matching the
+# paper's per-language figures. Only the six measured languages.
+_EFF_LANGS = ["typescript", "python3", "java", "csharp", "php", "cpp"]
+_EFF_METRICS = [("latency", "best_runtime_ms"), ("energy", "best_runtime_energy_j")]
+
+
+@app.get("/api/efficiency-ranks")
+def efficiency_ranks(competition: str, session: Session = Depends(get_session)):
+    """Per-language model rankings by latency and energy for one competition,
+    scored as the MEDIAN RATIO to the best correct solution on each problem (the
+    same metric as the paper's per-language efficiency tables). This drives the
+    home-page bump charts. Within each language, models are ordered lowest ratio
+    (fastest / most efficient) first. Energy is omitted for a language when no
+    model has an energy measurement there (LeetCode-judged rows carry none)."""
+    import statistics
+    from collections import defaultdict
+
+    comp = session.exec(
+        select(Competition).where(Competition.slug == competition)
+    ).first()
+    if comp is None:
+        raise HTTPException(404, "competition not found")
+    comp_pids = {
+        cp.problem_id for cp in session.exec(
+            select(CompetitionProblem).where(CompetitionProblem.competition_id == comp.id)
+        ).all()
+    }
+    empty = {"competition": competition, "languages": [],
+             "metrics": [m for m, _ in _EFF_METRICS], "ranks": {}}
+    if not comp_pids:
+        return empty
+
+    subs = session.exec(
+        select(Submission).where(
+            Submission.competition_id == comp.id,
+            Submission.status == SubmissionStatus.judged,
+            Submission.deleted_at.is_(None),
+            Submission.language.in_(_EFF_LANGS),
+        )
+    ).all()
+    if not subs:
+        return empty
+    sub_meta = {s.id: (s.model_name, s.language) for s in subs}
+
+    attempts = session.exec(
+        select(Attempt).where(Attempt.submission_id.in_(list(sub_meta)))
+    ).all()
+    # Best ACCEPTED attempt per (language, problem, model): the fastest one, by
+    # best_runtime_ms. Its energy comes from the same attempt so the two metrics
+    # are read off one solution, mirroring /api/compare's per-problem best.
+    best: dict[tuple, Attempt] = {}
+    for a in attempts:
+        if a.final_status != "Accepted" or a.problem_id not in comp_pids:
+            continue
+        model, lang = sub_meta[a.submission_id]
+        key = (lang, a.problem_id, model)
+        cur = best.get(key)
+        if cur is None or (a.best_runtime_ms or 1e18) < (cur.best_runtime_ms or 1e18):
+            best[key] = a
+
+    ranks: dict[str, dict] = {}
+    langs_present: set[str] = set()
+    for metric, field in _EFF_METRICS:
+        # (lang, pid) -> {model: value}
+        by_problem: dict[tuple, dict] = defaultdict(dict)
+        for (lang, pid, model), a in best.items():
+            v = getattr(a, field)
+            if v is not None and v > 0:
+                by_problem[(lang, pid)][model] = v
+        # ratio to the per-problem best, then median per (lang, model)
+        lang_model_ratios: dict[str, dict] = defaultdict(lambda: defaultdict(list))
+        for (lang, _pid), mv in by_problem.items():
+            best_v = min(mv.values())
+            if best_v <= 0:
+                continue
+            for model, v in mv.items():
+                lang_model_ratios[lang][model].append(v / best_v)
+        out: dict[str, list] = {}
+        for lang, mr in lang_model_ratios.items():
+            ranked = sorted(
+                ((model, statistics.median(rs)) for model, rs in mr.items() if rs),
+                key=lambda t: t[1],
+            )
+            if ranked:
+                out[lang] = [{"model": m, "ratio": round(r, 3)} for m, r in ranked]
+                langs_present.add(lang)
+        ranks[metric] = out
+
+    return {
+        "competition": competition,
+        "languages": [l for l in _EFF_LANGS if l in langs_present],
+        "metrics": [m for m, _ in _EFF_METRICS],
+        "ranks": ranks,
+    }
 
 
 @app.get("/api/compare", response_model=CompareResponse)
@@ -4680,14 +4947,32 @@ def provenance_log(
     }
 
 
-def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
+# The only attempt columns a submission summary reads. Selecting just these
+# skips the large code/trace/inference_trace text of every attempt.
+_SUBMISSION_ATTEMPT_COLS = (
+    Attempt.submission_id, Attempt.problem_id, Attempt.logged_at,
+    Attempt.cost_usd, Attempt.prompt_tokens, Attempt.response_tokens,
+    Attempt.wall_clock_ms,
+)
+
+
+def _submission_public(
+    s: Submission, session: Session, *,
+    atts: list | None = None, all_pids: set[int] | None = None,
+    pricing: dict | None = None,
+) -> SubmissionPublic:
+    """Public summary of one submission. List endpoints pass the submission's
+    attempt rows (`_SUBMISSION_ATTEMPT_COLS`), the problem ids, and the pricing
+    map, loaded once per request; a single-submission caller omits them."""
     u = session.get(User, s.user_id)
     pt = session.get(PromptTemplate, s.prompt_id) if s.prompt_id is not None else None
-    atts = session.exec(
-        select(Attempt).where(Attempt.submission_id == s.id)
-    ).all()
+    if atts is None:
+        atts = session.exec(
+            select(*_SUBMISSION_ATTEMPT_COLS).where(Attempt.submission_id == s.id)
+        ).all()
     attempted = {a.problem_id for a in atts}
-    all_pids = {p.id for p in session.exec(select(Problem)).all()}
+    if all_pids is None:
+        all_pids = set(session.exec(select(Problem.id)).all())
     reason = _leaderboard_reason(s, attempted, all_pids)
     # Competition reference for the new SPA column. None on legacy rows
     # that pre-date the per-submission competition scope.
@@ -4710,6 +4995,10 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
     correctness_row = (
         session.get(CorrectnessOracle, _cid) if _cid is not None else None
     )
+    # Producer (agentic harness) for this submission: its own agent_id,
+    # falling back to the seeded "direct" agent for a row not yet backfilled.
+    _aid = s.agent_id if s.agent_id is not None else _direct_agent_id(session)
+    agent_row = session.get(Agent, _aid) if _aid is not None else None
     # Machine this submission was measured on (Parts 2+3). NULL on
     # LeetCode-scored submissions ("unknown machine").
     machine_row = (
@@ -4725,7 +5014,7 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
     # snapshot cost_usd captured at submit on legacy attempts. Yields one
     # consistent total an operator can act on. Null when no attempt has
     # either a live or snapshot cost to contribute.
-    _pricing = _model_pricing_lookup(session)
+    _pricing = pricing if pricing is not None else _model_pricing_lookup(session)
     live_total: float | None = None
     # Per-attempt cost series — also feeds the median below.
     per_attempt_costs: list[float] = []
@@ -4800,6 +5089,8 @@ def _submission_public(s: Submission, session: Session) -> SubmissionPublic:
         harness_name=harness_row.name if harness_row else None,
         correctness_oracle_slug=correctness_row.slug if correctness_row else None,
         correctness_oracle_name=correctness_row.name if correctness_row else None,
+        agent_slug=agent_row.slug if agent_row else None,
+        agent_name=agent_row.name if agent_row else None,
         energy_tool=s.energy_tool,
         machine_id=s.machine_id,
         machine_name=machine_row.name if machine_row else None,
@@ -5833,6 +6124,21 @@ def submit_batch(
                 "does not exist")
         submission_correctness_oracle_id = o.id
 
+    # Optional producer (agentic harness / workflow). Null resolves to the
+    # seeded "direct" agent, so a legacy client that omits the field lands
+    # exactly where every pre-feature submission is backfilled — no behavior
+    # change. A named-but-unknown slug is a 400, same shape as harness.
+    if payload.agent_slug:
+        ag = session.exec(
+            select(Agent).where(Agent.slug == payload.agent_slug)
+        ).first()
+        if ag is None:
+            raise HTTPException(
+                400, f"agent_slug={payload.agent_slug!r} does not exist")
+        submission_agent_id = ag.id
+    else:
+        submission_agent_id = _direct_agent_id(session)
+
     sub = Submission(
         user_id=user.id, model_name=payload.model_name,
         model_version=payload.model_version, language=payload.language,
@@ -5846,6 +6152,7 @@ def submit_batch(
         competition_id=comp.id,
         harness_id=submission_harness_id,
         correctness_oracle_id=submission_correctness_oracle_id,
+        agent_id=submission_agent_id,
         total_problems=len(comp_problems),
     )
     session.add(sub)
@@ -6180,6 +6487,13 @@ def download_solutions(
 
     problem_cache: dict[int, Problem] = {}
     user_cache: dict[int, User] = {}
+    # Producer (agent) lookup — tiny table, one round-trip. Legacy rows that
+    # the seed backfill hasn't reached yet fall back to the "direct" slug so
+    # the export field is never spuriously null.
+    agents_by_id: dict[int, Agent] = {a.id: a for a in session.exec(select(Agent)).all()}
+    _direct_aid_export = next(
+        (a.id for a in agents_by_id.values() if a.slug == "direct"), None,
+    )
 
     def iter_records():
         for sub in subs:
@@ -6201,6 +6515,8 @@ def download_solutions(
                 run = runs[0] if runs else None
                 if only_accepted and (run is None or run.status_msg != "Accepted"):
                     continue
+                _aid = sub.agent_id if sub.agent_id is not None else _direct_aid_export
+                _agent = agents_by_id.get(_aid) if _aid is not None else None
                 record = {
                     "submission_id": sub.id,
                     "submitted_at": sub.created_at.isoformat(),
@@ -6208,6 +6524,10 @@ def download_solutions(
                     "submitter_slug": _slug(_submitter_label(user)),
                     "model_name": sub.model_name,
                     "model_version": sub.model_version,
+                    # Producer that drove the model: the agentic-harness slug,
+                    # or "direct" for a one-shot prompt. Additive field — older
+                    # consumers that don't read it are unaffected.
+                    "agent": _agent.slug if _agent else None,
                     "language": sub.language,
                     "model_params": sub.model_params,
                     "prompt_template": sub.prompt_template,
@@ -6380,6 +6700,18 @@ def admin_export(
                     "bundle becomes a secret when set, so callers must treat "
                     "it accordingly (encrypt at rest, do not commit to git).",
     ),
+    compress: str = Query(
+        "none", pattern="^(none|gzip)$",
+        description="JSON only: `gzip` streams the bundle gzip-compressed "
+                    "(.json.gz), several times smaller than plain JSON.",
+    ),
+    exclude_columns: str | None = Query(
+        None,
+        description="JSON only: comma-separated column names to drop from "
+                    "every row, e.g. trace,inference_trace,raw_response,"
+                    "leetcode_full_response. Such a slim bundle is for "
+                    "analysis; an import fills the dropped columns with NULL.",
+    ),
     _: User = Depends(current_admin),
     session: Session = Depends(get_session),
 ):
@@ -6394,15 +6726,26 @@ def admin_export(
     unknown = [t for t in requested if t not in _EXPORTABLE_TABLE_NAMES]
     if unknown:
         raise HTTPException(400, {"detail": "unknown tables", "unknown": unknown})
+    drop = {c.strip() for c in (exclude_columns or "").split(",") if c.strip()}
+    unknown_cols = sorted(drop - export_import.export_columns())
+    if unknown_cols:
+        raise HTTPException(400, {"detail": "unknown columns", "unknown": unknown_cols})
 
     if format == "json":
         stamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         # Stream row-by-row (own session inside the generator) so a large DB
         # doesn't build the whole bundle + its json string in memory and
-        # OOM-kill the container.
+        # OOM-kill the container. Rows go out in ~1 MB pieces.
+        chunks = export_import.batched(export_import.export_json_iter(
+            requested, include_credentials=include_credentials, exclude_columns=drop))
+        if compress == "gzip":
+            return StreamingResponse(
+                export_import.gzip_stream(chunks),
+                media_type="application/gzip",
+                headers={"Content-Disposition": f"attachment; filename=perfarena-export-{stamp}.json.gz"},
+            )
         return StreamingResponse(
-            (chunk.encode() for chunk in export_import.export_json_iter(
-                requested, include_credentials=include_credentials)),
+            (chunk.encode() for chunk in chunks),
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename=perfarena-export-{stamp}.json"},
         )

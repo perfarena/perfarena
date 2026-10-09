@@ -219,6 +219,14 @@ _ADDITIVE_COLUMNS = [
     ("competition", "correctness_oracle_id", "INTEGER"),
     ("submission", "correctness_oracle_id", "INTEGER"),
     ("run", "correctness_oracle_id", "INTEGER"),
+    # Agent (producer) FK — the agentic harness / workflow that drove the
+    # model to write the code, decoupled from the model itself. Nullable; a
+    # legacy row stays NULL until _seed_default_agent backfills it to the
+    # seeded "direct" agent. The `agent` TABLE is created wholesale by
+    # create_all; this COLUMN needs the additive migration so a pre-feature
+    # DB doesn't 500 on the new code. NOT folded into the trace hash or the
+    # model digest, so every existing provenance record stays valid.
+    ("submission", "agent_id", "INTEGER"),
     # Measurement provenance FKs — the physical machine a submission ran on,
     # the energy tool used, and the (tool, config) profile a run was measured
     # under. The `machine` + `measurementprofile` TABLES are created wholesale
@@ -356,12 +364,57 @@ def _seed_default_correctness_oracle() -> None:
                 pass
 
 
+def _seed_default_agent() -> None:
+    """Seed the built-in "direct" agent and backfill every Submission that
+    lacks an agent_id to it. The "direct" agent means "no agent loop — the
+    model was prompted once", which is exactly what every pre-feature
+    submission did, so backfilling them to it preserves their implied
+    provenance. Mirror of _seed_default_harness for the producer axis.
+    Idempotent: the insert is slug-guarded and the UPDATE is a no-op once the
+    column is populated."""
+    with engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT id FROM agent WHERE slug = 'direct' LIMIT 1"
+        )).fetchone()
+        if row is None:
+            from datetime import datetime as _dt
+            conn.execute(text(
+                "INSERT INTO agent (slug, name, kind, description, status, created_at) "
+                "VALUES (:slug, :name, :kind, :desc, 'active', :created_at)"
+            ), {
+                "slug": "direct",
+                "name": "Direct (no agent)",
+                "kind": "direct",
+                "desc": (
+                    "The model was prompted once with no agentic loop — the "
+                    "baseline producer. This is the legacy default: every "
+                    "submission that predates the agent abstraction, and every "
+                    "new submission that names no agent, is attributed to it."
+                ),
+                "created_at": _dt.utcnow(),
+            })
+            row = conn.execute(text(
+                "SELECT id FROM agent WHERE slug = 'direct' LIMIT 1"
+            )).fetchone()
+        direct_agent_id = int(row[0])
+        try:
+            conn.execute(
+                text("UPDATE submission SET agent_id = :aid WHERE agent_id IS NULL"),
+                {"aid": direct_agent_id},
+            )
+        except Exception:
+            # Column may not exist yet if the additive migration failed on the
+            # first boot pass — swallow and let the next boot retry.
+            pass
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported before create_all
     SQLModel.metadata.create_all(engine)
     _apply_additive_migrations()
     _seed_default_harness()
     _seed_default_correctness_oracle()
+    _seed_default_agent()
 
 
 def get_session():

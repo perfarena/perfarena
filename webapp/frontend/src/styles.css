@@ -222,6 +222,23 @@ button.theme-toggle:hover { background: var(--panel-2); color: var(--accent); }
   display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;
 }
 
+/* Competition tabs: one tab per competition scopes the board to a single
+   competition's problem set, so the row-level "Comp" column is unneeded. */
+.tabs {
+  display: flex; gap: 4px; margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.tabs .tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  color: var(--fg-dim); font-weight: 600; white-space: nowrap;
+  padding: 8px 14px; margin-bottom: -1px; border-radius: 0; cursor: pointer;
+}
+.tabs .tab:hover { color: var(--fg); background: var(--panel-2); }
+.tabs .tab.active {
+  color: var(--fg); border-bottom-color: var(--accent);
+}
+
 .metric { font-variant-numeric: tabular-nums; }
 .coef-good { color: var(--easy); font-weight: 600; }
 .coef-bad  { color: var(--hard); }

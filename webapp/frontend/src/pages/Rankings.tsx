@@ -68,10 +68,25 @@ export default function Rankings() {
 
   // Load competitions + harnesses + correctness oracles once for the selectors.
   useEffect(() => {
-    api.competitions().then(setCompetitions).catch(() => setCompetitions([]));
+    api.competitions().then(cs => {
+      setCompetitions(cs);
+      // Each tab scopes the board to exactly one competition. If the current
+      // slug (the default or a ?competition=… deep link) isn't among the
+      // loaded competitions, land on the first tab so the board is never empty.
+      setCompetitionSlug(prev => (cs.some(c => c.slug === prev) ? prev : (cs[0]?.slug ?? prev)));
+    }).catch(() => setCompetitions([]));
     api.harnesses().then(setHarnesses).catch(() => setHarnesses([]));
     api.correctnessOracles().then(setCorrectnessOracles).catch(() => setCorrectnessOracles([]));
   }, []);
+
+  // Keep ?competition=… in sync so the chosen tab survives a refresh and is
+  // shareable (the page already hydrates competitionSlug from this param).
+  useEffect(() => {
+    if (typeof window === "undefined" || !competitionSlug) return;
+    const u = new URL(window.location.href);
+    u.searchParams.set("competition", competitionSlug);
+    window.history.replaceState(null, "", u);
+  }, [competitionSlug]);
 
   // Client-side view sort, toggled by clicking column headers.
   const [sortKey, setSortKey] = useState<string>("pass_at_1");
@@ -201,6 +216,22 @@ export default function Rankings() {
           selected competition's problems are shown — partial runs aren't
           comparable to full sweeps.
         </p>
+        {competitions.length > 0 && (
+          <div className="tabs" role="tablist" aria-label="Competition" style={{ marginTop: 12, marginBottom: 0 }}>
+            {competitions.map(c => (
+              <button
+                key={c.slug}
+                role="tab"
+                aria-selected={c.slug === competitionSlug}
+                className={`tab${c.slug === competitionSlug ? " active" : ""}`}
+                onClick={() => setCompetitionSlug(c.slug)}
+                title={c.description || c.name}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
         {selectedCompetition && (
           <div className="card" style={{
             marginTop: 12,
@@ -255,16 +286,6 @@ export default function Rankings() {
           onChange={e => setQ(e.target.value)}
           style={{ minWidth: 240 }}
         />
-        <select value={competitionSlug}
-                onChange={e => setCompetitionSlug(e.target.value)}
-                title="Scope the leaderboard to one competition's problem set">
-          {/* Empty value = no competition filter (full platform-wide
-              leaderboard). Default lands on the seed LC-99. */}
-          <option value="">All competitions</option>
-          {competitions.map(c => (
-            <option key={c.slug} value={c.slug}>{c.name}</option>
-          ))}
-        </select>
         <select value={harnessSlug}
                 onChange={e => setHarnessSlug(e.target.value)}
                 title="Scope to submissions scored by one PERFORMANCE oracle (LeetCode, an in-house harness, and so on)">
@@ -356,7 +377,6 @@ export default function Rankings() {
                 <Th label="Subm." tip="Submitter: organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific: one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
-                <Th label="Comp" tip="Competition this submission targeted. pass@1, pass@k, and Solved use THIS competition's problem set as the denominator (not 'every Problem row in the DB'). A dash marks a legacy row created before the per-submission scope existed." />
                 <Th label="Harness" tip="Perf oracle that produced the runtime / memory / percentile numbers on this row. Resolved per submission (submission override → competition default). All legacy rows resolve to `leetcode` via the startup backfill; new harnesses (in-house runner, HumanEval unittest, …) appear once you plug them in on /harnesses." />
                 <Th label="Correct" tip="Correctness oracle that produced the Accepted / Wrong Answer / Runtime Error / TLE verdict on this row. Decoupled from the perf oracle to the left, so a submission can be judged for correctness by one source and measured for performance by another. Every legacy row resolves to `leetcode`." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -400,18 +420,6 @@ export default function Rankings() {
                     <td><Link to={`/submitters/${r.submitter_slug}`}>{r.submitter}</Link></td>
                     <td><LanguageLink name={r.language} /></td>
                     <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
-                    <td>
-                      {r.competition_slug
-                        ? <Link to={`/competitions/${r.competition_slug}`}
-                                style={{
-                                  padding: "2px 8px", borderRadius: 999,
-                                  background: "var(--panel-2)",
-                                  border: "1px solid var(--border)",
-                                  fontSize: "0.8rem", whiteSpace: "nowrap",
-                                  textDecoration: "none",
-                                }}>{r.competition_name ?? r.competition_slug}</Link>
-                        : <span className="muted">—</span>}
-                    </td>
                     <td>
                       {r.harness_slug
                         ? <Link to={`/harnesses/${r.harness_slug}`}

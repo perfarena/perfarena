@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, CompetitionPublic, RankingEntry } from "../lib/api";
-import { formatPassAt1, formatPercentile } from "../lib/format";
-import { SHOW_RELATIVE_METRICS } from "../lib/flags";
-import LanguageLink from "../components/LanguageLink";
-import PromptName from "../components/PromptName";
+import { api, CompetitionPublic, EfficiencyRanks } from "../lib/api";
+import BumpChart from "../components/BumpChart";
 
 // Default competition the "Top of the leaderboard" preview is scoped to.
 // Matches Rankings.tsx's default — the seed LC-99 contains every problem
@@ -13,29 +10,31 @@ const PRIMARY_COMPETITION_SLUG = "leetcode-99-perf";
 
 export default function Home() {
   const [comps, setComps] = useState<CompetitionPublic[]>([]);
-  // "Top of the leaderboard" is now tabbed per competition. Each tab's top-5 is
-  // fetched lazily the first time it's opened and cached here, so the homepage
-  // only pays for the active competition up front.
+  // The per-language efficiency bump charts are tabbed per competition. Each
+  // tab's ranks are fetched lazily the first time it's opened and cached here,
+  // so the homepage only pays for the active competition up front.
   const [activeComp, setActiveComp] = useState<string>(PRIMARY_COMPETITION_SLUG);
-  const [topByComp, setTopByComp] = useState<Record<string, RankingEntry[]>>({});
+  const [effByComp, setEffByComp] = useState<Record<string, EfficiencyRanks>>({});
   const [loadingComp, setLoadingComp] = useState<string | null>(null);
 
-  function loadTop(slug: string) {
-    if (topByComp[slug]) return;                    // cached — lazy no-op
+  function loadEff(slug: string) {
+    if (effByComp[slug]) return;                    // cached — lazy no-op
     setLoadingComp(slug);
-    api.rankings({ competition: slug })
-      .then((rows: RankingEntry[]) => setTopByComp(m => ({ ...m, [slug]: rows.slice(0, 5) })))
-      .catch(() => setTopByComp(m => ({ ...m, [slug]: [] })))
+    api.efficiencyRanks(slug)
+      .then(d => setEffByComp(m => ({ ...m, [slug]: d })))
+      .catch(() => setEffByComp(m => ({
+        ...m, [slug]: { competition: slug, languages: [], metrics: [], ranks: {} },
+      })))
       .finally(() => setLoadingComp(l => (l === slug ? null : l)));
   }
 
   useEffect(() => {
-    loadTop(PRIMARY_COMPETITION_SLUG);              // eager-load only the default tab
+    loadEff(PRIMARY_COMPETITION_SLUG);              // eager-load only the default tab
     api.competitions().then(setComps).catch(() => setComps([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function onTab(slug: string) { setActiveComp(slug); loadTop(slug); }
+  function onTab(slug: string) { setActiveComp(slug); loadEff(slug); }
 
   const primary = comps.find(c => c.slug === PRIMARY_COMPETITION_SLUG) ?? null;
   // Tab order: primary first, then the rest by name. If the primary isn't in
@@ -45,7 +44,12 @@ export default function Home() {
     ...comps.filter(c => c.slug !== PRIMARY_COMPETITION_SLUG),
   ];
   const activeCompObj = comps.find(c => c.slug === activeComp) ?? primary;
-  const top = topByComp[activeComp] ?? [];
+  const eff = effByComp[activeComp];
+  // Only render a metric's chart when it actually has data (LeetCode rows carry
+  // no energy, so the energy chart is simply omitted there).
+  const metricsWithData = eff
+    ? eff.metrics.filter(mt => Object.keys(eff.ranks[mt] ?? {}).length > 0)
+    : [];
   // Other competitions (besides the primary) get their own card row below
   // the primary card so visitors discover the multi-competition story.
   const other = comps.filter(c => c.slug !== PRIMARY_COMPETITION_SLUG);
@@ -101,9 +105,10 @@ export default function Home() {
       </section>
 
       <section>
-        <h2 style={{ marginBottom: 8 }}>Top of the leaderboard</h2>
-        {/* One tab per competition. The active tab's top-5 is fetched lazily on
-            first open and cached, so the homepage only loads the default up front. */}
+        <h2 style={{ marginBottom: 8 }}>Efficiency by language</h2>
+        {/* One tab per competition. The active tab's per-language ranks are
+            fetched lazily on first open and cached, so the homepage only loads
+            the default up front. */}
         {tabComps.length > 0 && (
           <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
             {tabComps.map(c => (
@@ -121,42 +126,18 @@ export default function Home() {
             {activeCompObj.n_problems} problems · {activeCompObj.n_submissions} submissions · {activeCompObj.n_models} models
           </div>
         )}
-        {loadingComp === activeComp && top.length === 0 ? (
+        {loadingComp === activeComp && !eff ? (
           <div className="empty">Loading…</div>
-        ) : top.length === 0 ? (
-          <div className="empty">No judged submissions in this competition yet.</div>
+        ) : metricsWithData.length === 0 ? (
+          <div className="empty">No measured solutions in this competition yet.</div>
         ) : (
-          <div className="card tbl-scroll" style={{ padding: 0 }}>
-            <table className="tbl">
-              <thead><tr>
-                <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
-                <th title="Registered prompt template used. Different prompts = different experimental cells.">Prompt</th>
-                <th>pass@1</th>
-                {SHOW_RELATIVE_METRICS && <th title="Avg runtime percentile (relative to the reference population)">RT %ile</th>}
-                {SHOW_RELATIVE_METRICS && <th title="Avg memory percentile (relative to the reference population)">Mem %ile</th>}
-                <th></th>
-              </tr></thead>
-              <tbody>
-                {top.map(r => (
-                  <tr key={r.submission_id}>
-                    <td>{r.rank}</td>
-                    <td>
-                      <Link to={`/models/${encodeURIComponent(r.model_name)}`}>
-                        <b>{r.model_name}</b>
-                      </Link>
-                      <span className="muted"> {r.model_version}</span>
-                    </td>
-                    <td><Link to={`/submitters/${r.submitter_slug}`}>{r.submitter}</Link></td>
-                    <td><LanguageLink name={r.language} /></td>
-                    <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
-                    <td className="metric">{formatPassAt1(r.pass_at_1)}</td>
-                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_runtime_percentile)}</td>}
-                    {SHOW_RELATIVE_METRICS && <td className="metric">{formatPercentile(r.avg_memory_percentile)}</td>}
-                    <td><Link to={`/submissions/${r.submission_id}`}>details →</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="col" style={{ gap: 16 }}>
+            {metricsWithData.map(metric => (
+              <BumpChart key={metric}
+                         title={metric === "latency" ? "Latency" : metric === "energy" ? "Energy" : metric}
+                         languages={eff!.languages}
+                         ranked={eff!.ranks[metric] ?? {}} />
+            ))}
           </div>
         )}
         <div className="row" style={{ marginTop: 12 }}>

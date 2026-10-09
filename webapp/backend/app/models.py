@@ -201,6 +201,16 @@ class Submission(SQLModel, table=True):
     correctness_oracle_id: int | None = Field(
         default=None, foreign_key="correctnessoracle.id", index=True,
     )
+    # PRODUCER of this submission's code — the agentic harness / workflow that
+    # drove the model (e.g. Claude Code, Aider, OpenHands), as opposed to the
+    # model itself (model_name/model_version). NULL means "direct" (the model
+    # was prompted once with no agent loop), which is the legacy default: every
+    # pre-feature submission is backfilled to the seeded "direct" agent, and a
+    # new submission that names no agent resolves to it too. The competitor
+    # identity on the leaderboard is the (agent, model) pair, so "Claude Code +
+    # opus" ranks apart from "direct + opus". NOT part of the trace hash or the
+    # model digest, so adding it leaves every existing provenance record valid.
+    agent_id: int | None = Field(default=None, foreign_key="agent.id", index=True)
 
 
 class Machine(SQLModel, table=True):
@@ -573,6 +583,43 @@ class CorrectnessOracle(SQLModel, table=True):
     description: str | None = None                 # markdown blurb
     # Free-form JSON — test-suite path, docker image tag, endpoint URL,
     # timeouts, whatever this specific oracle needs to reproduce a verdict.
+    config: dict | None = Field(default=None, sa_column=Column(JSON))
+    status: str = Field(default="active", index=True)  # active | retired
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class Agent(SQLModel, table=True):
+    """A PRODUCER of solutions — the agentic harness / workflow that drove the
+    model to write the code (e.g. Claude Code, Aider, OpenHands), as distinct
+    from the model itself (model_name/model_version on Submission).
+
+    Shape mirrors `Harness` / `CorrectnessOracle` intentionally so the same
+    operator UX and resolution logic apply — one registry, one slug on the
+    wire, a layered default. The seeded "direct" agent (no agent loop, the
+    model prompted once) is the legacy default: every submission that predates
+    this abstraction, and every new submission that names no agent, resolves to
+    it, so pre-feature data stays valid and comparable.
+
+    The leaderboard competitor identity is the (agent, model) pair, so a run
+    made with an agentic harness ranks apart from a direct run of the same
+    model. `version` records the agent tool's own version (independent of the
+    model version) so two Claude Code releases driving the same model are
+    distinguishable.
+    """
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)     # stable id used in URLs / configs
+    name: str                                       # display name
+    # direct   — no agent loop; the model was prompted once (the legacy default)
+    # agentic  — a tool-using / multi-step coding agent (Claude Code, Aider, …)
+    # custom   — anything else
+    kind: str = Field(default="agentic", index=True)
+    # Version of the agent TOOL itself (not the model). NULL for "direct" and
+    # for agents whose version the operator did not record.
+    version: str | None = Field(default=None)
+    description: str | None = None                 # markdown blurb
+    # Free-form JSON — the harness repo/commit, config file, tool settings,
+    # whatever makes the agent run reproducible.
     config: dict | None = Field(default=None, sa_column=Column(JSON))
     status: str = Field(default="active", index=True)  # active | retired
     created_at: datetime = Field(default_factory=datetime.utcnow)
