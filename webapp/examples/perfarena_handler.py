@@ -64,11 +64,13 @@ status_msg mapping:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
 import re
 import resource
+import shlex
 import shutil
 import signal
 import socket
@@ -763,21 +765,20 @@ def _run_harness_measured(
     cell: Path, harness_lang: str, budget: float, idx: int, timeout: float,
     *, energy: "_EnergyBackend | None" = None,
 ) -> dict[str, Any]:
-    """Run `run_harness.sh <lang> <budget> <idx>` FROM `cell`. Returns raw
-    per-invocation numbers; per-op normalization is the caller's job.
+    """Run the prebuilt program of one case FROM `cell` (see _prebuilt_argv;
+    _measure_curated_looped builds it first, so the run contains no compiler).
+    Returns raw per-invocation numbers; per-op normalization is the caller's job.
 
     `energy` is a shared per-submission backend (RAPL or reused codecarbon)
     whose begin()/end() bracket the run. Peak memory is measured in a SEPARATE
     pass (_run_harness_peak_rss), so it never perturbs the energy/time numbers —
     the CLBG methodology's separate-run rule (see `_measure_curated_looped`)."""
-    run_harness = _selection_dir() / "run_harness.sh"
-    cmd = ["bash", str(run_harness), harness_lang, str(budget), str(idx)]
-
-    env = os.environ.copy()
-    root = _root()
-    prev_pp = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = f"{root}:{prev_pp}" if prev_pp else str(root)
-    env["PATH"] = f"{str(Path(sys.executable).parent)}:{env.get('PATH', '')}"
+    cmd = _prebuilt_argv(cell, harness_lang, budget, idx)
+    if not cmd:
+        return {"exit_code": 2, "wall_s": 0.0, "energy_j": None, "energy_source": "none",
+                "iters": None, "meas_s": None, "case_name": None, "harness_line": "",
+                "stderr_tail": f"no prebuilt {harness_lang} program", "timed_out": False}
+    env = _prebuilt_env()
 
     if energy is not None:
         _ts = time.monotonic()
@@ -875,7 +876,7 @@ def _peak_rss_helper() -> Path:
 
 
 def _peak_rss_run(cmd: list[str], cwd: Path, env: "dict[str, str]",
-                  timeout: float) -> dict[str, Any]:
+                  timeout: float, stdin_path: "Path | None" = None) -> dict[str, Any]:
     """Run `cmd` once and return the peak resident set size of the process it
     starts, from the kernel's ru_maxrss as `wait4` reports it when the process
     exits: the largest single process among the child and the descendants it
@@ -889,11 +890,16 @@ def _peak_rss_run(cmd: list[str], cwd: Path, env: "dict[str, str]",
     t0 = time.monotonic()
     out = cwd / ".peak_rss"
     out.unlink(missing_ok=True)
-    proc = subprocess.Popen(
-        [str(_peak_rss_helper()), str(out), *cmd], cwd=str(cwd),
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-        start_new_session=True, env=env,
-    )
+    stdin = open(stdin_path, "rb") if stdin_path else None
+    try:
+        proc = subprocess.Popen(
+            [str(_peak_rss_helper()), str(out), *cmd], cwd=str(cwd), stdin=stdin,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            start_new_session=True, env=env,
+        )
+    finally:
+        if stdin:
+            stdin.close()   # the child has its own copy
     _raise_oom_score(proc.pid)
     reader = _BoundedDrain(proc.stderr, on_limit=lambda: _killpg(proc))
     timed_out = False
@@ -935,8 +941,9 @@ def _harness_env(mode: str) -> "dict[str, str]":
 
 
 def _run_harness_build(cell: Path, harness_lang: str, timeout: float) -> tuple[bool, str]:
-    """Compile the solution and its driver ONCE before the memory pass
-    (run_harness.sh build mode), so the measured runs contain no compiler."""
+    """Compile the solution and its driver ONCE, before any metric is measured
+    (run_harness.sh build mode), so no measured run contains a compiler. Fails
+    for a language without a build/run split."""
     cmd = ["bash", str(_selection_dir() / "run_harness.sh"), harness_lang, "0", "0"]
     try:
         r = _run_grouped(cmd, cwd=cell, timeout=timeout, env=_harness_env("build"))
@@ -945,29 +952,139 @@ def _run_harness_build(cell: Path, harness_lang: str, timeout: float) -> tuple[b
     return r.returncode == 0, (r.stderr or "")[-1000:]
 
 
+def _prebuilt_argv(cell: Path, harness_lang: str, budget: float, idx: int) -> list[str]:
+    """Command line of the prebuilt program for one case (run_harness.sh argv
+    mode), or [] when there is none. Every measurement starts this program
+    DIRECTLY: Linux keeps a process's peak RSS across exec, so starting it
+    through bash would report bash's ~3 MB for a solution that uses less."""
+    try:
+        r = subprocess.run(
+            ["bash", str(_selection_dir() / "run_harness.sh"), harness_lang, str(budget), str(idx)],
+            cwd=str(cell), env=_harness_env("argv"), capture_output=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return []
+    return [a.decode() for a in r.stdout.split(b"\0") if a] if r.returncode == 0 else []
+
+
+def _prebuilt_env() -> "dict[str, str]":
+    env = _harness_env("run")
+    env["PERFARENA_TS_PREBUILT"] = "1"   # read by harness_ts.js only
+    return env
+
+
+# ---- build cache: build only when this exact code is not built yet ----------
+# A successful build writes a stamp into the cell: the hash of its inputs (the
+# code, the build files, the compile flags) and the size and mtime of every file
+# that the build wrote. A later build of the same inputs is skipped while those
+# files are unchanged, so a /validate and the /measure that follows it compile
+# once, and the repeats of one /measure build once.
+_MAKE_BUILD_INPUTS = ("Makefile", "*.csproj", "test_suite.cpp", "TestSuite.java",
+                      "test_suite.ts", "test_suite.py", "test_suite.js",
+                      "test_suite.php", "problem.json")
+_HARNESS_BUILD_INPUTS = {"cpp": ("harness_cpp.py",),
+                         "java": ("Harness.java", "TreeNode.java", "ListNode.java"),
+                         "csharp": ("Harness.cs",),
+                         "typescript": ("harness_ts.js",)}
+
+
+def _build_key(files: "list[Path]") -> str:
+    h = hashlib.sha256(os.environ.get("PERFARENA_COMPILE_FLAGS", "").encode())
+    for f in files:
+        h.update(f"\0{f}\0".encode())
+        if f.is_file():
+            h.update(f.read_bytes())
+    return h.hexdigest()
+
+
+def _cell_files(cell: Path) -> "dict[str, list[int]]":
+    files = {}
+    for f in cell.rglob("*"):
+        if f.is_file() and not f.name.startswith(".perfarena_build_"):
+            st = f.stat()
+            files[str(f.relative_to(cell))] = [st.st_size, st.st_mtime_ns]
+    return files
+
+
+def _cached_build(cell: Path, name: str, inputs: "list[Path]", build: Any,
+                  still_built: Any = None) -> "tuple[bool, Any, bool]":
+    """Run `build()` -> (ok, extra) unless the stamp `name` in `cell` shows
+    that these exact inputs are already built (and `still_built()` agrees).
+    `extra` (JSON) is kept in the stamp and returned again when the build is
+    skipped. Returns (ok, extra, skipped)."""
+    stamp = cell / f".perfarena_build_{name}.json"
+    key = _build_key(inputs)
+    try:
+        st = json.loads(stamp.read_text())
+        now = _cell_files(cell)
+        if (st["key"] == key and all(now.get(f) == v for f, v in st["outputs"].items())
+                and (still_built is None or still_built())):
+            _log(f"build {name}: skipped, this exact code is already built")
+            return True, st.get("extra"), True
+    except (OSError, ValueError, KeyError):
+        pass
+    stamp.unlink(missing_ok=True)
+    inputs_rel = {str(f.relative_to(cell)) for f in inputs if f.is_relative_to(cell)}
+    before = _cell_files(cell)
+    ok, extra = build()
+    if ok:
+        outputs = {f: v for f, v in _cell_files(cell).items()
+                   if before.get(f) != v and f not in inputs_rel}
+        stamp.write_text(json.dumps({"key": key, "outputs": outputs, "extra": extra}))
+    return ok, extra, False
+
+
+def _cached_make_compile(cell: Path, source: Path, timeout: float
+                         ) -> "tuple[subprocess.CompletedProcess, dict[str, Any] | None]":
+    """`make clean compile` (with the compile-flag fallback) unless this exact
+    code is already built in `cell`. Returns what _compile_with_flag_fallback
+    returns."""
+    inputs = [source, _root() / "perfarena.mk"]
+    inputs += sorted(f for pat in _MAKE_BUILD_INPUTS for f in cell.glob(pat) if f != source)
+    cmd = ["make", "-s", "clean", "compile"]
+    result: dict[str, Any] = {}
+
+    def build() -> "tuple[bool, Any]":
+        result["rc"], flag_fb = _compile_with_flag_fallback(cmd, cell, timeout)
+        return result["rc"].returncode == 0, flag_fb
+
+    ok, flag_fb, skipped = _cached_build(cell, "make", inputs, build)
+    if skipped:
+        if flag_fb:   # the build fell back to default flags: keep doing so
+            os.environ["PERFARENA_COMPILE_FLAGS"] = ""
+        return subprocess.CompletedProcess(cmd, 0, "", "build skipped: already built"), flag_fb
+    return result["rc"], flag_fb
+
+
+def _cached_harness_build(cell: Path, harness_lang: str, timeout: float) -> "tuple[bool, str]":
+    """_run_harness_build unless this exact code is already built in `cell`."""
+    sel = _selection_dir()
+    ref = _root() / "reference" / "leetcode"
+    inputs = sorted(f for f in cell.glob("solution.*") if not f.name.endswith(".perfarena_backup"))
+    inputs += [cell / "problem.json", sel / "run_harness.sh",
+               ref / "workloads" / f"{cell.name}.json", ref / "outputs" / f"{cell.name}.json"]
+    inputs += [sel / f for f in _HARNESS_BUILD_INPUTS.get(harness_lang, ())]
+    note: dict[str, str] = {}
+
+    def build() -> "tuple[bool, Any]":
+        ok, note["text"] = _run_harness_build(cell, harness_lang, timeout)
+        return ok, None
+
+    ok, _, skipped = _cached_build(
+        cell, "harness", inputs, build,
+        still_built=lambda: bool(_prebuilt_argv(cell, harness_lang, 0, 0)))
+    return ok, ("build skipped: already built" if skipped else note.get("text", ""))
+
+
 def _run_harness_peak_rss(cell: Path, harness_lang: str, budget: float, idx: int,
-                          timeout: float, *, prebuilt: bool) -> dict[str, Any]:
-    """One memory-pass run of one case. When the build succeeded, ask
-    run_harness.sh for the prebuilt program's command line (argv mode) and
-    start that program DIRECTLY: Linux keeps a process's peak RSS across exec,
-    so starting it through bash would report bash's ~3 MB for a solution that
-    uses less. Otherwise (or for a language without a build/run split) fall
-    back to the combined path. Peak RSS comes from _peak_rss_run, as on CLBG."""
-    script = str(_selection_dir() / "run_harness.sh")
-    if prebuilt:
-        try:
-            r = subprocess.run(["bash", script, harness_lang, str(budget), str(idx)],
-                               cwd=str(cell), env=_harness_env("argv"),
-                               capture_output=True, timeout=60)
-            argv = [a.decode() for a in r.stdout.split(b"\0") if a] if r.returncode == 0 else []
-        except subprocess.TimeoutExpired:
-            argv = []
-        if argv:
-            env = _harness_env("run")
-            env["PERFARENA_TS_PREBUILT"] = "1"   # read by harness_ts.js only
-            return _peak_rss_run(argv, cell, env, timeout)
-    cmd = ["bash", script, harness_lang, str(budget), str(idx)]
-    return _peak_rss_run(cmd, cell, _harness_env("run" if prebuilt else "all"), timeout)
+                          timeout: float) -> dict[str, Any]:
+    """One memory-pass run of one case: the prebuilt program, with its peak
+    RSS from _peak_rss_run, as on CLBG."""
+    argv = _prebuilt_argv(cell, harness_lang, budget, idx)
+    if argv:
+        return _peak_rss_run(argv, cell, _prebuilt_env(), timeout)
+    return {"exit_code": 2, "wall_s": 0.0, "peak_rss_kb": None, "timed_out": False,
+            "output_limit_exceeded": False,
+            "stderr_tail": f"no prebuilt {harness_lang} program"}
 
 
 # Sentinel: when passed as `energy_backend`, _measure_curated_looped builds and
@@ -1007,6 +1124,19 @@ def _measure_curated_looped(
     # so the memory pass uses a short budget to keep the extra run cheap.
     mem_budget = float(os.environ.get("PERFARENA_MEM_BUDGET_S", "0.5"))
 
+    # Build ONCE before measuring any metric (run_harness.sh build mode), so no
+    # measured run includes a compiler: every pass below runs only the prebuilt
+    # program. Without one (the build failed, or the language has no build/run
+    # split), nothing is measured.
+    built, build_note = _cached_harness_build(cell, harness_lang, per_case_timeout)
+    _log(f"build {'ok' if built else 'failed'}" + ("" if built else f": {build_note[-200:]}"))
+    if not built:
+        return {"build_failed": True, "build_note": build_note,
+                "time_us_per_op": None, "energy_j_per_op": None, "iterations": 0,
+                "energy_source": "none", "peak_rss_kb": 0, "memory_method": None,
+                "per_case": [], "n_cases": len(cases), "any_nonzero_exit": False,
+                "deadline_exceeded": False}
+
     # Energy backend (RAPL powercap or a reused codecarbon tracker) is
     # expensive to build. By default this call owns it (builds + closes), but
     # measure_once passes a shared backend so it is built ONCE per submission
@@ -1027,14 +1157,6 @@ def _measure_curated_looped(
         if deadline is None:
             return per_case_timeout
         return max(1.0, min(per_case_timeout, deadline - time.perf_counter()))
-
-    # Memory pass: build once, then measure the prebuilt program for each case,
-    # so its peak RSS never includes a compiler (run_harness.sh build/run).
-    mem_prebuilt = False
-    if measure_memory:
-        mem_prebuilt, build_note = _run_harness_build(cell, harness_lang, per_case_timeout)
-        _log(f"memory build {'ok' if mem_prebuilt else 'failed, using the combined path'}"
-             + ("" if mem_prebuilt else f": {build_note[-200:]}"))
 
     for (idx, w, name) in cases:
         if deadline is not None and time.perf_counter() >= deadline:
@@ -1076,8 +1198,7 @@ def _measure_curated_looped(
             })
 
         if measure_memory:
-            m = _run_harness_peak_rss(cell, harness_lang, mem_budget, idx,
-                                      _case_timeout(), prebuilt=mem_prebuilt)
+            m = _run_harness_peak_rss(cell, harness_lang, mem_budget, idx, _case_timeout())
             peak_rss_kb = max(peak_rss_kb, m.get("peak_rss_kb") or 0)
             row["peak_rss_kb_case"] = m.get("peak_rss_kb")
             if m.get("exit_code") not in (0, None):
@@ -1106,8 +1227,7 @@ def _measure_curated_looped(
         "iterations": total_iters,
         "energy_source": energy_source or "none",
         "peak_rss_kb": peak_rss_kb,
-        "memory_method": ("peak-rss-helper-prebuilt" if mem_prebuilt else "peak-rss-helper")
-                         if measure_memory else None,
+        "memory_method": "peak-rss-helper-prebuilt" if measure_memory else None,
         "per_case": per_case,
         "n_cases": len(cases),
         "any_nonzero_exit": any_nonzero_exit,
@@ -1348,7 +1468,16 @@ def _measure_mem(cell: Path, timeout: float) -> tuple[float | None, dict[str, An
     root = _root()
     prev_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{root}:{prev_pp}" if prev_pp else str(root)
-    r = _peak_rss_run(["make", "-s", "run"], cell, env, timeout)
+    # Start the program as the LeetCode memory pass does: directly under the
+    # peak_rss helper, without `make` (whose own ~2 MB would be the floor of a
+    # smaller program) or a shell. `make -n run` prints the command.
+    line = subprocess.run(["make", "-s", "-n", "run"], cwd=str(cell), env=env,
+                          capture_output=True, text=True, timeout=30).stdout.strip()
+    argv, stdin_path = _direct_run_argv(line.splitlines()[-1] if line else "", cell)
+    if argv:
+        r, method = _peak_rss_run(argv, cell, env, timeout, stdin_path), "peak-rss-helper"
+    else:   # shell syntax in the run command: measure through make
+        r, method = _peak_rss_run(["make", "-s", "run"], cell, env, timeout), "peak-rss-helper-make"
     if r["timed_out"]:
         return None, {"note": f"mem run timed out after {timeout:.0f}s"}
     if r["exit_code"] != 0:
@@ -1358,8 +1487,26 @@ def _measure_mem(cell: Path, timeout: float) -> tuple[float | None, dict[str, An
         "stage": "mem",
         "returncode": r["exit_code"],
         "peak_rss_kb": r["peak_rss_kb"],
-        "memory_method": "peak-rss-helper",
+        "memory_method": method,
     }
+
+
+def _direct_run_argv(line: str, cell: Path) -> "tuple[list[str], Path | None]":
+    """Split a `make -n run` command line into argv and an optional stdin file
+    (`cmd args < file`). Returns ([], None) when it needs a shell."""
+    try:
+        argv = shlex.split(line)
+    except ValueError:
+        return [], None
+    stdin_path = None
+    if len(argv) > 2 and argv[-2] == "<":
+        stdin_path, argv = cell / argv[-1], argv[:-2]
+        if not stdin_path.is_file():   # let `make run` report the missing input
+            return [], None
+    if not argv or any(t in ("|", "||", "&&", ";", "<", ">", ">>", "&") or "$" in t or "`" in t
+                       for t in argv):
+        return [], None
+    return argv, stdin_path
 
 
 def _first_meaningful_line(text: str, cap: int = 240) -> str:
@@ -1722,12 +1869,19 @@ def _full_suite_validate(cell: Path, arena_lang: str,
     """Run the full-suite correctness validator (selection/run_validate.sh) FROM
     the cell — the solution against EVERY reference case. Exit codes: 0 Accepted,
     1 Wrong Answer, 3 Runtime Error, 2 not-yet-built for this language (the
-    caller falls back to the legacy single-case `make validate`)."""
+    caller falls back to the legacy single-case `make validate`).
+
+    Java and C# validate with the measurement build (_cached_harness_build),
+    which compiles the same sources, so a validation and the measurement of the
+    same code compile once."""
     script = _selection_dir() / "run_validate.sh"
     # run_validate.sh keys on the same labels as run_harness.sh (e.g. "golang",
     # not "go"), so normalise the arena slug the same way the measure path does.
     harness_lang = _HARNESS_LANG.get(arena_lang, arena_lang)
-    return _run(["bash", str(script), harness_lang], cwd=cell, timeout=timeout)
+    cmd = ["bash", str(script), harness_lang]
+    if harness_lang in ("java", "csharp") and _cached_harness_build(cell, harness_lang, timeout)[0]:
+        cmd = ["env", "PERFARENA_PREBUILT=1", *cmd]
+    return _run(cmd, cwd=cell, timeout=timeout)
 
 
 def _is_clbg_cell(cell: Path, title_slug: str) -> bool:
@@ -1776,8 +1930,7 @@ def validate_once(
         source.write_text(_normalize_solution_code(
             language, code, _is_clbg_cell(cell, title_slug)))
 
-        rc, flag_fb = _compile_with_flag_fallback(
-            ["make", "-s", "clean", "compile"], cell, 60.0)
+        rc, flag_fb = _cached_make_compile(cell, source, 60.0)
         if rc.returncode != 0:
             fd = _fail_dict("compile", "Compile Error", rc)
             # validate_once doesn't have perf fields — drop them so the
@@ -1897,7 +2050,9 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         looped_wall_s = time.perf_counter() - t0
         _log(f"curated measure total {looped_wall_s:.2f}s")
 
-    if do_measure:
+    if looped.get("build_failed"):
+        status = "Compile Error"
+    elif do_measure:
         produced = looped.get("time_us_per_op") is not None
         status = "Accepted" if produced else "Runtime Error"
     elif do_mem:
@@ -1941,6 +2096,9 @@ def _run_one_measurement(cell, language: str, title_slug: str,
     # per-case `stderr_tail`, under keys _build_error_log doesn't grep. Lift it
     # to a top-level `error_log` (an _ERROR_FIELDS key) so the UI shows WHY the
     # perf run crashed instead of a blank panel.
+    if status == "Compile Error":
+        raw_response["note"] = "the build before measurement failed, so nothing was measured"
+        raw_response["error_log"] = looped.get("build_note") or "build failed with no output"
     if status == "Runtime Error":
         tails = [f"[case {c.get('name') or c.get('idx')}] {c.get('stderr_tail')}"
                  for c in (looped.get("per_case") or [])
@@ -2162,14 +2320,16 @@ def measure_once(
         source.write_text(_normalize_solution_code(
             language, code, _is_clbg_cell(cell, title_slug)))
 
-        # 1. compile — ONCE, only when explicitly requested. Default /measure
-        # assumes the artifact is already built (compile once, then measure
-        # many); it never recompiles per repeat.
+        # 1. build — ONCE per request, never per repeat, and only when this
+        # exact code is not built yet (_cached_make_compile). A CLBG cell builds
+        # here, because its measured runs (`make measure` / `make run`) only run
+        # the built program. A LeetCode cell builds its measured program in the
+        # curated loop (run_harness.sh build mode), so `make compile` runs here
+        # only for the correctness check.
         measure_flag_fb: "dict[str, Any] | None" = None
-        if do_compile:
+        if _is_clbg_cell(cell, title_slug) or (do_compile and do_validate):
             _tc = time.perf_counter()
-            rc, measure_flag_fb = _compile_with_flag_fallback(
-                ["make", "-s", "clean", "compile"], cell, 60.0)
+            rc, measure_flag_fb = _cached_make_compile(cell, source, 60.0)
             _log(f"compile rc={rc.returncode} in {time.perf_counter() - _tc:.2f}s")
             if rc.returncode != 0:
                 return [_fail_dict("compile", "Compile Error", rc)]
