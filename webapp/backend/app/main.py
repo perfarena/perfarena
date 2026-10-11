@@ -70,6 +70,7 @@ from .schemas import (
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
     HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachineIn, MachinePublic,
+    MemoryRemeasureIn,
     CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
     CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
@@ -7379,6 +7380,134 @@ def admin_delete_attempt(
     session.delete(att)
     session.commit()
     return {"deleted_attempt_id": attempt_id, "deleted_runs": n_runs}
+
+
+def _rollup_submission_memory(session: Session, sub: Submission) -> None:
+    """Recompute a submission's avg/best peak memory from its attempts, with the
+    same per-problem best-attempt rule as dispatch_submission's rollup (highest
+    accepted-run share, then lowest avg runtime), so a memory replacement leaves
+    the submission exactly as a fresh dispatch would have."""
+    by_problem: dict[int, list[Attempt]] = {}
+    for a in session.exec(select(Attempt).where(Attempt.submission_id == sub.id)).all():
+        by_problem.setdefault(a.problem_id, []).append(a)
+    avg_mem, best_mem = [], []
+    for atts in by_problem.values():
+        accepted = [a for a in atts if a.final_status == "Accepted"]
+        if not accepted:
+            continue
+        best = max(accepted, key=lambda a: (
+            (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
+            -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
+        ))
+        if best.avg_memory_mb is not None:
+            avg_mem.append(best.avg_memory_mb)
+        if best.best_memory_mb is not None:
+            best_mem.append(best.best_memory_mb)
+    sub.avg_memory_mb = sum(avg_mem) / len(avg_mem) if avg_mem else None
+    sub.best_memory_mb = sum(best_mem) / len(best_mem) if best_mem else None
+    session.add(sub)
+
+
+@app.post("/api/admin/attempts/memory", status_code=status.HTTP_200_OK)
+def admin_replace_attempt_memory(
+    body: MemoryRemeasureIn,
+    _: User = Depends(current_admin),
+):
+    """Replace the peak-memory measurements of accepted attempts with new
+    readings (scripts/remeasure_memory.py --push), e.g. after a change of the
+    memory method. For each attempt, in one transaction:
+
+      * reading i goes to the i-th accepted run (in run order), and every other
+        run of the attempt loses its memory value, so no old value survives;
+      * the run's raw_response gets the new peak (peak_rss_kb), the method,
+        and the time of the replacement, and loses the old peaks (run-level
+        peak_rss_kb and each case's peak_rss_kb_case), which it keeps under
+        *_previous only when keep_previous is set;
+      * the attempt's avg/best memory are recomputed from its runs, then the
+        submission's avg/best memory and the human-relative memory
+        coefficients of its language.
+
+    Only accepted attempts measured on a local harness qualify: a LeetCode-judge
+    run's memory comes from the judge and is never touched. `dry_run` reports
+    the changes and writes nothing."""
+    now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    updated, skipped, changes = 0, [], []
+    subs_touched: dict[int, Submission] = {}
+    with Session(engine) as session:
+        harness_kind = {h.id: h.kind for h in session.exec(select(Harness)).all()}
+        for item in body.items:
+            a = session.get(Attempt, item.attempt_id)
+            if a is None:
+                skipped.append({"attempt_id": item.attempt_id, "reason": "no such attempt"})
+                continue
+            if a.final_status != "Accepted":
+                skipped.append({"attempt_id": a.id, "reason": f"not accepted ({a.final_status})"})
+                continue
+            runs = session.exec(
+                select(Run).where(Run.attempt_id == a.id).order_by(Run.run_index, Run.id)
+            ).all()
+            if any(harness_kind.get(r.harness_id) == "leetcode" for r in runs):
+                skipped.append({"attempt_id": a.id, "reason": "measured by the LeetCode judge"})
+                continue
+            accepted = [r for r in runs if r.status_msg == "Accepted"]
+            if not accepted:
+                skipped.append({"attempt_id": a.id, "reason": "no accepted run"})
+                continue
+            old_avg = a.avg_memory_mb
+            readings = list(item.memory_mb)
+            for r in runs:
+                new = readings.pop(0) if (r.status_msg == "Accepted" and readings) else None
+                raw = dict(r.raw_response or {})
+                if body.keep_previous and r.memory_mb is not None:
+                    raw["memory_previous_mb"] = r.memory_mb
+                # The old measurement also left its peaks in the raw response
+                # (run-level peak_rss_kb, per-case peak_rss_kb_case): purge them
+                # too, so no old memory value survives anywhere in the run.
+                old_peak = raw.pop("peak_rss_kb", None)
+                if body.keep_previous and old_peak is not None:
+                    raw["peak_rss_kb_previous"] = old_peak
+                if isinstance(raw.get("per_case"), list):
+                    cases = []
+                    for c in raw["per_case"]:
+                        c = dict(c) if isinstance(c, dict) else c
+                        if isinstance(c, dict) and "peak_rss_kb_case" in c:
+                            old_case = c.pop("peak_rss_kb_case")
+                            if body.keep_previous and old_case is not None:
+                                c["peak_rss_kb_case_previous"] = old_case
+                        cases.append(c)
+                    raw["per_case"] = cases
+                if new is not None:
+                    raw["peak_rss_kb"] = int(round(new * 1024))
+                    raw["memory_method"] = item.method
+                    raw["memory_remeasured_at"] = now
+                else:
+                    raw.pop("memory_method", None)
+                r.memory_mb = new
+                r.raw_response = raw              # reassign: JSON columns don't track in-place edits
+                session.add(r)
+            mem = [r.memory_mb for r in runs
+                   if r.status_msg == "Accepted" and r.memory_mb is not None]
+            a.avg_memory_mb = sum(mem) / len(mem) if mem else None
+            a.best_memory_mb = min(mem) if mem else None
+            session.add(a)
+            updated += 1
+            if len(changes) < 50:
+                changes.append({"attempt_id": a.id, "old_avg_memory_mb": old_avg,
+                                "new_avg_memory_mb": a.avg_memory_mb})
+            sub = session.get(Submission, a.submission_id)
+            if sub is not None:
+                subs_touched[sub.id] = sub
+        session.flush()
+        for sub in subs_touched.values():
+            _rollup_submission_memory(session, sub)
+        if body.dry_run:
+            session.rollback()
+        else:
+            session.commit()
+            for lang in sorted({s.language for s in subs_touched.values()}):
+                _recompute_human_coefficients(session, lang)
+    return {"dry_run": body.dry_run, "updated": updated, "skipped": skipped,
+            "submissions": sorted(subs_touched), "changes": changes}
 
 
 @app.post("/api/admin/attempts/mark-stale", status_code=status.HTTP_200_OK)

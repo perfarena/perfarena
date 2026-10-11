@@ -1462,3 +1462,22 @@ class LeetCodeAccountsResponse(BaseModel):
     # safe (they just don't pace by it).
     min_gap_s: float = 0.0
     accounts: list[LeetCodeAccountStatus]
+
+
+class MemoryRemeasureItem(BaseModel):
+    attempt_id: int
+    memory_mb: list[float] = Field(
+        min_length=1,
+        description="New peak-memory readings in MB, one per measured run, in run order.")
+    method: str | None = Field(
+        default=None, description="Memory method of the new readings (e.g. wait4-maxrss-prebuilt).")
+
+
+class MemoryRemeasureIn(BaseModel):
+    items: list[MemoryRemeasureItem] = Field(min_length=1, max_length=500)
+    dry_run: bool = Field(
+        default=False, description="Report what would change without writing anything.")
+    keep_previous: bool = Field(
+        default=False,
+        description="Also keep each run's old value in raw_response.memory_previous_mb "
+                    "(hidden from the site) for audit and rollback. Default: drop it.")

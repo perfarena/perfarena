@@ -494,6 +494,30 @@ def _reconcile_progress(progress: dict, base: str, api_key: str | None,
     return pruned
 
 
+def _generation_failure_verdict(err: str | None) -> str | None:
+    """Verdict to RECORD for a failed generation, or None to leave it for a
+    retry. A timeout (the hard cap or the provider's read timeout) is the
+    model failing to answer in time: `generation_timeout`. An infrastructure
+    error (rate limit, gateway, dropped connection, tunnel) is not the model's
+    fault, so it stays a retryable `failed` tuple. Any other error is
+    `generation_error`. A recorded failure is a failed attempt of the model,
+    which pass@1 counts, instead of a missing cell."""
+    r = (err or "").lower()
+    if "gateway timeout" in r:
+        return None
+    if "timed out" in r or "timeout" in r:
+        return "generation_timeout"
+    infra = ("http 408", "http 425", "http 429", "http 431", "http 5",
+             "gateway", "connection reset", "connection refused",
+             "connection error", "remote end closed", "remotedisconnected",
+             "incompleteread", "broken pipe", "eof occurred", "ssl:", "ngrok",
+             "service unavailable", "rate limit", "too many requests",
+             "request headers are too large", "temporarily unavailable")
+    if any(s in r for s in infra):
+        return None
+    return "generation_error"
+
+
 def _is_transient_generator_failure(reason: str | None) -> bool:
     """Classify a `failed` entry's reason text as transient (auto-retry-able)
     vs permanent (stuck unless the operator passes --retry-failed).
@@ -1546,6 +1570,12 @@ def main() -> None:
                          "own PERFARENA-FLAGS take precedence over this.")
     ap.add_argument("--hints",     action="store_true",
                     help="if a prompt uses {{hints_block}}, include LeetCode hints.")
+    ap.add_argument("--no-record-generation-failures", dest="record_generation_failures",
+                    action="store_false", default=True,
+                    help="leave a timed-out or failed generation as a retryable "
+                         "'failed' tuple instead of recording it as a failed attempt "
+                         "(generation_timeout / generation_error); infrastructure "
+                         "errors such as rate limits are always retried")
     ap.add_argument("--rounds",    type=int, default=1, metavar="N",
                     help="iterative refinement: per cell, give the model up to "
                          "N rounds to produce an accepted solution. Round 0 is "
@@ -2110,13 +2140,27 @@ def main() -> None:
             _save_progress(args.output, progress)
             n_skip += 1
             continue
+        gen_verdict: str | None = None
         if item.status == "ollama_err":
-            print(f"  !! ollama failed: {item.err} (no LC contact, no delay)")
-            progress[key] = {"status": "failed", "reason": f"ollama: {item.err}",
-                             "at": _now_iso()}
-            _save_progress(args.output, progress)
-            n_fail += 1
-            continue
+            gen_verdict = (_generation_failure_verdict(item.err)
+                           if args.record_generation_failures else None)
+            if gen_verdict is None:
+                print(f"  !! ollama failed: {item.err} (no LC contact, no delay)")
+                progress[key] = {"status": "failed", "reason": f"ollama: {item.err}",
+                                 "at": _now_iso()}
+                _save_progress(args.output, progress)
+                n_fail += 1
+                continue
+            print(f"  !! generation failed: {item.err} — recording a failed "
+                  f"attempt ({gen_verdict})")
+            item.code = ""
+            item.trace = {
+                "prompt": None, "system_prompt": None, "raw_response": "",
+                "reasoning": None, "model": model, "provider": provider.name,
+                "endpoint": None, "params": {"temperature": args.temperature},
+                "created_at": _now_iso(),
+                "provider_meta": {"failure": gen_verdict, "error": item.err},
+            }
         if item.status == "cache_miss":
             print(f"  skip: --submit-from-cache and no cached generation for "
                   f"{language}/{slug} (no model call, no LC contact)")
@@ -2195,7 +2239,8 @@ def main() -> None:
         # to LeetCode. Only the truly-skipped statuses (cell_covered, fetch_err,
         # no_code_snippet, ollama_err) bail above.
         code, trace = item.code, item.trace
-        prefailed_reason = "wrong_language_extracted" if item.status == "wrong_language" else None
+        prefailed_reason = ("wrong_language_extracted" if item.status == "wrong_language"
+                            else gen_verdict)
         if prefailed_reason:
             print(f"  ⚠ model emitted non-{language} code — recording as "
                   f"failed (raw response preserved in trace)")
@@ -2272,7 +2317,11 @@ def main() -> None:
             # ---- Build the attempt body ----
             summary = (trace.get("reasoning") or trace.get("raw_response")
                        or "matrix sweep — see structured trace").strip()[:4000] or "x"
-            if prefailed_reason and len(summary) < 20:
+            if prefailed_reason and prefailed_reason.startswith("generation_"):
+                summary = (f"client flagged {prefailed_reason}: the provider call "
+                           "failed, so the model returned no code; the error is in "
+                           "trace.provider_meta")
+            elif prefailed_reason and len(summary) < 20:
                 summary = (f"client flagged {prefailed_reason}; raw response is "
                            "in trace.raw_response")
             elif len(summary) < 20:

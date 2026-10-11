@@ -363,6 +363,116 @@ def _killpg(proc: subprocess.Popen, pgid: int | None = None) -> None:
             pass
 
 
+# ---- containment: no solution may take the runner down ----------------------
+# A solution can write without bound (e.g. a PHP warning in a hot loop on an
+# input it does not expect: 65 MB/s measured on bicho). Reading such a pipe
+# into memory grew the runner to 14.6 GB until the kernel OOM-killed it. Every
+# child pipe is therefore drained by _BoundedDrain, which keeps only the head
+# and the tail of the output, and a child that writes more than
+# PERFARENA_MAX_OUTPUT_BYTES is killed and fails. Every child also gets the
+# highest OOM score (_contain), so under memory pressure the kernel kills the
+# solution, never the runner.
+_OUTPUT_LIMIT = int(os.environ.get("PERFARENA_MAX_OUTPUT_BYTES", str(64 * 1024 * 1024)))
+_KEEP_HEAD = 64 * 1024
+_KEEP_TAIL = 256 * 1024
+
+
+class _BoundedDrain:
+    """Drain one child pipe on a thread, keeping its first _KEEP_HEAD and last
+    _KEEP_TAIL bytes and counting the rest. Past _OUTPUT_LIMIT bytes it calls
+    `on_limit` once (the caller kills the child's group) and keeps discarding
+    until EOF. `on_line`, when given, receives each complete line (decoded)
+    until the limit is reached, for live progress logging."""
+
+    def __init__(self, pipe: Any, on_limit: Any = None, on_line: Any = None) -> None:
+        self.head = bytearray()
+        self.tail = bytearray()
+        self.total = 0
+        self.over_limit = False
+        self._pipe, self._on_limit, self._on_line = pipe, on_limit, on_line
+        self._partial = b""
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        try:
+            fd = self._pipe.fileno()
+            while True:
+                b = os.read(fd, 65536)
+                if not b:
+                    break
+                self.total += len(b)
+                room = _KEEP_HEAD - len(self.head)
+                if room > 0:
+                    self.head += b[:room]
+                    b_rest = b[room:]
+                else:
+                    b_rest = b
+                if b_rest:
+                    self.tail += b_rest
+                    if len(self.tail) > _KEEP_TAIL:
+                        del self.tail[:len(self.tail) - _KEEP_TAIL]
+                if self._on_line is not None and not self.over_limit:
+                    self._partial += b
+                    *lines, self._partial = self._partial.split(b"\n")
+                    for line in lines:
+                        try:
+                            self._on_line(line.decode("utf-8", "replace"))
+                        except Exception:  # noqa: BLE001 — logging must not kill the run
+                            pass
+                if not self.over_limit and self.total > _OUTPUT_LIMIT:
+                    self.over_limit = True
+                    self._partial = b""
+                    if self._on_limit is not None:
+                        try:
+                            self._on_limit()
+                        except Exception:  # noqa: BLE001
+                            pass
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            try:
+                self._pipe.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def join(self, timeout: "float | None" = None) -> None:
+        self._thread.join(timeout)
+
+    def text(self) -> str:
+        kept = len(self.head) + len(self.tail)
+        if self.total <= kept:
+            return (bytes(self.head) + bytes(self.tail)).decode("utf-8", "replace")
+        note = f"\n[... {self.total - kept} bytes of output omitted ...]\n"
+        if self.over_limit:
+            note += (f"[output limit exceeded: more than {_OUTPUT_LIMIT} bytes; "
+                     "the process was killed]\n")
+        return (self.head.decode("utf-8", "replace") + note
+                + self.tail.decode("utf-8", "replace"))
+
+
+def _contain(cmd: list[str]) -> list[str]:
+    """Prefix `cmd` so the process (and everything it spawns) has the highest
+    OOM score: under memory pressure the kernel then kills the solution, not
+    the runner. An unprivileged process may raise its own score. The shell
+    execs the command, so the pid stays the same (wait4 still sees the
+    program). A no-op where /proc/self/oom_score_adj does not exist (macOS)."""
+    return ["sh", "-c", '{ echo 1000 > /proc/self/oom_score_adj; } 2>/dev/null; exec "$@"',
+            "sh", *cmd]
+
+
+def _raise_oom_score(pid: int) -> None:
+    """Give an already started child the highest OOM score, from the parent.
+    Used where a wrapper shell would distort the measurement (_peak_rss_run):
+    Linux keeps a process's peak RSS across exec, so `sh -c ... exec` would add
+    the shell's footprint. A no-op where /proc does not exist (macOS)."""
+    try:
+        with open(f"/proc/{pid}/oom_score_adj", "w") as f:
+            f.write("1000")
+    except OSError:
+        pass
+
+
 def _run_grouped(
     cmd: list[str], cwd: Path, timeout: float,
     env: "dict[str, str] | None" = None,
@@ -382,62 +492,22 @@ def _run_grouped(
 
     When `on_stderr_line` is given, the child's stderr is streamed line by line
     to that callback as each line arrives, so a long step (a 20-min CLBG
-    measure) can report live progress instead of looking hung. The full stdout
-    and stderr are still captured for the return value, and the
-    group-kill-on-timeout contract is unchanged. When it is None the fast
-    `communicate()` path is used, byte-for-byte the previous behaviour for every
-    existing caller."""
+    measure) can report live progress instead of looking hung. The returned
+    stdout and stderr keep only their head and tail (_BoundedDrain), and a
+    child whose output passes the output limit is killed."""
     proc = subprocess.Popen(
-        cmd, cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, start_new_session=True, env=env,
+        _contain(cmd), cwd=str(cwd), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        start_new_session=True, env=env,
     )
     # The child's group id IS its pid (start_new_session). Use proc.pid rather
     # than os.getpgid — see _killpg for why (never risk killing our own group).
     pgid = proc.pid
-    if on_stderr_line is None:
-        try:
-            try:
-                out, err = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                _killpg(proc, pgid)
-                try:
-                    out, err = proc.communicate(timeout=5)  # drain the dead group
-                except subprocess.TimeoutExpired:
-                    # A process OUTSIDE the group still holds the pipe open. The
-                    # child itself is dead; do NOT block the single-threaded
-                    # runner waiting for a straggler's EOF — drop the output.
-                    out, err = None, None
-                raise
-            return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
-        finally:
-            _killpg(proc, pgid)
-
-    # Streaming path: drain both pipes in reader threads so stderr progress
-    # lines surface live, while still accumulating the complete output.
-    out_buf: "list[str]" = []
-    err_buf: "list[str]" = []
-
-    def _drain(pipe, sink, cb):
-        try:
-            for line in pipe:
-                sink.append(line)
-                if cb is not None:
-                    try:
-                        cb(line.rstrip("\n"))
-                    except Exception:  # noqa: BLE001 — logging must not kill the run
-                        pass
-        finally:
-            try:
-                pipe.close()
-            except Exception:  # noqa: BLE001
-                pass
-
-    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf, None),
-                             daemon=True)
-    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf,
-                                                  on_stderr_line), daemon=True)
-    t_out.start()
-    t_err.start()
+    # Both pipes are drained by bounded readers (head + tail only), so neither
+    # a chatty compiler nor a flooding solution can grow the runner's memory;
+    # past the output limit the whole group is killed.
+    kill = lambda: _killpg(proc, pgid)  # noqa: E731
+    d_out = _BoundedDrain(proc.stdout, on_limit=kill)
+    d_err = _BoundedDrain(proc.stderr, on_limit=kill, on_line=on_stderr_line)
     try:
         try:
             proc.wait(timeout=timeout)
@@ -447,10 +517,9 @@ def _run_grouped(
             raise
         # Let the readers flush the tail. Daemon + bounded join so a straggler
         # holding the pipe open never wedges the single-threaded runner.
-        t_out.join(5)
-        t_err.join(5)
-        return subprocess.CompletedProcess(
-            cmd, proc.returncode, "".join(out_buf), "".join(err_buf))
+        d_out.join(5)
+        d_err.join(5)
+        return subprocess.CompletedProcess(cmd, proc.returncode, d_out.text(), d_err.text())
     finally:
         _killpg(proc, pgid)
 
@@ -692,16 +761,15 @@ def _make_energy_backend() -> _EnergyBackend:
 
 def _run_harness_measured(
     cell: Path, harness_lang: str, budget: float, idx: int, timeout: float,
-    *, energy: "_EnergyBackend | None" = None, poll_rss: bool = False,
+    *, energy: "_EnergyBackend | None" = None,
 ) -> dict[str, Any]:
     """Run `run_harness.sh <lang> <budget> <idx>` FROM `cell`. Returns raw
     per-invocation numbers; per-op normalization is the caller's job.
 
     `energy` is a shared per-submission backend (RAPL or reused codecarbon)
-    whose begin()/end() bracket the run — None on the memory pass. `poll_rss`
-    polls the process-tree peak RSS. Energy and RSS are kept in SEPARATE passes
-    so the memory poll never perturbs the energy/time numbers — the CLBG
-    methodology's separate-run rule (see `_measure_curated_looped`)."""
+    whose begin()/end() bracket the run. Peak memory is measured in a SEPARATE
+    pass (_run_harness_peak_rss), so it never perturbs the energy/time numbers —
+    the CLBG methodology's separate-run rule (see `_measure_curated_looped`)."""
     run_harness = _selection_dir() / "run_harness.sh"
     cmd = ["bash", str(run_harness), harness_lang, str(budget), str(idx)]
 
@@ -718,46 +786,24 @@ def _run_harness_measured(
              f"in {time.monotonic() - _ts:.2f}s")
 
     _log(f"case idx={idx} launch: {' '.join(cmd)} timeout={timeout:.0f}s "
-         f"energy={energy is not None} rss={poll_rss}")
+         f"energy={energy is not None}")
     t0 = time.monotonic()
     proc = subprocess.Popen(
-        cmd, cwd=str(cell), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-        text=True, start_new_session=True, env=env,
+        _contain(cmd), cwd=str(cell), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        start_new_session=True, env=env,
     )
     # The child's group id IS its pid (start_new_session); use proc.pid, never
     # os.getpgid (which can transiently return the RUNNER's own group). Lets us
     # reap stragglers after the leader exits without risking a self-kill.
     pgid = proc.pid
 
-    # Drain stderr on a background thread. The harness emits one small line,
-    # but a crashing solution or a chatty compiler can exceed the ~64 KB pipe
-    # buffer; if we only read after exit the child blocks on write and we
-    # deadlock until the timeout. A reader thread keeps the pipe empty.
-    stderr_chunks: list[str] = []
-
-    def _drain() -> None:
-        try:
-            if proc.stderr is not None:
-                stderr_chunks.append(proc.stderr.read())
-        except Exception:  # noqa: BLE001
-            pass
-
-    reader = threading.Thread(target=_drain, daemon=True)
-    reader.start()
-
-    peak_rss = 0
-    ps_root = None
-    if poll_rss:
-        try:
-            import psutil  # type: ignore
-            ps_root = psutil.Process(proc.pid)
-        except Exception:  # noqa: BLE001
-            ps_root = None
+    # Drain stderr on a background thread so the child never blocks on a full
+    # pipe. The harness emits one small line, but a solution can flood stderr
+    # (e.g. a warning per call): the bounded reader keeps only head + tail and
+    # kills the group past the output limit, so the runner's memory stays flat.
+    reader = _BoundedDrain(proc.stderr, on_limit=lambda: _killpg(proc, pgid))
 
     timed_out = False
-    # Poll cadence: tight when sampling RSS (to catch the peak), relaxed
-    # otherwise (we only need to notice exit / timeout).
-    cadence = 0.003 if poll_rss else 0.01
     while proc.poll() is None:
         if time.monotonic() - t0 > timeout:
             _log(f"case idx={idx} TIMED OUT after {timeout:.0f}s — killing process group")
@@ -768,21 +814,18 @@ def _run_harness_measured(
                 pass
             timed_out = True
             break
-        if ps_root is not None:
-            try:
-                procs = [ps_root, *ps_root.children(recursive=True)]
-                peak_rss = max(peak_rss, sum(p.memory_info().rss for p in procs))
-            except Exception:  # noqa: BLE001
-                pass
-        time.sleep(cadence)
+        time.sleep(0.01)   # we only need to notice exit / timeout
     wall_s = time.monotonic() - t0
     reader.join(timeout=5)
+    output_limit_exceeded = reader.over_limit
     # Reap any straggler still in the harness group — a build daemon or a
     # detached measurement binary that outlived `bash run_harness.sh`. On the
     # normal path the leader has already exited so this is a no-op; on timeout
     # the group was already killed above. Either way nothing survives the call.
     _killpg(proc, pgid)
-    stderr = "".join(stderr_chunks)
+    stderr = reader.text()
+    if output_limit_exceeded:
+        _log(f"case idx={idx} killed: output passed {_OUTPUT_LIMIT} bytes")
     _log(f"case idx={idx} exit={proc.returncode if not timed_out else 'KILLED'} "
          f"wall={wall_s:.2f}s")
 
@@ -803,7 +846,7 @@ def _run_harness_measured(
 
     if timed_out:
         return {"exit_code": 124, "wall_s": wall_s, "energy_j": None,
-                "energy_source": "none", "peak_rss_kb": peak_rss // 1024,
+                "energy_source": "none",
                 "iters": None, "meas_s": None, "case_name": None,
                 "harness_line": "", "stderr_tail": stderr[-2000:],
                 "timed_out": True}
@@ -811,9 +854,120 @@ def _run_harness_measured(
     parsed = _parse_harness_line(stderr)
     return {
         "exit_code": int(proc.returncode), "wall_s": wall_s, "energy_j": energy_j,
-        "energy_source": energy_source, "peak_rss_kb": peak_rss // 1024,
-        "stderr_tail": stderr[-2000:], "timed_out": False, **parsed,
+        "energy_source": energy_source,
+        "stderr_tail": stderr[-2000:], "timed_out": False,
+        "output_limit_exceeded": output_limit_exceeded, **parsed,
     }
+
+
+def _peak_rss_helper() -> Path:
+    """Path of the compiled selection/peak_rss.c for this platform, built on
+    first use. The name carries the platform because the Energy-Languages tree
+    may be shared between a macOS host and a Linux container."""
+    src = _selection_dir() / "peak_rss.c"
+    exe = (_selection_dir() / ".perf_build"
+           / f"peak_rss-{platform.system()}-{platform.machine()}")
+    if not exe.exists() or exe.stat().st_mtime < src.stat().st_mtime:
+        exe.parent.mkdir(exist_ok=True)
+        subprocess.run(["cc", "-O2", "-o", str(exe), str(src)], check=True,
+                       capture_output=True, timeout=60)
+    return exe
+
+
+def _peak_rss_run(cmd: list[str], cwd: Path, env: "dict[str, str]",
+                  timeout: float) -> dict[str, Any]:
+    """Run `cmd` once and return the peak resident set size of the process it
+    starts, from the kernel's ru_maxrss as `wait4` reports it when the process
+    exits: the largest single process among the child and the descendants it
+    waited for. This is the number GNU `time -v` prints as "Maximum resident
+    set size", the memory method of the cross-language energy studies, and
+    both competitions use it. Like GNU time, the small peak_rss helper starts
+    the program: Linux counts the runner's own memory in the ru_maxrss of a
+    process that the runner starts directly. stdout is discarded (mandelbrot
+    writes a binary image there); stderr is drained on a thread and kept as a
+    tail."""
+    t0 = time.monotonic()
+    out = cwd / ".peak_rss"
+    out.unlink(missing_ok=True)
+    proc = subprocess.Popen(
+        [str(_peak_rss_helper()), str(out), *cmd], cwd=str(cwd),
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+        start_new_session=True, env=env,
+    )
+    _raise_oom_score(proc.pid)
+    reader = _BoundedDrain(proc.stderr, on_limit=lambda: _killpg(proc))
+    timed_out = False
+    while True:
+        pid, status, ru = os.wait4(proc.pid, os.WNOHANG)
+        if pid == proc.pid:
+            break
+        if time.monotonic() - t0 > timeout:
+            timed_out = True
+            _killpg(proc)
+            pid, status, ru = os.wait4(proc.pid, 0)
+            break
+        time.sleep(0.01)
+    proc.returncode = os.waitstatus_to_exitcode(status)   # reaped here, not by Popen
+    wall_s = time.monotonic() - t0
+    reader.join(timeout=5)
+    _killpg(proc, proc.pid)   # reap stragglers left in the group
+    try:
+        maxrss = int(out.read_text())
+        out.unlink()
+    except (OSError, ValueError):   # killed before the helper wrote it
+        maxrss = 0
+    peak_kb = maxrss // 1024 if sys.platform == "darwin" else maxrss   # bytes on macOS
+    return {"exit_code": 124 if timed_out else proc.returncode, "wall_s": wall_s,
+            "peak_rss_kb": peak_kb, "timed_out": timed_out,
+            "output_limit_exceeded": reader.over_limit,
+            "stderr_tail": reader.text()[-2000:]}
+
+
+def _harness_env(mode: str) -> "dict[str, str]":
+    """Environment for run_harness.sh in PERFARENA_HARNESS_MODE `mode`
+    (all | build | run), with the same PYTHONPATH/PATH as the energy pass."""
+    env = os.environ.copy()
+    prev_pp = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{_root()}:{prev_pp}" if prev_pp else str(_root())
+    env["PATH"] = f"{str(Path(sys.executable).parent)}:{env.get('PATH', '')}"
+    env["PERFARENA_HARNESS_MODE"] = mode
+    return env
+
+
+def _run_harness_build(cell: Path, harness_lang: str, timeout: float) -> tuple[bool, str]:
+    """Compile the solution and its driver ONCE before the memory pass
+    (run_harness.sh build mode), so the measured runs contain no compiler."""
+    cmd = ["bash", str(_selection_dir() / "run_harness.sh"), harness_lang, "0", "0"]
+    try:
+        r = _run_grouped(cmd, cwd=cell, timeout=timeout, env=_harness_env("build"))
+    except subprocess.TimeoutExpired:
+        return False, f"build timed out after {timeout:.0f}s"
+    return r.returncode == 0, (r.stderr or "")[-1000:]
+
+
+def _run_harness_peak_rss(cell: Path, harness_lang: str, budget: float, idx: int,
+                          timeout: float, *, prebuilt: bool) -> dict[str, Any]:
+    """One memory-pass run of one case. When the build succeeded, ask
+    run_harness.sh for the prebuilt program's command line (argv mode) and
+    start that program DIRECTLY: Linux keeps a process's peak RSS across exec,
+    so starting it through bash would report bash's ~3 MB for a solution that
+    uses less. Otherwise (or for a language without a build/run split) fall
+    back to the combined path. Peak RSS comes from _peak_rss_run, as on CLBG."""
+    script = str(_selection_dir() / "run_harness.sh")
+    if prebuilt:
+        try:
+            r = subprocess.run(["bash", script, harness_lang, str(budget), str(idx)],
+                               cwd=str(cell), env=_harness_env("argv"),
+                               capture_output=True, timeout=60)
+            argv = [a.decode() for a in r.stdout.split(b"\0") if a] if r.returncode == 0 else []
+        except subprocess.TimeoutExpired:
+            argv = []
+        if argv:
+            env = _harness_env("run")
+            env["PERFARENA_TS_PREBUILT"] = "1"   # read by harness_ts.js only
+            return _peak_rss_run(argv, cell, env, timeout)
+    cmd = ["bash", script, harness_lang, str(budget), str(idx)]
+    return _peak_rss_run(cmd, cell, _harness_env("run" if prebuilt else "all"), timeout)
 
 
 # Sentinel: when passed as `energy_backend`, _measure_curated_looped builds and
@@ -874,6 +1028,14 @@ def _measure_curated_looped(
             return per_case_timeout
         return max(1.0, min(per_case_timeout, deadline - time.perf_counter()))
 
+    # Memory pass: build once, then measure the prebuilt program for each case,
+    # so its peak RSS never includes a compiler (run_harness.sh build/run).
+    mem_prebuilt = False
+    if measure_memory:
+        mem_prebuilt, build_note = _run_harness_build(cell, harness_lang, per_case_timeout)
+        _log(f"memory build {'ok' if mem_prebuilt else 'failed, using the combined path'}"
+             + ("" if mem_prebuilt else f": {build_note[-200:]}"))
+
     for (idx, w, name) in cases:
         if deadline is not None and time.perf_counter() >= deadline:
             deadline_exceeded = True
@@ -888,8 +1050,7 @@ def _measure_curated_looped(
 
         if measure_energy:
             r = _run_harness_measured(cell, harness_lang, budget, idx,
-                                      _case_timeout(), energy=energy_backend,
-                                      poll_rss=False)
+                                      _case_timeout(), energy=energy_backend)
             iters = r.get("iters") or 0
             meas_s = r.get("meas_s")
             wall_s = r.get("wall_s") or 0.0
@@ -915,9 +1076,8 @@ def _measure_curated_looped(
             })
 
         if measure_memory:
-            m = _run_harness_measured(cell, harness_lang, mem_budget, idx,
-                                      _case_timeout(), energy=None,
-                                      poll_rss=True)
+            m = _run_harness_peak_rss(cell, harness_lang, mem_budget, idx,
+                                      _case_timeout(), prebuilt=mem_prebuilt)
             peak_rss_kb = max(peak_rss_kb, m.get("peak_rss_kb") or 0)
             row["peak_rss_kb_case"] = m.get("peak_rss_kb")
             if m.get("exit_code") not in (0, None):
@@ -946,6 +1106,8 @@ def _measure_curated_looped(
         "iterations": total_iters,
         "energy_source": energy_source or "none",
         "peak_rss_kb": peak_rss_kb,
+        "memory_method": ("peak-rss-helper-prebuilt" if mem_prebuilt else "peak-rss-helper")
+                         if measure_memory else None,
         "per_case": per_case,
         "n_cases": len(cases),
         "any_nonzero_exit": any_nonzero_exit,
@@ -1168,91 +1330,35 @@ def _normalize_solution_code(language: str, code: str, is_clbg: bool = False) ->
     return code
 
 
-_MEM_HELPER = r"""
-import json, resource, subprocess, sys
-try:
-    # Discard the program's stdout. The mem pass only needs peak RSS from
-    # getrusage (correctness was already checked in the validate pass), and
-    # mandelbrot — the one binary-output CLBG benchmark — writes a raw PBM image
-    # there. Capturing it with text=True decoded that binary as UTF-8 and crashed
-    # the helper (UnicodeDecodeError), which is why memory came back null for
-    # every mandelbrot run. Keep only stderr for the diagnostic tail, decoded
-    # leniently. Discarding stdout does not change the child's RSS.
-    rc = subprocess.run(['make', '-s', 'run'], cwd=sys.argv[1],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                        text=True, errors='replace', timeout=float(sys.argv[2]))
-except subprocess.TimeoutExpired as e:
-    print(json.dumps({'ok': False, 'note': f'timeout: {e}'}))
-    sys.exit(0)
-u = resource.getrusage(resource.RUSAGE_CHILDREN)
-print(json.dumps({
-    'ok': rc.returncode == 0,
-    'returncode': rc.returncode,
-    'ru_maxrss': u.ru_maxrss,
-    'stderr_tail': (rc.stderr or '')[-1000:],
-}))
-"""
-
-
 def _measure_mem(cell: Path, timeout: float) -> tuple[float | None, dict[str, Any]]:
-    """Peak-RSS-in-MB via `make run` in a FRESH Python subprocess. The
-    fresh process is important: `getrusage(RUSAGE_CHILDREN)` is
-    cumulative across the parent's children, so calling it in this
-    same interpreter (which already ran `make measure` with N heavy
-    codecarbon invocations) would return the peak of ALL prior
-    children — not the mem run's. Spawning a helper gives it a fresh
-    RUSAGE_CHILDREN starting at 0.
+    """Peak RSS in MB of one `make run`, from ru_maxrss as `wait4` reports it
+    for the `make` process (see _peak_rss_run), the same method as the
+    LeetCode memory pass. `make run` only runs the already compiled program.
 
-    Follows the original Energy-Languages methodology: memory is
-    measured in a SEPARATE run from energy+time so the memory
-    tracker's overhead (`getrusage` / `time -v`) doesn't inflate the
+    Follows the original Energy-Languages methodology: memory is measured in
+    a SEPARATE run from energy+time, so measuring it never perturbs the
     energy/time numbers.
 
     Returns (memory_mb, diagnostic_dict). memory_mb is None when the
-    measurement failed for any reason (child crashed, `make run`
-    target missing, timeout) — the caller still records the run but
-    leaves memory_mb null.
+    measurement failed for any reason (child crashed, `make run` target
+    missing, timeout); the caller still records the run but leaves
+    memory_mb null.
     """
     env = os.environ.copy()
     root = _root()
     prev_pp = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{root}:{prev_pp}" if prev_pp else str(root)
-    try:
-        # Group-safe: the helper spawns `make run` -> the measurement binary,
-        # all inside the helper's process group. _run_grouped SIGKILLs that
-        # whole group on timeout and on return, so an overrunning `make run`
-        # (or the helper's own inner make-timeout, which orphans the binary
-        # within the group) leaves nothing burning CPU behind.
-        rc = _run_grouped(
-            [sys.executable, "-c", _MEM_HELPER, str(cell), str(timeout)],
-            cwd=cell, timeout=timeout + 10.0, env=env,
-        )
-    except subprocess.TimeoutExpired as e:
-        return None, {"note": f"mem helper timeout: {e}"}
-    if rc.returncode != 0:
-        return None, {
-            "note": f"mem helper crashed rc={rc.returncode}",
-            "stderr": rc.stderr[-1000:],
-        }
-    try:
-        payload = json.loads(rc.stdout.strip().splitlines()[-1])
-    except (json.JSONDecodeError, IndexError):
-        return None, {"note": f"mem helper produced no JSON: {rc.stdout[-400:]}"}
-    if not payload.get("ok"):
-        return None, {
-            "note": "mem helper reported failure",
-            **payload,
-        }
-    ru_maxrss = int(payload["ru_maxrss"])
-    # ru_maxrss unit is bytes on macOS, kilobytes on Linux — the
-    # child process ran on the same platform as the parent so it
-    # follows the same rule.
-    mb = (ru_maxrss / (1024 * 1024)) if sys.platform == "darwin" else (ru_maxrss / 1024)
-    return max(mb, 0.0), {
+    r = _peak_rss_run(["make", "-s", "run"], cell, env, timeout)
+    if r["timed_out"]:
+        return None, {"note": f"mem run timed out after {timeout:.0f}s"}
+    if r["exit_code"] != 0:
+        return None, {"note": f"mem run failed rc={r['exit_code']}",
+                      "stderr": r["stderr_tail"][-1000:]}
+    return max(r["peak_rss_kb"] / 1024.0, 0.0), {
         "stage": "mem",
-        "returncode": payload.get("returncode"),
-        "ru_maxrss": ru_maxrss,
-        "ru_maxrss_unit": "bytes" if sys.platform == "darwin" else "kilobytes",
+        "returncode": r["exit_code"],
+        "peak_rss_kb": r["peak_rss_kb"],
+        "memory_method": "peak-rss-helper",
     }
 
 
@@ -1823,6 +1929,7 @@ def _run_one_measurement(cell, language: str, title_slug: str,
         energy_j_per_op=e_op,
         time_us_per_op=t_us,
         peak_rss_kb=looped.get("peak_rss_kb"),
+        memory_method=looped.get("memory_method"),
         any_nonzero_exit=looped.get("any_nonzero_exit"),
         measure_wall_s=looped_wall_s,
         per_case=looped.get("per_case"),
