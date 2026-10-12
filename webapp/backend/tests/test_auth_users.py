@@ -96,14 +96,15 @@ def test_register_with_password_then_login(client):
         "email": "logmein@test.dev", "password": "nope"})
     assert bad.status_code == 401
 
-    # correct password returns the api key
+    # correct password returns a session token (API keys are hashed at rest
+    # and cannot be handed back), sent in the api_key field
     ok = client.post("/api/login", json={
         "email": "logmein@test.dev", "password": "correct-horse-battery"})
     assert ok.status_code == 200
     body = ok.json()
     assert body["email"] == "logmein@test.dev"
-    assert body["api_key"].startswith("arena_")
-    # that key now authenticates
+    assert body["api_key"].startswith("sess.")
+    # that token now authenticates
     me = client.get("/api/me", headers={"Authorization": f"Bearer {body['api_key']}"})
     assert me.status_code == 200
 

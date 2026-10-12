@@ -17,12 +17,13 @@ Pass@1 (Chen estimator, denominator = all supported problems) and pass@full
 (at-least-one-accepted per problem, denominator = all supported problems)
 are unchanged.
 """
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.dispatch import _aggregate_attempt        # noqa: F401   used indirectly via API
 
 
 def _submit(client, k, attempts):
     body = {
+        "harness_slug": HARNESS,
         "model_name": "passk-test", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in 1234567890",
         "model_params": {"temperature": 0.0},

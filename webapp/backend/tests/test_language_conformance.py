@@ -25,7 +25,7 @@ Two test surfaces:
 import sys
 from pathlib import Path
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 
 
 def test_language_mismatch_marks_run(client):
@@ -33,6 +33,7 @@ def test_language_mismatch_marks_run(client):
     dispatch flips status_msg to 'Language mismatch' and the attempt does NOT
     count as accepted toward pass@k."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "lang-cheat", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in prompt 1234567890",
         "model_params": {"temperature": 0.0},
@@ -67,6 +68,7 @@ def test_matching_language_passes_through(client):
     the submission's language) flows through unimpacted — the override only
     fires on a real mismatch, not on every run."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "lang-clean", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in prompt 1234567890",
         "model_params": {"temperature": 0.0},

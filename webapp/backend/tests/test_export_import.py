@@ -10,7 +10,7 @@ same DB to confirm:
 """
 import json
 
-from conftest import ADMIN, GOOD_CODE, TRACE, USER
+from conftest import ADMIN, GOOD_CODE, TRACE, USER, HARNESS
 
 
 def test_export_endpoint_lists_tables(client):
@@ -35,6 +35,7 @@ def test_export_json_round_trips(client):
     natural-key tables (users, prompts, problems) are no-ops; submissions/
     attempts/runs all re-key and DOUBLE the existing counts."""
     sid = client.post("/api/submissions", headers=ADMIN, json={
+        "harness_slug": HARNESS,
         "model_name": "export-rt-model", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},

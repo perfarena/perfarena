@@ -35,16 +35,19 @@ os.environ["ARENA_LEADERBOARD_GATE"] = "on"
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select       # noqa: E402
 
+from app.auth import hash_api_key           # noqa: E402
 from app.db import engine, init_db          # noqa: E402
 from app.main import app, _seed_default_competitions, _seed_default_prompts   # noqa: E402
 from app.models import (                    # noqa: E402
-    Problem, User, UserRole, UserStatus,
+    Competition, Problem, User, UserRole, UserStatus,
 )
 
 ADMIN_KEY = "arena_test_admin"
 USER_KEY = "arena_test_user"
 
 ADMIN = {"Authorization": f"Bearer {ADMIN_KEY}"}
+# The harness every test submission names (seeded by init_db).
+HARNESS = "leetcode"
 USER = {"Authorization": f"Bearer {USER_KEY}"}
 
 SEED_PROBLEMS = [
@@ -78,17 +81,29 @@ def _seed():
                     external_id=ext, title_slug=slug, title=title, level=lvl,
                     tags=tags, content=f"# {title}\n\nSolve **{slug}**.", hints=None,
                 ))
-        if not s.exec(select(User).where(User.api_key == ADMIN_KEY)).first():
+        # auth.py stores and compares only the sha256 of an API key.
+        if not s.exec(select(User).where(
+                User.api_key == hash_api_key(ADMIN_KEY))).first():
             s.add(User(email="admin@test.dev", display_name="Admin",
                        role=UserRole.admin, status=UserStatus.approved,
-                       api_key=ADMIN_KEY))
+                       api_key=hash_api_key(ADMIN_KEY)))
             s.add(User(email="user@test.dev", display_name="Comp User",
                        org="Acme Labs", role=UserRole.user,
-                       status=UserStatus.approved, api_key=USER_KEY))
+                       status=UserStatus.approved, api_key=hash_api_key(USER_KEY)))
         s.commit()
     # Seed AFTER problems exist so the default competition's membership rows
     # cover the test problem set.
     _seed_default_competitions()
+    # A fresh competition allows no harness; submissions name one
+    # (harness_slug is required), so bless the seeded LeetCode harness.
+    with Session(engine) as s:
+        comp = s.exec(select(Competition).where(
+            Competition.slug == "leetcode-99-perf")).one()
+        if HARNESS not in (comp.compatible_harness_slugs or []):
+            comp.compatible_harness_slugs = [*(comp.compatible_harness_slugs or []),
+                                             HARNESS]
+            s.add(comp)
+            s.commit()
     yield
 
 
@@ -128,7 +143,7 @@ def make_submission(client: TestClient, slugs=("two-sum", "add-digits"),
     body = {
         "model_name": "test-model", "model_version": "v1",
         "language": "python3", "prompt_template": "solve the problem cleanly",
-        "model_params": {"temperature": 0.0},
+        "model_params": {"temperature": 0.0}, "harness_slug": HARNESS,
         "attempts": [
             {"title_slug": s, "code": GOOD_CODE, "inference_trace": TRACE}
             for s in slugs

@@ -7,7 +7,7 @@ this scope, the rewritten-99 doubles the universe and reports 45/198 for
 a canonical sweep that's actually 45/99 complete."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import (
     Competition, CompetitionProblem, Problem, Submission,
@@ -17,7 +17,8 @@ from app.models import (
 def _make_competition(slugs: list[str], comp_slug: str = "scope-test") -> int:
     with Session(engine) as s:
         comp = Competition(slug=comp_slug, name="Scope Test",
-                           kind="other", status="active")
+                           kind="other", status="active",
+                           compatible_harness_slugs=[HARNESS])
         s.add(comp); s.commit(); s.refresh(comp)
         pid_by_slug = {p.title_slug: p.id for p in s.exec(
             select(Problem).where(Problem.title_slug.in_(slugs))).all()}
@@ -34,6 +35,7 @@ def test_total_problems_uses_competition_count(client):
     comp_id = _make_competition(["two-sum", "add-digits", "valid-parentheses"],
                                 comp_slug="tiny-comp")
     body = {
+        "harness_slug": HARNESS,
         "model_name": "scope-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -56,6 +58,7 @@ def test_default_competition_is_leetcode_99_perf(client):
     is the canonical 99 (NOT the 99 + 99 rewritten = 198 the test DB now has
     if the variants competition is present)."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "default-comp-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 9876543210",
         "model_params": {"temperature": 0.0},
@@ -77,6 +80,7 @@ def test_default_competition_is_leetcode_99_perf(client):
 
 def test_unknown_competition_slug_is_400(client):
     body = {
+        "harness_slug": HARNESS,
         "model_name": "bad-comp", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1111111111",
         "model_params": {"temperature": 0.0},
@@ -94,6 +98,7 @@ def test_attempt_outside_competition_is_rejected(client):
     outside scope and inflate its 'complete' count."""
     _make_competition(["two-sum"], comp_slug="single-problem-comp")
     body = {
+        "harness_slug": HARNESS,
         "model_name": "out-of-scope-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234512345",
         "model_params": {"temperature": 0.0},
@@ -117,6 +122,7 @@ def test_append_respects_submission_competition_scope(client):
     Otherwise the original scope check is bypassable via append."""
     _make_competition(["two-sum"], comp_slug="append-scope-test")
     create_body = {
+        "harness_slug": HARNESS,
         "model_name": "append-scope-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 8888888888",
         "model_params": {"temperature": 0.0},
@@ -148,6 +154,7 @@ def test_eligibility_universe_per_competition(client, monkeypatch):
     # force-set pass_at_1 high so the rate gate passes.
     _make_competition(["two-sum", "add-digits"], comp_slug="two-prob-comp")
     body = {
+        "harness_slug": HARNESS,
         "model_name": "univ-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 2222222222",
         "model_params": {"temperature": 0.0},

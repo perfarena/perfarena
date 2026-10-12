@@ -6,13 +6,14 @@ endpoint returns rich activity stats per row so the page surfaces submission
 counts, languages, and freshness without N+1 round-trips."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import RegisteredModel
 
 
 def _submit(client, name, version, language="python3"):
     body = {
+        "harness_slug": HARNESS,
         "model_name": name, "model_version": version,
         "language": language, "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},

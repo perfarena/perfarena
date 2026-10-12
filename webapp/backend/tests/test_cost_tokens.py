@@ -8,11 +8,12 @@
     attempt reports the field — so a genuinely-free ($0) submission is
     distinguishable from a pre-feature one with no data.
 """
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 
 
 def _submit(client, attempts, k=1):
     body = {
+        "harness_slug": HARNESS,
         "model_name": "cost-test", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in 1234567890",
         "model_params": {"temperature": 0.0},

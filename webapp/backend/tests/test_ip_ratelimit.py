@@ -11,7 +11,7 @@ flips it on with a tiny cap and walks through the contract:
 """
 import pytest
 
-from conftest import ADMIN
+from conftest import ADMIN, HARNESS
 from app import ip_ratelimit
 
 
@@ -78,6 +78,7 @@ def test_non_get_requests_are_not_rate_limited(client):
     """Writes have their own per-user limits (submission cooldown / daily
     cap). The IP-GET limiter must not double-count them."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "rl-write", "model_version": "v1",
         "language": "python3", "prompt_template": "x" * 30,
         "model_params": {"temperature": 0.0},

@@ -3,7 +3,7 @@
 axis swapped: prompts on rows, model held fixed."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import PromptTemplate, Submission, SubmissionStatus
 
@@ -28,6 +28,7 @@ def _seed_prompts(*names):
 
 def _submit(client, model, ver, lang, prompt_id, slug="two-sum"):
     body = {
+        "harness_slug": HARNESS,
         "model_name": model, "model_version": ver,
         "language": lang, "prompt_template": "solve cleanly 1234567890",
         "prompt_id": prompt_id,

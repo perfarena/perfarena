@@ -5,7 +5,7 @@ so for LC-only data paths every attempt's value stays null and the front-end
 omits the column / stat — these tests verify the SERVER-side wiring."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Submission
 
@@ -18,6 +18,7 @@ def _submit_with_energy(client, energies):
         for slug, e in zip(slugs, energies)
     ]
     body = {
+        "harness_slug": HARNESS,
         "model_name": "energy-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -39,6 +40,7 @@ def test_total_generation_energy_none_when_unreported(client):
     """Submissions without energy fields (the LC-only case) keep totals null
     so the UI can omit the column rather than show '0 J' misleadingly."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "no-energy", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 0192837465",
         "model_params": {"temperature": 0.0},

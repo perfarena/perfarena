@@ -6,7 +6,7 @@ $-per-1M rates to produce a cost envelope.
 These tests live separate from test_competitions.py because the data
 they manufacture (trace dicts with provider_meta.usage) doesn't fit any
 of the existing fixtures."""
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Attempt, Submission
 from sqlmodel import Session, select
@@ -17,6 +17,7 @@ def _submit_minimal(client, *, model="cost-test", language="python3",
     """Build a single-problem submission so we can poke at the resulting
     attempt's trace from inside the test."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": model, "model_version": "v1",
         "language": language,
         "prompt_template": "solve cleanly 1234567890",

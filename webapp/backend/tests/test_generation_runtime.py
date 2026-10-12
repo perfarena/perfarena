@@ -2,7 +2,7 @@
 (total_generation_ms). Mirrors the cost/token accounting tests."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Submission
 
@@ -16,6 +16,7 @@ def _submit_with_gen(client, gen_values):
         for slug, gen in zip(slugs, gen_values)
     ]
     body = {
+        "harness_slug": HARNESS,
         "model_name": "gen-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -37,6 +38,7 @@ def test_total_generation_ms_none_when_unreported(client):
     """A submission whose attempts report no wall_clock_ms keeps total None
     (distinguishes 'not reported' from a genuine 0)."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "gen-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 0192837465",
         "model_params": {"temperature": 0.0},

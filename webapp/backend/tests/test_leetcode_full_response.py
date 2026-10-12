@@ -7,13 +7,14 @@ ship null so the API response doesn't carry a kilobyte of useless JSON
 on the happy path."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Attempt, Run, Submission
 
 
 def _submit_and_get_sid(client) -> int:
     body = {
+        "harness_slug": HARNESS,
         "model_name": "lc-raw-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},

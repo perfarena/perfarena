@@ -7,7 +7,7 @@ synthetic placeholder so no pair is left "missing". These tests pin that
 fallback (the test env has no LeetCode auth, so every pair lands synthetic)."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Baseline, Problem
 
@@ -36,6 +36,7 @@ def test_submission_seeds_synthetic_baseline_for_new_pair(client):
     assert _baseline(pid, lang) is None, "precondition: no baseline for this pair"
 
     body = {
+        "harness_slug": HARNESS,
         "model_name": "ensure-test", "model_version": "v1",
         "language": lang, "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -55,6 +56,7 @@ def test_refresh_backfills_missing_pairs(client):
     accepted pairs that have none, so a single call clears the "missing" set."""
     lang = "ocaml"     # another unused language
     body = {
+        "harness_slug": HARNESS,
         "model_name": "backfill-test", "model_version": "v1",
         "language": lang, "prompt_template": "solve cleanly 0987654321",
         "model_params": {"temperature": 0.0},

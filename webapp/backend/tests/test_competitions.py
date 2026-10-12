@@ -4,7 +4,7 @@ problem can be in several competitions), and Submissions are NOT FK'd to
 competitions, so existing data is preserved when the table is introduced."""
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE, USER
+from conftest import ADMIN, GOOD_CODE, TRACE, USER, HARNESS
 from app.db import engine
 from app.models import Competition, CompetitionProblem, Problem
 
@@ -31,6 +31,7 @@ def test_get_competition_detail_lists_problems_and_languages(client):
     competed under it. Submitting any attempt for a member problem makes the
     language show up in the detail."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "comp-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -128,6 +129,7 @@ def test_rankings_competition_filter_scopes_to_membership(client):
     empty regardless of how many submissions exist platform-wide."""
     # Submit something so the global leaderboard has at least one row.
     body = {
+        "harness_slug": HARNESS,
         "model_name": "rank-filter-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1111111111",
         "model_params": {"temperature": 0.0},
@@ -166,6 +168,7 @@ def test_existing_submissions_preserved_on_seed(client):
     raw = client.get("/api/submissions").json()
     sub_count_before = len(raw) if isinstance(raw, list) else len(raw.get("items", raw))
     body = {
+        "harness_slug": HARNESS,
         "model_name": "preserve-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 9999999999",
         "model_params": {"temperature": 0.0},

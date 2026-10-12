@@ -1,12 +1,12 @@
 """Submission lifecycle: create, append, progress, attempts, detail, derived
 model/submitter views."""
 from conftest import (
-    ADMIN, GOOD_CODE, STUB_CODE, TRACE, USER, make_submission,
+    ADMIN, GOOD_CODE, STUB_CODE, TRACE, USER, make_submission, HARNESS,
 )
 
 
 def test_create_requires_auth(client):
-    body = {"model_name": "m", "model_version": "v", "language": "python3",
+    body = {"harness_slug": HARNESS, "model_name": "m", "model_version": "v", "language": "python3",
             "prompt_template": "solve the problem", "model_params": {},
             "attempts": [{"title_slug": "two-sum", "code": GOOD_CODE,
                           "inference_trace": TRACE}]}
@@ -14,7 +14,7 @@ def test_create_requires_auth(client):
 
 
 def test_create_rejects_stub_and_unknown_slug(client):
-    base = {"model_name": "m", "model_version": "v", "language": "python3",
+    base = {"harness_slug": HARNESS, "model_name": "m", "model_version": "v", "language": "python3",
             "prompt_template": "solve the problem", "model_params": {}}
     stub = client.post("/api/submissions", headers=ADMIN, json={
         **base, "attempts": [{"title_slug": "two-sum", "code": STUB_CODE,
@@ -109,6 +109,7 @@ def test_pass_at_k_with_multiple_samples(client):
     pass@k is computed from per-problem (n,c), and the dedup still ensures
     one accepted problem counts as one solve in total_solved."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "k3-model", "model_version": "v1",
         "language": "python3", "prompt_template": "solve please",
         "model_params": {}, "n_samples_per_problem": 3,
@@ -149,6 +150,7 @@ def test_pass_at_k_with_multiple_samples(client):
 def test_rankings_filter_by_k(client):
     # k=1 (default) submission already exists from other tests; create a k=2 one
     body = {
+        "harness_slug": HARNESS,
         "model_name": "k2-model", "model_version": "v1",
         "language": "python3", "prompt_template": "solve please",
         "model_params": {}, "n_samples_per_problem": 2,

@@ -13,11 +13,12 @@ Validates the SERVER side of the iterative_refine.py workflow:
     walk the chain on resume.
   * The unified `experiment-system` prompt is seeded on first boot.
 """
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 
 
 def _sub_body(**overrides):
     body = {
+        "harness_slug": HARNESS,
         "model_name": "refine-test-m", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in text 1234567890",
         "model_params": {"temperature": 0.0},

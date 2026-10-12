@@ -1,5 +1,5 @@
 """Curated catalog + small cross-cutting safety nets."""
-from conftest import ADMIN, GOOD_CODE, TRACE, USER
+from conftest import ADMIN, GOOD_CODE, TRACE, USER, HARNESS
 
 
 def test_compare_winners_suppress_raw_runtime_across_languages(client):
@@ -9,6 +9,7 @@ def test_compare_winners_suppress_raw_runtime_across_languages(client):
     # Two single-attempt submissions in two languages, same model name.
     for lang in ("python3", "cpp"):
         body = {
+            "harness_slug": HARNESS,
             "model_name": "xlang-model", "model_version": "v1",
             "language": lang, "prompt_template": "solve the problem cleanly",
             "model_params": {},
@@ -96,6 +97,7 @@ def test_submission_with_prompt_id_captures_and_filters(client):
     all_slugs = ("two-sum", "add-digits", "24-game", "valid-parentheses",
                  "reverse-integer")
     body = {
+        "harness_slug": HARNESS,
         "model_name": "prompt-test-m", "model_version": "v1",
         "language": "python3", "prompt_template": "stand-in text",
         "model_params": {"temperature": 0.0},

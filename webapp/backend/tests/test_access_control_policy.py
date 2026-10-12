@@ -12,13 +12,14 @@ These tests pin the policy at the route level so a future drift surfaces
 immediately."""
 import json
 
-from conftest import ADMIN, GOOD_CODE, TRACE, USER
+from conftest import ADMIN, GOOD_CODE, TRACE, USER, HARNESS
 
 
 # ---------- writes that MUST be admin-only ---------------------------------
 
 def _attempt_body(slug="two-sum"):
     return {
+        "harness_slug": HARNESS,
         "model_name": "policy-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},

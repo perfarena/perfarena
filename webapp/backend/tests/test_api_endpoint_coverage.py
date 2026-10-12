@@ -12,7 +12,7 @@ six (cross-referenced against `@app.get/post/put/delete` in main.py):
 
 Each gets a happy path + the auth boundaries that apply.
 """
-from conftest import ADMIN, ADMIN_KEY, USER, USER_KEY, GOOD_CODE, TRACE, make_submission
+from conftest import ADMIN, ADMIN_KEY, USER, USER_KEY, GOOD_CODE, TRACE, make_submission, HARNESS
 
 
 # ---------- /api/models -----------------------------------------------------
@@ -55,6 +55,7 @@ def test_me_by_language_returns_per_language_matrix(client):
     make_submission(client, slugs=("two-sum",))
     # Submission 2: cpp, same slug — different language bucket
     body = {
+        "harness_slug": HARNESS,
         "model_name": "test-model", "model_version": "v1",
         "language": "cpp", "prompt_template": "solve the problem cleanly",
         "model_params": {"temperature": 0.0},
@@ -83,11 +84,12 @@ def test_api_key_regenerate_swaps_key_and_invalidates_old(client):
     # Carve out an isolated user we can rotate without affecting other tests.
     from sqlmodel import Session
     from app.db import engine
+    from app.auth import hash_api_key
     from app.models import User, UserRole, UserStatus
     with Session(engine) as s:
         u = User(email="rotate-test@x.dev", display_name="Rotator",
                  role=UserRole.user, status=UserStatus.approved,
-                 api_key="arena_rotate_oldkey")
+                 api_key=hash_api_key("arena_rotate_oldkey"))
         s.add(u); s.commit()
         uid = u.id
 
@@ -120,11 +122,12 @@ def test_api_key_delete_clears_programmatic_access(client):
     Isolated user — we don't want to brick ADMIN/USER for the rest of the run."""
     from sqlmodel import Session, select
     from app.db import engine
+    from app.auth import hash_api_key
     from app.models import User, UserRole, UserStatus
     with Session(engine) as s:
         u = User(email="delete-key-test@x.dev", display_name="DelKey",
                  role=UserRole.user, status=UserStatus.approved,
-                 api_key="arena_delete_oldkey")
+                 api_key=hash_api_key("arena_delete_oldkey"))
         s.add(u); s.commit()
         uid = u.id
 

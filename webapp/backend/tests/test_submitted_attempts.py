@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 from app import main as _main
 from app.db import engine
 from app.models import Attempt, Run, Submission
+from conftest import HARNESS
 
 
 def test_attempt_with_runs_counts_as_submitted():
@@ -35,6 +36,7 @@ def test_dispatch_warning_attempt_excluded_from_judged(client, monkeypatch):
     monkeypatch.setattr(dispatch, "_check_leetcode_auth",
                         lambda: (False, "dead"))
     body = {
+        "harness_slug": HARNESS,
         "model_name": "warn-only-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1234567890",
@@ -64,6 +66,7 @@ def test_stale_pending_attempt_excluded_from_judged(client):
     actually complete even though the row exists."""
     from conftest import ADMIN, GOOD_CODE, TRACE
     body = {
+        "harness_slug": HARNESS,
         "model_name": "stale-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1234567890",
@@ -114,6 +117,7 @@ def test_dispatch_warning_breaks_completeness(client, monkeypatch):
                            s.exec(select(Problem).where(
                                Problem.original_problem_id.is_(None))).all()][:5]
     body = {
+        "harness_slug": HARNESS,
         "model_name": "ghost-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 9999999999",

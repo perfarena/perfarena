@@ -14,7 +14,7 @@ in fact never reached LC. New behaviour:
 The dispatch_warning string is surfaced on AttemptResult so the sweep
 client can show an informative message instead of hanging on a useless
 poll loop."""
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from sqlmodel import Session, select
 
 from app.db import engine
@@ -25,6 +25,7 @@ def _submit_one(client, monkeypatch=None) -> int:
     """Build a single-attempt submission and return its submission_id.
     No dispatch happens until the caller invokes app.dispatch.dispatch_submission."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "warn-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1234567890",
@@ -146,6 +147,7 @@ def test_dispatch_warning_attempt_does_not_block_retry(client, monkeypatch):
     monkeypatch.setattr(dispatch, "_check_leetcode_auth",
                         lambda: (False, "dead"))
     body = {
+        "harness_slug": HARNESS,
         "model_name": "retry-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1234567890",
@@ -182,6 +184,7 @@ def test_dispatch_warning_attempt_does_not_block_retry_at_k_gt_1(client, monkeyp
     # Build a k=3 submission, write attempts directly so we can craft the
     # exact mix we need.
     body = {
+        "harness_slug": HARNESS,
         "model_name": "k3-retry-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 9999999999",
@@ -232,6 +235,7 @@ def test_stale_marker_stamps_old_pending_attempts(client, monkeypatch):
     # Build a normal submission, then force one attempt into the
     # "queued forever" shape (no runs, no warning, ancient timestamp).
     body = {
+        "harness_slug": HARNESS,
         "model_name": "stale-marker-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1234512345",
@@ -247,6 +251,7 @@ def test_stale_marker_stamps_old_pending_attempts(client, monkeypatch):
         runs = s.exec(select(Run).where(Run.attempt_id == a.id)).all()
         for r in runs: s.delete(r)
         a.n_runs = 0
+        a.final_status = None      # never finalized: the marker's key
         a.dispatch_warning = None
         a.prefailed_reason = None
         a.logged_at = far_past
@@ -267,6 +272,7 @@ def test_stale_marker_skips_fresh_attempts(client):
     marker only operates past ATTEMPT_STALE_AFTER_S."""
     from app import main as _main
     body = {
+        "harness_slug": HARNESS,
         "model_name": "fresh-attempt-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 6543219876",
@@ -293,6 +299,7 @@ def test_stale_marker_idempotent(client, monkeypatch):
     import datetime as dt
     from app import main as _main
     body = {
+        "harness_slug": HARNESS,
         "model_name": "idem-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 1111122222",
@@ -307,6 +314,7 @@ def test_stale_marker_idempotent(client, monkeypatch):
         runs = s.exec(select(Run).where(Run.attempt_id == a.id)).all()
         for r in runs: s.delete(r)
         a.n_runs = 0
+        a.final_status = None      # never finalized: the marker's key
         a.dispatch_warning = None
         a.logged_at = dt.datetime.utcnow() - dt.timedelta(hours=3)
         s.add(a); s.commit()
@@ -338,6 +346,7 @@ def test_append_supersedes_phantom_pending_attempt(client, monkeypatch):
     only processes the new attempt (not the dead phantom)."""
     monkeypatch.setenv("ARENA_DISPATCH_ENABLED", "0")
     body = {
+        "harness_slug": HARNESS,
         "model_name": "supersede-test", "model_version": "v1",
         "language": "python3",
         "prompt_template": "solve cleanly 9988776655",

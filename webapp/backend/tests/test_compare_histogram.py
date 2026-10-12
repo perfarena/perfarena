@@ -9,13 +9,14 @@ front-end histogram consumes flows end-to-end:
 """
 from sqlmodel import Session, select
 
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 from app.db import engine
 from app.models import Attempt, Submission, SubmissionStatus
 
 
 def _submit(client, model, energy=None, slug="two-sum"):
     body = {
+        "harness_slug": HARNESS,
         "model_name": model, "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},

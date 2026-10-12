@@ -3,13 +3,14 @@
 Verifies /api/analysis returns per-language aggregates, per-submission scatter
 points, and Pearson correlations between correctness (pass@1/pass@k) and
 performance (runtime/memory percentile)."""
-from conftest import ADMIN, GOOD_CODE, TRACE
+from conftest import ADMIN, GOOD_CODE, TRACE, HARNESS
 
 
 def _seed_judged(client, lang, pass1, rt_pct, mem_pct):
     """Create a submission and force it judged with specific metrics so the
     analysis math is deterministic (the fake judge is random otherwise)."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": f"m-{lang}-{int(pass1*100)}", "model_version": "v1",
         "language": lang, "prompt_template": "stand-in 1234567890",
         "model_params": {"temperature": 0.0},

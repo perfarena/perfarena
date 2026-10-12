@@ -10,7 +10,7 @@ set. The server must:
 """
 from sqlmodel import Session, select
 
-from conftest import ADMIN, TRACE
+from conftest import ADMIN, TRACE, HARNESS
 from app.db import engine
 from app.models import Attempt, Run
 
@@ -30,6 +30,7 @@ class Solution {
 
 def _submit_prefailed(client):
     body = {
+        "harness_slug": HARNESS,
         "model_name": "prefail-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
@@ -102,6 +103,7 @@ def test_regular_attempt_without_prefailed_reason_still_validated(client):
     has NOT marked the attempt as pre-failed (so the channel can't be used to
     smuggle stubs through accidentally)."""
     body = {
+        "harness_slug": HARNESS,
         "model_name": "validator-test", "model_version": "v1",
         "language": "python3", "prompt_template": "solve cleanly 1234567890",
         "model_params": {"temperature": 0.0},
