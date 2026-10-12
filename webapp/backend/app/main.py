@@ -53,6 +53,7 @@ from .models import (
     Submission, SubmissionStatus, TraceLogEntry,
     User, UserRole, UserStatus,
 )
+from . import integrity
 from . import provenance
 from . import snapshot as snapshot_mod
 from .validation import validate_code
@@ -3124,10 +3125,10 @@ def admin_harnesses_health(
 
 @app.get("/api/admin/integrity/speed-outliers")
 def admin_speed_outliers(
-    factor: float = 8.0,
-    min_peers: int = 3,
-    min_median_ms: float = 20.0,
-    min_runtime_ms: float = 1.0,
+    factor: float = integrity.DEFAULT_FACTOR,
+    min_peers: int = integrity.DEFAULT_MIN_PEERS,
+    min_median_ms: float = integrity.DEFAULT_MIN_MEDIAN_MS,
+    min_runtime_ms: float = integrity.DEFAULT_MIN_RUNTIME_MS,
     _: User = Depends(current_admin),
     session: Session = Depends(get_session),
 ):
@@ -3135,11 +3136,9 @@ def admin_speed_outliers(
     other accepted solutions for the same (problem, language, harness) — a review
     signal for solutions that skipped the benchmark's intended work (e.g. a
     closed-form CLBG checksum instead of actually allocating). Needs >=
-    `min_peers` peers and a peer median of >= `min_median_ms` to form a baseline,
-    and ignores attempts below `min_runtime_ms` (below measurement resolution, so
-    per-op times rounding to ~0 don't flood the list). Not an auto-reject: a
+    `min_peers` peers to form a baseline. The floors `min_median_ms` and
+    `min_runtime_ms` are off by default (see integrity.py). Not an auto-reject: a
     genuine optimization can also land here, so each row is for a human to judge."""
-    from . import integrity
     rows = integrity.speed_outliers(
         session, factor=factor, min_peers=min_peers,
         min_median_ms=min_median_ms, min_runtime_ms=min_runtime_ms)

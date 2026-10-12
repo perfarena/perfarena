@@ -14,7 +14,7 @@ import { api, MePayload, SpeedOutlierRow } from "../lib/api";
 export default function AdminSpeedOutliers() {
   const [me, setMe] = useState<MePayload | null>(null);
   const [rows, setRows] = useState<SpeedOutlierRow[]>([]);
-  const [factor, setFactor] = useState(8);
+  const [factor, setFactor] = useState(2);
   const [minPeers, setMinPeers] = useState(3);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");

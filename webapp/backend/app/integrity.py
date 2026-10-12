@@ -13,11 +13,12 @@ accepted solution for the same work is almost always skipping the workload.
 `factor`x faster than the MEDIAN of the other accepted solutions for the same
 (problem, language, HARNESS). Grouping by harness is essential: the same problem
 is measured on different bases (LeetCode's wall-clock oracle vs the arena's
-per-op loop), and comparing across them is apples-to-oranges. Two guards keep it
-honest: a peer median below `min_median_ms` is too small to call anything "way
-faster" (per-op times round toward 0), and an attempt faster than
-`min_runtime_ms` is below the measurement's own resolution. This is a review
-signal, not an auto-reject — a genuine optimization can also be an outlier.
+per-op loop), and comparing across them is apples-to-oranges. A cell needs at
+least `min_peers` other solutions for a meaningful median. The optional floors
+`min_median_ms` and `min_runtime_ms` are off by default: the arena's per-op
+times are precise at any scale, and a zero time (the LeetCode judge rounds to
+whole milliseconds) is always skipped. This is a review signal, not an
+auto-reject — a genuine optimization can also be an outlier.
 """
 from __future__ import annotations
 
@@ -28,10 +29,10 @@ from sqlmodel import Session, select
 
 from .models import Attempt, Problem, Submission
 
-DEFAULT_FACTOR = 8.0        # >= this many times faster than the peer median -> flagged
+DEFAULT_FACTOR = 2.0        # >= this many times faster than the peer median -> flagged
 DEFAULT_MIN_PEERS = 3       # need at least this many OTHER solutions for a baseline
-DEFAULT_MIN_MEDIAN_MS = 20.0  # peer baseline must be at least this large to be meaningful
-DEFAULT_MIN_RUNTIME_MS = 1.0  # ignore sub-ms times (per-op granularity rounds to ~0)
+DEFAULT_MIN_MEDIAN_MS = 0.0   # optional floor on the peer median (off)
+DEFAULT_MIN_RUNTIME_MS = 0.0  # optional floor on the attempt's own time (off)
 
 
 def _accepted_rows(session: Session):
