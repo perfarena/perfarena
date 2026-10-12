@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|c|average-salary-excluding-the-minimum-and-maximum-salary",
+  "code": "#include <stdlib.h>\n\ndouble average(int* salary, int salarySize) {\n    long long sum = 0;\n    int min = salary[0], max = salary[0];\n    for (int i = 0; i < salarySize; ++i) {\n        int s = salary[i];\n        sum += s;\n        if (s < min) min = s;\n        if (s > max) max = s;\n    }\n    return (double)(sum - min - max) / (salarySize - 2);\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `average-salary-excluding-the-minimum-and-maximum-salary` in C.\n\nYou are given an array of **unique** integers `salary` where `salary[i]` is the salary of the `ith` employee.\n\nReturn _the average salary of employees excluding the minimum and maximum salary_. Answers within `10-5` of the actual answer will be accepted.\n\n**Example 1:**\n\n**Input:** salary = \\[4000,3000,1000,2000\\]\n**Output:** 2500.00000\n**Explanation:** Minimum salary and maximum salary are 1000 and 4000 respectively.\nAverage salary excluding minimum and maximum salary is (2000+3000) / 2 = 2500\n\n**Example 2:**\n\n**Input:** salary = \\[1000,2000,3000\\]\n**Output:** 2000.00000\n**Explanation:** Minimum salary and maximum salary are 1000 and 3000 respectively.\nAverage salary excluding minimum and maximum salary is (2000) / 1 = 2000\n\n**Constraints:**\n\n*   `3 <= salary.length <= 100`\n*   `1000 <= salary[i] <= 106`\n*   All the integers of `salary` are **unique**.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```c code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```c\n#include <stdlib.h>\n\ndouble average(int* salary, int salarySize) {\n    long long sum = 0;\n    int min = salary[0], max = salary[0];\n    for (int i = 0; i < salarySize; ++i) {\n        int s = salary[i];\n        sum += s;\n        if (s < min) min = s;\n        if (s > max) max = s;\n    }\n    return (double)(sum - min - max) / (salarySize - 2);\n}\n```",
+    "reasoning": "**Producing C Code for LeetCode**\n\nI need to format my C code according to LeetCode's standard. The expected function signature for the problem \"average-salary-excluding-the-minimum-and-maximum-salary\" (ID 1491) is `double average(int* salary, int salarySize)`. The task is to compute the average while excluding the minimum and maximum salaries. I'll ensure I compute the sum using `long long` to prevent overflow and appropriately handle edge cases, ensuring `n` is at least 3. It's important to include necessary headers, like `<stdlib.h>`, although they may not be required.\n\n**Crafting C Code**\n\nLet's create the C function that returns a double for the average salary, excluding the minimum and maximum. I\u2019ll start with the necessary includes, specifically `<stdlib.h>`. The function signature will be `double average(int* salary, int salarySize)`, where I\u2019ll initialize a `long long` variable for the sum and set initial values for the minimum and maximum salaries. Then, I\u2019ll loop through the salary array to calculate the sum, find the min and max, and return the average, ensuring the calculations are correct. Here\u2019s the complete code formatted in a block.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-22T08:45:10.920798+00:00",
+    "wall_clock_ms": 7962,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 348,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 562,
+        "output_tokens_details": {
+          "reasoning_tokens": 384
+        },
+        "total_tokens": 910,
+        "prompt_tokens": 348,
+        "completion_tokens": 562
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-22T08:45:10.920901+00:00"
+}

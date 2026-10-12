@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|check-if-all-characters-have-equal-number-of-occurrences",
+  "code": "class Solution {\npublic:\n    bool areOccurrencesEqual(string s) {\n        int frequency[26] = {};\n        for (char c : s) {\n            ++frequency[c - 'a'];\n        }\n\n        int expected = frequency[s[0] - 'a'];\n        for (int count : frequency) {\n            if (count != 0 && count != expected) {\n                return false;\n            }\n        }\n\n        return true;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `check-if-all-characters-have-equal-number-of-occurrences` in C++.\n\nGiven a string `s`, return `true` _if_ `s` _is a **good** string, or_ `false` _otherwise_.\n\nA string `s` is **good** if **all** the characters that appear in `s` have the **same** number of occurrences (i.e., the same frequency).\n\n**Example 1:**\n\n**Input:** s =  \"abacbc \"\n**Output:** true\n**Explanation:** The characters that appear in s are 'a', 'b', and 'c'. All characters occur 2 times in s.\n\n**Example 2:**\n\n**Input:** s =  \"aaabb \"\n**Output:** false\n**Explanation:** The characters that appear in s are 'a' and 'b'.\n'a' occurs 3 times while 'b' occurs 2 times, which is not the same number of times.\n\n**Constraints:**\n\n*   `1 <= s.length <= 1000`\n*   `s` consists of lowercase English letters.\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    bool areOccurrencesEqual(string s) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\nclass Solution {\npublic:\n    bool areOccurrencesEqual(string s) {\n        int frequency[26] = {};\n        for (char c : s) {\n            ++frequency[c - 'a'];\n        }\n\n        int expected = frequency[s[0] - 'a'];\n        for (int count : frequency) {\n            if (count != 0 && count != expected) {\n                return false;\n            }\n        }\n\n        return true;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:48:18.072783+00:00",
+    "wall_clock_ms": 3304,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 373,
+        "completion_tokens": 98,
+        "total_tokens": 471,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:48:18.073278+00:00"
+}

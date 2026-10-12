@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|python3|spectral-norm",
+  "code": "import os\nimport sys\nfrom math import sqrt\n\n\ndef spectral_norm_python(n):\n    def multiply(vector, transpose=False):\n        result = [0.0] * n\n        for i in range(n):\n            denominator = i * (i + 1) // 2 + (1 if transpose else i + 1)\n            increment = i + (2 if transpose else 1)\n            total = 0.0\n            for value in vector:\n                total += value / denominator\n                denominator += increment\n                increment += 1\n            result[i] = total\n        return result\n\n    def multiply_ata(vector):\n        return multiply(multiply(vector), True)\n\n    u = [1.0] * n\n    for _ in range(10):\n        v = multiply_ata(u)\n        u = multiply_ata(v)\n\n    return sqrt(\n        sum(a * b for a, b in zip(u, v))\n        / sum(b * b for b in v)\n    )\n\n\ndef spectral_norm_numpy(n, np):\n    indices = np.arange(n, dtype=np.float64)\n    matrix = np.empty((n, n), dtype=np.float64)\n    workspace = np.empty(n, dtype=np.float64)\n\n    for i in range(n):\n        row = matrix[i]\n        np.add(indices, i, out=row)\n        np.add(row, 1.0, out=workspace)\n        np.multiply(row, workspace, out=row)\n        row *= 0.5\n        row += i + 1\n        np.reciprocal(row, out=row)\n\n    transpose = matrix.T\n    u = np.ones(n, dtype=np.float64)\n    v = np.empty(n, dtype=np.float64)\n\n    for _ in range(10):\n        np.dot(matrix, u, out=workspace)\n        np.dot(transpose, workspace, out=v)\n        np.dot(matrix, v, out=workspace)\n        np.dot(transpose, workspace, out=u)\n\n    return sqrt(float(np.dot(u, v) / np.dot(v, v)))\n\n\ndef main():\n    n = int(sys.argv[1])\n\n    for variable in (\n        \"OPENBLAS_NUM_THREADS\",\n        \"OMP_NUM_THREADS\",\n        \"MKL_NUM_THREADS\",\n        \"BLIS_NUM_THREADS\",\n        \"VECLIB_MAXIMUM_THREADS\",\n    ):\n        os.environ[variable] = \"1\"\n\n    try:\n        import numpy as np\n    except ImportError:\n        estimate = spectral_norm_python(n)\n    else:\n        estimate = spectral_norm_numpy(n, np)\n\n    print(f\"{estimate:.9f}\")\n\n\nif __name__ == \"__main__\":\n    main()",
+  "trace": {
+    "prompt": "Solve this benchmark problem `spectral-norm` in Python 3.\n\n# spectral-norm\n\nEstimate the spectral norm of an infinite matrix A with entries A[i][j] = 1 / ((i+j)*(i+j+1)/2 + i + 1) by running N iterations of the power method, alternating multiplications by A and A^T against a unit vector. Print the final estimate to nine decimal places.\n\n## Input\nA single positive integer N (number of iterations) read as a command-line argument.\n\n## Output\n```\n<estimate, 9 decimal places>\n```\n\n## Invocation\nThe program is invoked as: <prog> 5500\n\n**Default N:** `5500` \u00b7 **Validation N:** `100` \u00b7 **Algorithm class:** dense linear algebra, floating-point arithmetic\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```python\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained Python 3 program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `sys.argv[1]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```python code block with nothing else outside it.",
+    "raw_response": "```python\nimport os\nimport sys\nfrom math import sqrt\n\n\ndef spectral_norm_python(n):\n    def multiply(vector, transpose=False):\n        result = [0.0] * n\n        for i in range(n):\n            denominator = i * (i + 1) // 2 + (1 if transpose else i + 1)\n            increment = i + (2 if transpose else 1)\n            total = 0.0\n            for value in vector:\n                total += value / denominator\n                denominator += increment\n                increment += 1\n            result[i] = total\n        return result\n\n    def multiply_ata(vector):\n        return multiply(multiply(vector), True)\n\n    u = [1.0] * n\n    for _ in range(10):\n        v = multiply_ata(u)\n        u = multiply_ata(v)\n\n    return sqrt(\n        sum(a * b for a, b in zip(u, v))\n        / sum(b * b for b in v)\n    )\n\n\ndef spectral_norm_numpy(n, np):\n    indices = np.arange(n, dtype=np.float64)\n    matrix = np.empty((n, n), dtype=np.float64)\n    workspace = np.empty(n, dtype=np.float64)\n\n    for i in range(n):\n        row = matrix[i]\n        np.add(indices, i, out=row)\n        np.add(row, 1.0, out=workspace)\n        np.multiply(row, workspace, out=row)\n        row *= 0.5\n        row += i + 1\n        np.reciprocal(row, out=row)\n\n    transpose = matrix.T\n    u = np.ones(n, dtype=np.float64)\n    v = np.empty(n, dtype=np.float64)\n\n    for _ in range(10):\n        np.dot(matrix, u, out=workspace)\n        np.dot(transpose, workspace, out=v)\n        np.dot(matrix, v, out=workspace)\n        np.dot(transpose, workspace, out=u)\n\n    return sqrt(float(np.dot(u, v) / np.dot(v, v)))\n\n\ndef main():\n    n = int(sys.argv[1])\n\n    for variable in (\n        \"OPENBLAS_NUM_THREADS\",\n        \"OMP_NUM_THREADS\",\n        \"MKL_NUM_THREADS\",\n        \"BLIS_NUM_THREADS\",\n        \"VECLIB_MAXIMUM_THREADS\",\n    ):\n        os.environ[variable] = \"1\"\n\n    try:\n        import numpy as np\n    except ImportError:\n        estimate = spectral_norm_python(n)\n    else:\n        estimate = spectral_norm_numpy(n, np)\n\n    print(f\"{estimate:.9f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T10:19:24.997267+00:00",
+    "wall_clock_ms": 26657,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 425,
+        "completion_tokens": 1218,
+        "total_tokens": 1643,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 651,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T10:19:24.997696+00:00"
+}

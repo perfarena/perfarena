@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system-with-shape|java|binary-trees",
+  "code": "public class binarytrees {\n    private static final class Node {\n        final Node left;\n        final Node right;\n\n        Node(Node left, Node right) {\n            this.left = left;\n            this.right = right;\n        }\n    }\n\n    private static Node bottomUpTree(int depth) {\n        if (depth <= 0) {\n            return new Node(null, null);\n        }\n        return new Node(bottomUpTree(depth - 1), bottomUpTree(depth - 1));\n    }\n\n    private static int itemCheck(Node node) {\n        if (node.left == null) {\n            return 1;\n        }\n        return 1 + itemCheck(node.left) + itemCheck(node.right);\n    }\n\n    public static void main(String[] args) {\n        int n = Integer.parseInt(args[0]);\n        StringBuilder out = new StringBuilder();\n\n        int stretchDepth = n + 1;\n        Node stretch = bottomUpTree(stretchDepth);\n        out.append(\"stretch tree of depth \").append(stretchDepth)\n           .append(\"\\t check: \").append(itemCheck(stretch)).append('\\n');\n\n        Node longLivedTree = bottomUpTree(n);\n\n        int minDepth = 4;\n        int maxDepth = n;\n        int stretchRange = maxDepth - minDepth;\n        if (stretchRange >= 0) {\n            int iterations = 1 << (n + minDepth - maxDepth); // 2^(N-d+4)\n            for (int depth = minDepth; depth <= maxDepth; depth += 2) {\n                int checkSum = 0;\n                for (int i = 0; i < iterations; i++) {\n                    checkSum += itemCheck(bottomUpTree(depth));\n                }\n                out.append(iterations).append(\"\\t trees of depth \").append(depth)\n                   .append(\"\\t check: \").append(checkSum).append('\\n');\n                iterations >>= 2; // next depth increases by 2 => divide by 4\n            }\n        }\n\n        out.append(\"long lived tree of depth \").append(n)\n           .append(\"\\t check: \").append(itemCheck(longLivedTree)).append('\\n');\n\n        System.out.print(out.toString());\n    }\n}",
+  "trace": {
+    "prompt": "Solve this benchmark problem `binary-trees` in Java.\n\n# binary-trees\n\nAllocate and deallocate many binary trees to exercise memory management. Build one \"stretch\" tree of depth N+1, one long-lived tree of depth N, and for each depth d in 4, 6, ..., N build 2^(N-d+4) short-lived trees of depth d. Print the node-count checksums for each group.\n\n## Input\nA single non-negative integer N read as a command-line argument.\n\n## Output\n```\nstretch tree of depth N+1\\t check: <count>\n<count>\\t trees of depth 4\\t check: <sum>\n...\nlong lived tree of depth N\\t check: <count>\n```\n\n## Invocation\nThe program is invoked as: <prog> 21\n\n**Default N:** `21` \u00b7 **Validation N:** `10` \u00b7 **Algorithm class:** recursive allocation, globally structured\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```java\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained Java program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `args[0]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```java code block with nothing else outside it.\n\nJAVA ENTRY POINT \u2014 the harness runs `java binarytrees N`, so your main class MUST be named EXACTLY `binarytrees`: declare `public class binarytrees` containing `public static void main(String[] args)`. Any helper classes must be non-public (Java allows one public top-level class per file). A class named anything else fails with ClassNotFoundException.",
+    "raw_response": "```java\npublic class binarytrees {\n    private static final class Node {\n        final Node left;\n        final Node right;\n\n        Node(Node left, Node right) {\n            this.left = left;\n            this.right = right;\n        }\n    }\n\n    private static Node bottomUpTree(int depth) {\n        if (depth <= 0) {\n            return new Node(null, null);\n        }\n        return new Node(bottomUpTree(depth - 1), bottomUpTree(depth - 1));\n    }\n\n    private static int itemCheck(Node node) {\n        if (node.left == null) {\n            return 1;\n        }\n        return 1 + itemCheck(node.left) + itemCheck(node.right);\n    }\n\n    public static void main(String[] args) {\n        int n = Integer.parseInt(args[0]);\n        StringBuilder out = new StringBuilder();\n\n        int stretchDepth = n + 1;\n        Node stretch = bottomUpTree(stretchDepth);\n        out.append(\"stretch tree of depth \").append(stretchDepth)\n           .append(\"\\t check: \").append(itemCheck(stretch)).append('\\n');\n\n        Node longLivedTree = bottomUpTree(n);\n\n        int minDepth = 4;\n        int maxDepth = n;\n        int stretchRange = maxDepth - minDepth;\n        if (stretchRange >= 0) {\n            int iterations = 1 << (n + minDepth - maxDepth); // 2^(N-d+4)\n            for (int depth = minDepth; depth <= maxDepth; depth += 2) {\n                int checkSum = 0;\n                for (int i = 0; i < iterations; i++) {\n                    checkSum += itemCheck(bottomUpTree(depth));\n                }\n                out.append(iterations).append(\"\\t trees of depth \").append(depth)\n                   .append(\"\\t check: \").append(checkSum).append('\\n');\n                iterations >>= 2; // next depth increases by 2 => divide by 4\n            }\n        }\n\n        out.append(\"long lived tree of depth \").append(n)\n           .append(\"\\t check: \").append(itemCheck(longLivedTree)).append('\\n');\n\n        System.out.print(out.toString());\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.0
+    },
+    "created_at": "2026-09-05T08:28:27.396964+00:00",
+    "wall_clock_ms": 4278,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 521,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 469,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 990,
+        "prompt_tokens": 521,
+        "completion_tokens": 469
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5.4-mini-2026-03-17",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-09-05T08:28:27.397824+00:00"
+}

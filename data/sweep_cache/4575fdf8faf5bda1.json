@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|next-greater-element-ii",
+  "code": "import java.util.*;\n\nclass Solution {\n    public int[] nextGreaterElements(int[] nums) {\n        int n = nums.length;\n        int[] res = new int[n];\n        Arrays.fill(res, -1);\n        Deque<Integer> stack = new ArrayDeque<>(); // store indices, decreasing values\n\n        for (int i = 0; i < 2 * n; i++) {\n            int idx = i % n;\n            int val = nums[idx];\n            while (!stack.isEmpty() && nums[stack.peek()] < val) {\n                res[stack.pop()] = val;\n            }\n            if (i < n) {\n                stack.push(idx);\n            }\n        }\n        return res;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `next-greater-element-ii` in Java.\n\nGiven a circular integer array `nums` (i.e., the next element of `nums[nums.length - 1]` is `nums[0]`), return _the **next greater number** for every element in_ `nums`.\n\nThe **next greater number** of a number `x` is the first greater number to its traversing-order next in the array, which means you could search circularly to find its next greater number. If it doesn't exist, return `-1` for this number.\n\n**Example 1:**\n\n**Input:** nums = \\[1,2,1\\]\n**Output:** \\[2,-1,2\\]\nExplanation: The first 1's next greater number is 2; \nThe number 2 can't find next greater number. \nThe second 1's next greater number needs to search circularly, which is also 2.\n\n**Example 2:**\n\n**Input:** nums = \\[1,2,3,4,3\\]\n**Output:** \\[2,3,4,-1,4\\]\n\n**Constraints:**\n\n*   `1 <= nums.length <= 104`\n*   `-109 <= nums[i] <= 109`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public int[] nextGreaterElements(int[] nums) {\n        int n = nums.length;\n        int[] res = new int[n];\n        Arrays.fill(res, -1);\n        Deque<Integer> stack = new ArrayDeque<>(); // store indices, decreasing values\n\n        for (int i = 0; i < 2 * n; i++) {\n            int idx = i % n;\n            int val = nums[idx];\n            while (!stack.isEmpty() && nums[stack.peek()] < val) {\n                res[stack.pop()] = val;\n            }\n            if (i < n) {\n                stack.push(idx);\n            }\n        }\n        return res;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:22:06.039387+00:00",
+    "wall_clock_ms": 9682,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 345,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 752,
+        "output_tokens_details": {
+          "reasoning_tokens": 576
+        },
+        "total_tokens": 1097,
+        "prompt_tokens": 345,
+        "completion_tokens": 752
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:22:06.039705+00:00"
+}

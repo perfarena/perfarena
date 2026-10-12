@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|shift-2d-grid",
+  "code": "import java.util.*;\n\nclass Solution {\n    public List<List<Integer>> shiftGrid(int[][] grid, int k) {\n        int m = grid.length;\n        int n = grid[0].length;\n        int total = m * n;\n        k = k % total;\n        int[][] res = new int[m][n];\n        for (int i = 0; i < m; ++i) {\n            for (int j = 0; j < n; ++j) {\n                int idx = i * n + j;\n                int newIdx = (idx + k) % total;\n                int ni = newIdx / n;\n                int nj = newIdx % n;\n                res[ni][nj] = grid[i][j];\n            }\n        }\n        List<List<Integer>> ans = new ArrayList<>(m);\n        for (int i = 0; i < m; ++i) {\n            List<Integer> row = new ArrayList<>(n);\n            for (int j = 0; j < n; ++j) row.add(res[i][j]);\n            ans.add(row);\n        }\n        return ans;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `shift-2d-grid` in Java.\n\nGiven a 2D `grid` of size `m x n` and an integer `k`. You need to shift the `grid` `k` times.\n\nIn one shift operation:\n\n*   Element at `grid[i][j]` moves to `grid[i][j + 1]`.\n*   Element at `grid[i][n - 1]` moves to `grid[i + 1][0]`.\n*   Element at `grid[m - 1][n - 1]` moves to `grid[0][0]`.\n\nReturn the _2D grid_ after applying shift operation `k` times.\n\n**Example 1:**\n\n**Input:** `grid` = \\[\\[1,2,3\\],\\[4,5,6\\],\\[7,8,9\\]\\], k = 1\n**Output:** \\[\\[9,1,2\\],\\[3,4,5\\],\\[6,7,8\\]\\]\n\n**Example 2:**\n\n**Input:** `grid` = \\[\\[3,8,1,9\\],\\[19,7,2,5\\],\\[4,6,11,10\\],\\[12,0,21,13\\]\\], k = 4\n**Output:** \\[\\[12,0,21,13\\],\\[3,8,1,9\\],\\[19,7,2,5\\],\\[4,6,11,10\\]\\]\n\n**Example 3:**\n\n**Input:** `grid` = \\[\\[1,2,3\\],\\[4,5,6\\],\\[7,8,9\\]\\], k = 9\n**Output:** \\[\\[1,2,3\\],\\[4,5,6\\],\\[7,8,9\\]\\]\n\n**Constraints:**\n\n*   `m == grid.length`\n*   `n == grid[i].length`\n*   `1 <= m <= 50`\n*   `1 <= n <= 50`\n*   `-1000 <= grid[i][j] <= 1000`\n*   `0 <= k <= 100`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public List<List<Integer>> shiftGrid(int[][] grid, int k) {\n        int m = grid.length;\n        int n = grid[0].length;\n        int total = m * n;\n        k = k % total;\n        int[][] res = new int[m][n];\n        for (int i = 0; i < m; ++i) {\n            for (int j = 0; j < n; ++j) {\n                int idx = i * n + j;\n                int newIdx = (idx + k) % total;\n                int ni = newIdx / n;\n                int nj = newIdx % n;\n                res[ni][nj] = grid[i][j];\n            }\n        }\n        List<List<Integer>> ans = new ArrayList<>(m);\n        for (int i = 0; i < m; ++i) {\n            List<Integer> row = new ArrayList<>(n);\n            for (int j = 0; j < n; ++j) row.add(res[i][j]);\n            ans.add(row);\n        }\n        return ans;\n    }\n}\n```",
+    "reasoning": "**Implementing shiftGrid method**\n\nI need to provide a Java solution class named `Solution` with a method called `shiftGrid(int[][] grid, int k)`, returning a `List<List<Integer>>`, as specified in LeetCode problem #1260. I\u2019ll confirm the method signature. \n\nI\u2019ll focus on flattening the indices of the grid. The total number of elements will be `m * n`, and the effective `k` will be `k % total`. For each position `(i, j)`, I\u2019ll calculate the new index. Easiest approach involves creating a new 2D array, filling it from the original grid, and finally converting it to a `List<List<Integer>>`. I\u2019ll have to consider edge cases too, like when `k` is 0.\n\n**Finalizing Java code**\n\nI need to produce the final code block without any extra comments outside of it. The developer explicitly mentioned that I should only include code, so I\u2019ll keep that in mind as I craft it. I also need to ensure that the solution efficiently handles cases where `m * n` is less than or equal to 2500. Alright, I\u2019ll focus solely on writing the final Java implementation. Let's get that done!",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:33:35.277170+00:00",
+    "wall_clock_ms": 10655,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 550,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 552,
+        "output_tokens_details": {
+          "reasoning_tokens": 256
+        },
+        "total_tokens": 1102,
+        "prompt_tokens": 550,
+        "completion_tokens": 552
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:33:35.277509+00:00"
+}

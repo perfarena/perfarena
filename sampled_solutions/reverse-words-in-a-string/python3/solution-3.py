@@ -1,0 +1,1 @@
+words_list = input_string.split()

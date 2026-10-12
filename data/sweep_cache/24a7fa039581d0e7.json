@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|average-salary-excluding-the-minimum-and-maximum-salary",
+  "code": "class Solution {\n    public double average(int[] salary) {\n        int n = salary.length;\n        long sum = 0;\n        int min = Integer.MAX_VALUE;\n        int max = Integer.MIN_VALUE;\n        for (int s : salary) {\n            sum += s;\n            if (s < min) min = s;\n            if (s > max) max = s;\n        }\n        return (sum - min - max) / (double)(n - 2);\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `average-salary-excluding-the-minimum-and-maximum-salary` in Java.\n\nYou are given an array of **unique** integers `salary` where `salary[i]` is the salary of the `ith` employee.\n\nReturn _the average salary of employees excluding the minimum and maximum salary_. Answers within `10-5` of the actual answer will be accepted.\n\n**Example 1:**\n\n**Input:** salary = \\[4000,3000,1000,2000\\]\n**Output:** 2500.00000\n**Explanation:** Minimum salary and maximum salary are 1000 and 4000 respectively.\nAverage salary excluding minimum and maximum salary is (2000+3000) / 2 = 2500\n\n**Example 2:**\n\n**Input:** salary = \\[1000,2000,3000\\]\n**Output:** 2000.00000\n**Explanation:** Minimum salary and maximum salary are 1000 and 3000 respectively.\nAverage salary excluding minimum and maximum salary is (2000) / 1 = 2000\n\n**Constraints:**\n\n*   `3 <= salary.length <= 100`\n*   `1000 <= salary[i] <= 106`\n*   All the integers of `salary` are **unique**.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public double average(int[] salary) {\n        int n = salary.length;\n        long sum = 0;\n        int min = Integer.MAX_VALUE;\n        int max = Integer.MIN_VALUE;\n        for (int s : salary) {\n            sum += s;\n            if (s < min) min = s;\n            if (s > max) max = s;\n        }\n        return (sum - min - max) / (double)(n - 2);\n    }\n}\n```",
+    "reasoning": "**Implementing LeetCode solution**\n\nI need to implement a solution class for the LeetCode problem about calculating the average salary, excluding the minimum and maximum. My approach involves computing the sum, min, and max; then subtracting those two from the sum and dividing by (n-2) as a double. I'll ensure to use the class Solution with a method signature of `public double average(int[] salary)`. I'll use a long for the sum to avoid overflow. There's no need for null handling. Now, I'll write the final code.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T14:18:54.180913+00:00",
+    "wall_clock_ms": 4788,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 348,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 296,
+        "output_tokens_details": {
+          "reasoning_tokens": 128
+        },
+        "total_tokens": 644,
+        "prompt_tokens": 348,
+        "completion_tokens": 296
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T14:18:54.181334+00:00"
+}

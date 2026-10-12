@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|sum-of-all-odd-length-subarrays",
+  "code": "class Solution {\n    public int sumOddLengthSubarrays(int[] arr) {\n        int n = arr.length;\n        long sum = 0;\n        for (int i = 0; i < n; i++) {\n            int leftCount = i + 1;\n            int rightCount = n - i;\n            int total = leftCount * rightCount;\n            int oddCount = (total + 1) / 2;\n            sum += (long) arr[i] * oddCount;\n        }\n        return (int) sum;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `sum-of-all-odd-length-subarrays` in Java.\n\nGiven an array of positive integers `arr`, return _the sum of all possible **odd-length subarrays** of_ `arr`.\n\nA **subarray** is a contiguous subsequence of the array.\n\n**Example 1:**\n\n**Input:** arr = \\[1,4,2,5,3\\]\n**Output:** 58\n**Explanation:** The odd-length subarrays of arr and their sums are:\n\\[1\\] = 1\n\\[4\\] = 4\n\\[2\\] = 2\n\\[5\\] = 5\n\\[3\\] = 3\n\\[1,4,2\\] = 7\n\\[4,2,5\\] = 11\n\\[2,5,3\\] = 10\n\\[1,4,2,5,3\\] = 15\nIf we add all these together we get 1 + 4 + 2 + 5 + 3 + 7 + 11 + 10 + 15 = 58\n\n**Example 2:**\n\n**Input:** arr = \\[1,2\\]\n**Output:** 3\n**Explanation:** There are only 2 subarrays of odd length, \\[1\\] and \\[2\\]. Their sum is 3.\n\n**Example 3:**\n\n**Input:** arr = \\[10,11,12\\]\n**Output:** 66\n\n**Constraints:**\n\n*   `1 <= arr.length <= 100`\n*   `1 <= arr[i] <= 1000`\n\n**Follow up:**\n\nCould you solve this problem in O(n) time complexity?\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int sumOddLengthSubarrays(int[] arr) {\n        int n = arr.length;\n        long sum = 0;\n        for (int i = 0; i < n; i++) {\n            int leftCount = i + 1;\n            int rightCount = n - i;\n            int total = leftCount * rightCount;\n            int oddCount = (total + 1) / 2;\n            sum += (long) arr[i] * oddCount;\n        }\n        return (int) sum;\n    }\n}\n```",
+    "reasoning": "**Calculating subarrays sum**\n\nI'm considering the upper bound for the number of odd subarrays, which is at most the total subarrays, around n*(n+1)/2. This leads me to a maximum of roughly 5050. Each subarray has a maximum sum of 100k. I realize I need to aggregate the sums of odd counts properly and ensure the total will fit within an int type. My final approach involves implementing a solution that computes odd-length subarray sums effectively while keeping the calculations efficient. I'll use a single Java code block for clarity.\n\n**Preparing final code**\n\nI need to follow LeetCode\u2019s standard format exactly, using the expected class and method names. I'll create a class called Solution with the method sumOddLengthSubarrays. There's no need for additional imports, and I\u2019ll use a long for the sum variable, returning it as an int. Edge cases are small, and while comments are allowed, they should be concise. I\u2019ll ensure to include only the code in a single block without any extra text. Let's get the code ready!",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:51:03.178102+00:00",
+    "wall_clock_ms": 25623,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 437,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 1718,
+        "output_tokens_details": {
+          "reasoning_tokens": 1536
+        },
+        "total_tokens": 2155,
+        "prompt_tokens": 437,
+        "completion_tokens": 1718
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:51:03.178421+00:00"
+}

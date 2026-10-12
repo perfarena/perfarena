@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|determine-if-two-strings-are-close",
+  "code": "#include <algorithm>\n#include <array>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool closeStrings(string word1, string word2) {\n        if (word1.size() != word2.size()) return false;\n\n        array<int, 26> freq1{}, freq2{};\n        for (char c : word1) ++freq1[c - 'a'];\n        for (char c : word2) ++freq2[c - 'a'];\n\n        for (int i = 0; i < 26; ++i) {\n            if ((freq1[i] == 0) != (freq2[i] == 0)) return false;\n        }\n\n        sort(freq1.begin(), freq1.end());\n        sort(freq2.begin(), freq2.end());\n\n        return freq1 == freq2;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `determine-if-two-strings-are-close` in C++.\n\nTwo strings are considered **close** if you can attain one from the other using the following operations:\n\n*   Operation 1: Swap any two **existing** characters.\n    *   For example, `abcde -> aecdb`\n*   Operation 2: Transform **every** occurrence of one **existing** character into another **existing** character, and do the same with the other character.\n    *   For example, `aacabb -> bbcbaa` (all `a`'s turn into `b`'s, and all `b`'s turn into `a`'s)\n\nYou can use the operations on either string as many times as necessary.\n\nGiven two strings, `word1` and `word2`, return `true` _if_ `word1` _and_ `word2` _are **close**, and_ `false` _otherwise._\n\n**Example 1:**\n\n**Input:** word1 =  \"abc \", word2 =  \"bca \"\n**Output:** true\n**Explanation:** You can attain word2 from word1 in 2 operations.\nApply Operation 1:  \"abc \" ->  \"acb \"\nApply Operation 1:  \"acb \" ->  \"bca \"\n\n**Example 2:**\n\n**Input:** word1 =  \"a \", word2 =  \"aa \"\n**Output:** false\n**Explanation:** It is impossible to attain word2 from word1, or vice versa, in any number of operations.\n\n**Example 3:**\n\n**Input:** word1 =  \"cabbba \", word2 =  \"abbccc \"\n**Output:** true\n**Explanation:** You can attain word2 from word1 in 3 operations.\nApply Operation 1:  \"cabbba \" ->  \"caabbb \"\n`Apply Operation 2:  \"`caabbb \" ->  \"baaccc \"\nApply Operation 2:  \"baaccc \" ->  \"abbccc \"\n\n**Constraints:**\n\n*   `1 <= word1.length, word2.length <= 105`\n*   `word1` and `word2` contain only lowercase English letters.\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    bool closeStrings(string word1, string word2) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\n#include <algorithm>\n#include <array>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    bool closeStrings(string word1, string word2) {\n        if (word1.size() != word2.size()) return false;\n\n        array<int, 26> freq1{}, freq2{};\n        for (char c : word1) ++freq1[c - 'a'];\n        for (char c : word2) ++freq2[c - 'a'];\n\n        for (int i = 0; i < 26; ++i) {\n            if ((freq1[i] == 0) != (freq2[i] == 0)) return false;\n        }\n\n        sort(freq1.begin(), freq1.end());\n        sort(freq2.begin(), freq2.end());\n\n        return freq1 == freq2;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:52:44.109515+00:00",
+    "wall_clock_ms": 4220,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 613,
+        "completion_tokens": 200,
+        "total_tokens": 813,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 16,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:52:44.109788+00:00"
+}

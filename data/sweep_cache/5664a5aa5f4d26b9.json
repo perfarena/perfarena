@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|java|check-if-it-is-a-straight-line",
+  "code": "class Solution {\n    public boolean checkStraightLine(int[][] coordinates) {\n        long dx = (long) coordinates[1][0] - coordinates[0][0];\n        long dy = (long) coordinates[1][1] - coordinates[0][1];\n\n        for (int i = 2; i < coordinates.length; i++) {\n            long x = (long) coordinates[i][0] - coordinates[0][0];\n            long y = (long) coordinates[i][1] - coordinates[0][1];\n\n            if (dx * y != dy * x) {\n                return false;\n            }\n        }\n\n        return true;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `check-if-it-is-a-straight-line` in Java.\n\nYou are given an array `coordinates`, `coordinates[i] = [x, y]`, where `[x, y]` represents the coordinate of a point. Check if these points make a straight line in the XY plane.\n\n**Example 1:**\n\n**Input:** coordinates = \\[\\[1,2\\],\\[2,3\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[6,7\\]\\]\n**Output:** true\n\n**Example 2:**\n\n**Input:** coordinates = \\[\\[1,1\\],\\[2,2\\],\\[3,4\\],\\[4,5\\],\\[5,6\\],\\[7,7\\]\\]\n**Output:** false\n\n**Constraints:**\n\n*   `2 <= coordinates.length <= 1000`\n*   `coordinates[i].length == 2`\n*   `-10^4 <= coordinates[i][0], coordinates[i][1] <= 10^4`\n*   `coordinates` contains no duplicate point.\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```java\nclass Solution {\n    public boolean checkStraightLine(int[][] coordinates) {\n        \n    }\n}\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public boolean checkStraightLine(int[][] coordinates) {\n        long dx = (long) coordinates[1][0] - coordinates[0][0];\n        long dy = (long) coordinates[1][1] - coordinates[0][1];\n\n        for (int i = 2; i < coordinates.length; i++) {\n            long x = (long) coordinates[i][0] - coordinates[0][0];\n            long y = (long) coordinates[i][1] - coordinates[0][1];\n\n            if (dx * y != dy * x) {\n                return false;\n            }\n        }\n\n        return true;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:48:57.875236+00:00",
+    "wall_clock_ms": 4084,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 375,
+        "completion_tokens": 158,
+        "total_tokens": 533,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 9,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:48:57.875379+00:00"
+}

@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|java|count-number-of-maximum-bitwise-or-subsets",
+  "code": "class Solution {\n    public int countMaxOrSubsets(int[] nums) {\n        int maxOr = 0;\n        for (int num : nums) {\n            maxOr |= num;\n        }\n        return count(nums, 0, 0, maxOr);\n    }\n\n    private int count(int[] nums, int index, int currentOr, int maxOr) {\n        if (currentOr == maxOr) {\n            return 1 << (nums.length - index);\n        }\n        if (index == nums.length) {\n            return 0;\n        }\n\n        return count(nums, index + 1, currentOr | nums[index], maxOr)\n             + count(nums, index + 1, currentOr, maxOr);\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `count-number-of-maximum-bitwise-or-subsets` in Java.\n\nGiven an integer array `nums`, find the **maximum** possible **bitwise OR** of a subset of `nums` and return _the **number of different non-empty subsets** with the maximum bitwise OR_.\n\nAn array `a` is a **subset** of an array `b` if `a` can be obtained from `b` by deleting some (possibly zero) elements of `b`. Two subsets are considered **different** if the indices of the elements chosen are different.\n\nThe bitwise OR of an array `a` is equal to `a[0] **OR** a[1] **OR** ... **OR** a[a.length - 1]` (**0-indexed**).\n\n**Example 1:**\n\n**Input:** nums = \\[3,1\\]\n**Output:** 2\n**Explanation:** The maximum possible bitwise OR of a subset is 3. There are 2 subsets with a bitwise OR of 3:\n- \\[3\\]\n- \\[3,1\\]\n\n**Example 2:**\n\n**Input:** nums = \\[2,2,2\\]\n**Output:** 7\n**Explanation:** All non-empty subsets of \\[2,2,2\\] have a bitwise OR of 2. There are 23 - 1 = 7 total subsets.\n\n**Example 3:**\n\n**Input:** nums = \\[3,2,1,5\\]\n**Output:** 6\n**Explanation:** The maximum possible bitwise OR of a subset is 7. There are 6 subsets with a bitwise OR of 7:\n- \\[3,5\\]\n- \\[3,1,5\\]\n- \\[3,2,5\\]\n- \\[3,2,1,5\\]\n- \\[2,5\\]\n- \\[2,1,5\\]\n\n**Constraints:**\n\n*   `1 <= nums.length <= 16`\n*   `1 <= nums[i] <= 105`\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```java\nclass Solution {\n    public int countMaxOrSubsets(int[] nums) {\n        \n    }\n}\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int countMaxOrSubsets(int[] nums) {\n        int maxOr = 0;\n        for (int num : nums) {\n            maxOr |= num;\n        }\n        return count(nums, 0, 0, maxOr);\n    }\n\n    private int count(int[] nums, int index, int currentOr, int maxOr) {\n        if (currentOr == maxOr) {\n            return 1 << (nums.length - index);\n        }\n        if (index == nums.length) {\n            return 0;\n        }\n\n        return count(nums, index + 1, currentOr | nums[index], maxOr)\n             + count(nums, index + 1, currentOr, maxOr);\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:51:22.550022+00:00",
+    "wall_clock_ms": 6077,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 585,
+        "completion_tokens": 253,
+        "total_tokens": 838,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 86,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:51:22.550472+00:00"
+}

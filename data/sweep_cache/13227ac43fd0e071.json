@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|longest-increasing-subsequence",
+  "code": "class Solution {\n    public int lengthOfLIS(int[] nums) {\n        if (nums == null || nums.length == 0) return 0;\n        int n = nums.length;\n        int[] tails = new int[n];\n        int size = 0;\n        for (int num : nums) {\n            int l = 0, r = size;\n            while (l < r) {\n                int mid = (l + r) >>> 1;\n                if (tails[mid] < num) l = mid + 1;\n                else r = mid;\n            }\n            tails[l] = num;\n            if (l == size) size++;\n        }\n        return size;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `longest-increasing-subsequence` in Java.\n\nGiven an integer array `nums`, return _the length of the longest **strictly increasing**_ _**subsequence**_.\n\n**Example 1:**\n\n**Input:** nums = \\[10,9,2,5,3,7,101,18\\]\n**Output:** 4\n**Explanation:** The longest increasing subsequence is \\[2,3,7,101\\], therefore the length is 4.\n\n**Example 2:**\n\n**Input:** nums = \\[0,1,0,3,2,3\\]\n**Output:** 4\n\n**Example 3:**\n\n**Input:** nums = \\[7,7,7,7,7,7,7\\]\n**Output:** 1\n\n**Constraints:**\n\n*   `1 <= nums.length <= 2500`\n*   `-104 <= nums[i] <= 104`\n\n**Follow up:** Can you come up with an algorithm that runs in `O(n log(n))` time complexity?\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int lengthOfLIS(int[] nums) {\n        if (nums == null || nums.length == 0) return 0;\n        int n = nums.length;\n        int[] tails = new int[n];\n        int size = 0;\n        for (int num : nums) {\n            int l = 0, r = size;\n            while (l < r) {\n                int mid = (l + r) >>> 1;\n                if (tails[mid] < num) l = mid + 1;\n                else r = mid;\n            }\n            tails[l] = num;\n            if (l == size) size++;\n        }\n        return size;\n    }\n}\n```",
+    "reasoning": "**Formulating Java Solution**\n\nI need to provide a solution for the Longest Increasing Subsequence problem using a standard dynamic programming approach with a time complexity of O(n log n). This involves maintaining a `tails` array, which holds the smallest possible tail for increasing subsequences. I\u2019ll use binary search to find the correct index to either replace or extend values in `tails`. I should also consider edge cases, ensuring that duplicates are handled properly. Finally, I\u2019ll set up a Java class with the required method, focusing on clarity and efficiency in the implementation.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T16:40:43.128279+00:00",
+    "wall_clock_ms": 5629,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 302,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 529,
+        "output_tokens_details": {
+          "reasoning_tokens": 320
+        },
+        "total_tokens": 831,
+        "prompt_tokens": 302,
+        "completion_tokens": 529
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T16:40:43.128493+00:00"
+}

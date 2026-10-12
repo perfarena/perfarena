@@ -1,0 +1,1 @@
+return minLen == Integer.MAX_VALUE ? "" : S.substring(start, start + minLen);

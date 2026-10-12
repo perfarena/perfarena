@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|spiral-matrix-iii",
+  "code": "class Solution {\n    public int[][] spiralMatrixIII(int rows, int cols, int rStart, int cStart) {\n        int total = rows * cols;\n        int[][] res = new int[total][2];\n        int idx = 0;\n        // starting position\n        res[idx++] = new int[]{rStart, cStart};\n        if (total == 1) return res;\n        \n        // directions: east, south, west, north\n        int[] dr = {0, 1, 0, -1};\n        int[] dc = {1, 0, -1, 0};\n        \n        int r = rStart, c = cStart;\n        int stepLen = 1;\n        \n        outer:\n        while (idx < total) {\n            for (int dir = 0; dir < 4; dir++) {\n                int steps = stepLen;\n                for (int s = 0; s < steps; s++) {\n                    r += dr[dir];\n                    c += dc[dir];\n                    if (r >= 0 && r < rows && c >= 0 && c < cols) {\n                        res[idx++] = new int[]{r, c};\n                        if (idx == total) break outer;\n                    }\n                }\n                // increase step length after moving east and west? pattern is after every two directions\n                if (dir % 2 == 1) {\n                    stepLen++;\n                }\n            }\n        }\n        \n        return res;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `spiral-matrix-iii` in Java.\n\nYou start at the cell `(rStart, cStart)` of an `rows x cols` grid facing east. The northwest corner is at the first row and column in the grid, and the southeast corner is at the last row and column.\n\nYou will walk in a clockwise spiral shape to visit every position in this grid. Whenever you move outside the grid's boundary, we continue our walk outside the grid (but may return to the grid boundary later.). Eventually, we reach all `rows * cols` spaces of the grid.\n\nReturn _an array of coordinates representing the positions of the grid in the order you visited them_.\n\n**Example 1:**\n\n**Input:** rows = 1, cols = 4, rStart = 0, cStart = 0\n**Output:** \\[\\[0,0\\],\\[0,1\\],\\[0,2\\],\\[0,3\\]\\]\n\n**Example 2:**\n\n**Input:** rows = 5, cols = 6, rStart = 1, cStart = 4\n**Output:** \\[\\[1,4\\],\\[1,5\\],\\[2,5\\],\\[2,4\\],\\[2,3\\],\\[1,3\\],\\[0,3\\],\\[0,4\\],\\[0,5\\],\\[3,5\\],\\[3,4\\],\\[3,3\\],\\[3,2\\],\\[2,2\\],\\[1,2\\],\\[0,2\\],\\[4,5\\],\\[4,4\\],\\[4,3\\],\\[4,2\\],\\[4,1\\],\\[3,1\\],\\[2,1\\],\\[1,1\\],\\[0,1\\],\\[4,0\\],\\[3,0\\],\\[2,0\\],\\[1,0\\],\\[0,0\\]\\]\n\n**Constraints:**\n\n*   `1 <= rows, cols <= 100`\n*   `0 <= rStart < rows`\n*   `0 <= cStart < cols`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int[][] spiralMatrixIII(int rows, int cols, int rStart, int cStart) {\n        int total = rows * cols;\n        int[][] res = new int[total][2];\n        int idx = 0;\n        // starting position\n        res[idx++] = new int[]{rStart, cStart};\n        if (total == 1) return res;\n        \n        // directions: east, south, west, north\n        int[] dr = {0, 1, 0, -1};\n        int[] dc = {1, 0, -1, 0};\n        \n        int r = rStart, c = cStart;\n        int stepLen = 1;\n        \n        outer:\n        while (idx < total) {\n            for (int dir = 0; dir < 4; dir++) {\n                int steps = stepLen;\n                for (int s = 0; s < steps; s++) {\n                    r += dr[dir];\n                    c += dc[dir];\n                    if (r >= 0 && r < rows && c >= 0 && c < cols) {\n                        res[idx++] = new int[]{r, c};\n                        if (idx == total) break outer;\n                    }\n                }\n                // increase step length after moving east and west? pattern is after every two directions\n                if (dir % 2 == 1) {\n                    stepLen++;\n                }\n            }\n        }\n        \n        return res;\n    }\n}\n```",
+    "reasoning": "**Implementing spiral matrix**\n\nI need to solve the standard LeetCode problem Spiral Matrix III. My approach is to simulate movement in a spiral, increasing step lengths in a sequence like 1,1,2,2,3,3, etc., while following directions East, South, West, and North. Starting from rStart and cStart, I\u2019ll add positions as long as they\u2019re within grid bounds. I\u2019ve set up arrays dr and dc to manage movement in those directions. I need to increment step lengths correctly after moving in specific patterns.\n\n**Coding spiral matrix**\n\nAfter handling movement for the current direction, I'll update the direction index and possibly increment the step length. I need to ensure the starting position is added before moving. As long as the result array is shorter than the total number of positions (rows times cols), I\u2019ll perform the movements. I need to follow the LeetCode structure by implementing the method public int[][] spiralMatrixIII. I\u2019ll allocate space for the results and use a while loop to control the iterations as I add positions based on bounds. Edge cases like single-cell grids need to be managed too!\n\n**Finalizing the code**\n\nI need to create a class named Solution that includes the method spiralMatrixIII as per LeetCode requirements. It's important to use the correct naming convention for the method to align with their expectations. Now, I\u2019ll focus on producing the final code block to ensure it\u2019s structured properly and meets all the necessary specifications. This will make the implementation clear and straightforward. Let's get that code finalized!",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:52:14.172745+00:00",
+    "wall_clock_ms": 10551,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 534,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 901,
+        "output_tokens_details": {
+          "reasoning_tokens": 576
+        },
+        "total_tokens": 1435,
+        "prompt_tokens": 534,
+        "completion_tokens": 901
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:52:14.173081+00:00"
+}

@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|string-without-aaa-or-bbb",
+  "code": "class Solution {\n    public String strWithout3a3b(int a, int b) {\n        StringBuilder sb = new StringBuilder();\n        while (a > 0 || b > 0) {\n            if (a > b) {\n                if (a >= 2) {\n                    sb.append(\"aa\");\n                    a -= 2;\n                } else {\n                    sb.append('a');\n                    a--;\n                }\n                if (b > 0) {\n                    sb.append('b');\n                    b--;\n                }\n            } else if (b > a) {\n                if (b >= 2) {\n                    sb.append(\"bb\");\n                    b -= 2;\n                } else {\n                    sb.append('b');\n                    b--;\n                }\n                if (a > 0) {\n                    sb.append('a');\n                    a--;\n                }\n            } else { // a == b\n                if (a > 0) {\n                    sb.append('a');\n                    a--;\n                }\n                if (b > 0) {\n                    sb.append('b');\n                    b--;\n                }\n            }\n        }\n        return sb.toString();\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `string-without-aaa-or-bbb` in Java.\n\nGiven two integers `a` and `b`, return **any** string `s` such that:\n\n*   `s` has length `a + b` and contains exactly `a` `'a'` letters, and exactly `b` `'b'` letters,\n*   The substring `'aaa'` does not occur in `s`, and\n*   The substring `'bbb'` does not occur in `s`.\n\n**Example 1:**\n\n**Input:** a = 1, b = 2\n**Output:**  \"abb \"\n**Explanation:**  \"abb \",  \"bab \" and  \"bba \" are all correct answers.\n\n**Example 2:**\n\n**Input:** a = 4, b = 1\n**Output:**  \"aabaa \"\n\n**Constraints:**\n\n*   `0 <= a, b <= 100`\n*   It is guaranteed such an `s` exists for the given `a` and `b`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public String strWithout3a3b(int a, int b) {\n        StringBuilder sb = new StringBuilder();\n        while (a > 0 || b > 0) {\n            if (a > b) {\n                if (a >= 2) {\n                    sb.append(\"aa\");\n                    a -= 2;\n                } else {\n                    sb.append('a');\n                    a--;\n                }\n                if (b > 0) {\n                    sb.append('b');\n                    b--;\n                }\n            } else if (b > a) {\n                if (b >= 2) {\n                    sb.append(\"bb\");\n                    b -= 2;\n                } else {\n                    sb.append('b');\n                    b--;\n                }\n                if (a > 0) {\n                    sb.append('a');\n                    a--;\n                }\n            } else { // a == b\n                if (a > 0) {\n                    sb.append('a');\n                    a--;\n                }\n                if (b > 0) {\n                    sb.append('b');\n                    b--;\n                }\n            }\n        }\n        return sb.toString();\n    }\n}\n```",
+    "reasoning": "**Designing an algorithm**\n\nI need to address edge cases, specifically when a equals b, so I might append 'ab'. In my loop, handling equal values would involve appending \"ab\" to avoid creating triples like \"ababab.\" \n\nOkay, here's the algorithm I'm considering:\n\nWhile either a or b is greater than zero, I check which is larger. If a is larger, I append \"aa\" if a is at least 2; otherwise, just append 'a'. If b is larger, I\u2019ll do the opposite. If they\u2019re equal, I append \"ab.\" I need to ensure that counts for a and b reach zero correctly without repeating excessively.\n\n**Evaluating edge cases**\n\nI'm considering some edge cases. For example, if a=1 and b=0, since a is greater and greater than or equal to 2 is false, I just append 'a'. \n\nWhen a=2 and b=2, I enter a loop where I can append \"ab\" and then handle the remainder, leading to \"abab,\" which is fine. But if a=0 and b=3, the scenario gets tricky. My first append would generate \"bb\" and then \"bbb\", which is invalid. \n\nI realize that if I'm guaranteed a solution exists, scenarios like a=0 and b=3 won\u2019t actually occur given the constraints.\n\n**Testing edge cases**\n\nI found that producing \"bbb\" violates the constraints, but since it's impossible in certain scenarios, I\u2019m okay with that. Now, considering a=0 and b=2, I could append \"bb,\" which is allowed as it doesn't produce \"bbb.\" \n\nIf I have a=1 and b=2, since a is less than b and b is greater than or equal to 2, I would append \"bb\" and then 'a.' That results in \"bba,\" which is valid. The edge case of a=1 and b=1 works too since appending 'ab' is perfectly fine. I think my approach is solid!\n\n**Implementing the solution**\n\nI'm working on implementing the solution in Java. My plan is to use a `StringBuilder` for constructing the string without three consecutive 'a's or 'b's.\n\nIn the while loop, if a is greater than b, I append \"aa\" or just 'a'. Then, if b is greater, I append \"bb\" or 'b'. For the equal case, I\u2019ll append one of each, essentially treating 'ab' and 'ba' the same. I want to test mental cases too, like a=2 and b=0, which should just yield \"aa.\" The time complexity seems fine, and I feel good about this!\n\n**Finalizing the Java code**\n\nI'm making sure to return only the `class Solution` method `strWithout3a3b` to match the LeetCode signature exactly. There\u2019s no need to include a package or import statements. \n\nI want this to be clean and straightforward. So, let's just focus on the method itself without any extra structures. \n\nNow, I\u2019ll wrap the final Java code in a single code block for clarity. Alright, here goes!",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:56:45.584782+00:00",
+    "wall_clock_ms": 23265,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 296,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 1687,
+        "output_tokens_details": {
+          "reasoning_tokens": 1408
+        },
+        "total_tokens": 1983,
+        "prompt_tokens": 296,
+        "completion_tokens": 1687
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:56:45.585455+00:00"
+}

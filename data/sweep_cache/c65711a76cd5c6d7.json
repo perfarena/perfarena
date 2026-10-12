@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|java|pidigits",
+  "code": "import java.math.BigInteger;\n\npublic class pidigits {\n    public static void main(String[] args) {\n        final int n = Integer.parseInt(args[0]);\n        final BigInteger THREE = BigInteger.valueOf(3);\n        final BigInteger TEN = BigInteger.TEN;\n\n        BigInteger numerator = BigInteger.ONE;\n        BigInteger denominator = BigInteger.ONE;\n        BigInteger accumulator = BigInteger.ZERO;\n\n        StringBuilder output = new StringBuilder();\n        int emitted = 0;\n        long k = 0;\n\n        while (emitted < n) {\n            ++k;\n            BigInteger factor = BigInteger.valueOf(2 * k + 1);\n\n            accumulator = accumulator.add(numerator.shiftLeft(1)).multiply(factor);\n            numerator = numerator.multiply(BigInteger.valueOf(k));\n            denominator = denominator.multiply(factor);\n\n            if (numerator.compareTo(accumulator) > 0) {\n                continue;\n            }\n\n            BigInteger tripleNumerator = numerator.multiply(THREE);\n            BigInteger[] candidate = accumulator.add(tripleNumerator)\n                    .divideAndRemainder(denominator);\n\n            if (candidate[1].add(numerator).compareTo(denominator) >= 0) {\n                continue;\n            }\n\n            output.append((char) ('0' + candidate[0].intValue()));\n            ++emitted;\n\n            if (emitted % 10 == 0) {\n                output.append('\\t').append(':').append(emitted).append('\\n');\n            }\n\n            accumulator = candidate[1].subtract(tripleNumerator).multiply(TEN);\n            numerator = numerator.multiply(TEN);\n        }\n\n        int remaining = emitted % 10;\n        if (remaining != 0) {\n            for (int i = remaining; i < 10; ++i) {\n                output.append(' ');\n            }\n            output.append('\\t').append(':').append(emitted).append('\\n');\n        }\n\n        System.out.print(output);\n    }\n}",
+  "trace": {
+    "prompt": "Solve this benchmark problem `pidigits` in Java.\n\n# pidigits\n\nCompute the first N decimal digits of pi using an unbounded spigot algorithm. Print the digits in groups of 10 per line, followed by a tab, a colon, and the running digit index.\n\n## Input\nA single positive integer N read as a command-line argument.\n\n## Output\n```\n<digits 1-10>\\t:10\n<digits 11-20>\\t:20\n...\n<digits N-9..N>\\t:N\n```\n\n## Invocation\nThe program is invoked as: <prog> 10000\n\n**Default N:** `10000` \u00b7 **Validation N:** `28` \u00b7 **Algorithm class:** arbitrary-precision arithmetic\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```java\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained Java program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `args[0]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```java code block with nothing else outside it.\n\nJAVA ENTRY POINT \u2014 the harness runs `java pidigits N`, so your main class MUST be named EXACTLY `pidigits`: declare `public class pidigits` containing `public static void main(String[] args)`. Any helper classes must be non-public (Java allows one public top-level class per file). A class named anything else fails with ClassNotFoundException.",
+    "raw_response": "```java\nimport java.math.BigInteger;\n\npublic class pidigits {\n    public static void main(String[] args) {\n        final int n = Integer.parseInt(args[0]);\n        final BigInteger THREE = BigInteger.valueOf(3);\n        final BigInteger TEN = BigInteger.TEN;\n\n        BigInteger numerator = BigInteger.ONE;\n        BigInteger denominator = BigInteger.ONE;\n        BigInteger accumulator = BigInteger.ZERO;\n\n        StringBuilder output = new StringBuilder();\n        int emitted = 0;\n        long k = 0;\n\n        while (emitted < n) {\n            ++k;\n            BigInteger factor = BigInteger.valueOf(2 * k + 1);\n\n            accumulator = accumulator.add(numerator.shiftLeft(1)).multiply(factor);\n            numerator = numerator.multiply(BigInteger.valueOf(k));\n            denominator = denominator.multiply(factor);\n\n            if (numerator.compareTo(accumulator) > 0) {\n                continue;\n            }\n\n            BigInteger tripleNumerator = numerator.multiply(THREE);\n            BigInteger[] candidate = accumulator.add(tripleNumerator)\n                    .divideAndRemainder(denominator);\n\n            if (candidate[1].add(numerator).compareTo(denominator) >= 0) {\n                continue;\n            }\n\n            output.append((char) ('0' + candidate[0].intValue()));\n            ++emitted;\n\n            if (emitted % 10 == 0) {\n                output.append('\\t').append(':').append(emitted).append('\\n');\n            }\n\n            accumulator = candidate[1].subtract(tripleNumerator).multiply(TEN);\n            numerator = numerator.multiply(TEN);\n        }\n\n        int remaining = emitted % 10;\n        if (remaining != 0) {\n            for (int i = remaining; i < 10; ++i) {\n                output.append(' ');\n            }\n            output.append('\\t').append(':').append(emitted).append('\\n');\n        }\n\n        System.out.print(output);\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T10:07:02.301835+00:00",
+    "wall_clock_ms": 26738,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 482,
+        "completion_tokens": 1159,
+        "total_tokens": 1641,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 733,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T10:07:02.301976+00:00"
+}

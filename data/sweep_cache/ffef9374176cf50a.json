@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|python3|check-if-all-characters-have-equal-number-of-occurrences",
+  "code": "from collections import Counter\n\nclass Solution:\n    def areOccurrencesEqual(self, s: str) -> bool:\n        counts = Counter(s).values()\n        return len(set(counts)) == 1",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `check-if-all-characters-have-equal-number-of-occurrences` in Python 3.\n\nGiven a string `s`, return `true` _if_ `s` _is a **good** string, or_ `false` _otherwise_.\n\nA string `s` is **good** if **all** the characters that appear in `s` have the **same** number of occurrences (i.e., the same frequency).\n\n**Example 1:**\n\n**Input:** s =  \"abacbc \"\n**Output:** true\n**Explanation:** The characters that appear in s are 'a', 'b', and 'c'. All characters occur 2 times in s.\n\n**Example 2:**\n\n**Input:** s =  \"aaabb \"\n**Output:** false\n**Explanation:** The characters that appear in s are 'a' and 'b'.\n'a' occurs 3 times while 'b' occurs 2 times, which is not the same number of times.\n\n**Constraints:**\n\n*   `1 <= s.length <= 1000`\n*   `s` consists of lowercase English letters.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Python 3 using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```python code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```python\nfrom collections import Counter\n\nclass Solution:\n    def areOccurrencesEqual(self, s: str) -> bool:\n        counts = Counter(s).values()\n        return len(set(counts)) == 1\n```",
+    "reasoning": "**Implementing LeetCode Solution**\n\nI need to create a Solution class with a method called `areOccurrencesEqual` for the LeetCode problem 1941, which checks if all characters in a string appear with the same frequency. The approach is to use `collections.Counter` to count character frequencies, then check if the number of unique counts is one. I\u2019ll make sure to include edge cases, like checking if the string is empty. Here\u2019s the final Python code:\n\n```python\nfrom collections import Counter\n\nclass Solution:\n    def areOccurrencesEqual(self, s: str) -> bool:\n        cnt = Counter(s)\n        vals = list(cnt.values())\n        return len(set(vals)) == 1\n```",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-22T08:18:38.967996+00:00",
+    "wall_clock_ms": 5138,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 313,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 282,
+        "output_tokens_details": {
+          "reasoning_tokens": 192
+        },
+        "total_tokens": 595,
+        "prompt_tokens": 313,
+        "completion_tokens": 282
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-22T08:18:38.968260+00:00"
+}

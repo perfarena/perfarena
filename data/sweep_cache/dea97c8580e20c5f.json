@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|pidigits",
+  "code": "#include <boost/multiprecision/cpp_int.hpp>\n#include <cstdint>\n#include <cstdio>\n#include <cstdlib>\n#include <string>\n\nint main(int argc, char* argv[]) {\n    if (argc < 2) return 1;\n\n    char* end = nullptr;\n    const unsigned long long n = std::strtoull(argv[1], &end, 10);\n    if (end == argv[1] || *end != '\\0' || n == 0) return 1;\n\n    using boost::multiprecision::cpp_int;\n\n    cpp_int numerator = 1;\n    cpp_int accumulator = 0;\n    cpp_int denominator = 1;\n    cpp_int probe, quotient, remainder, product;\n\n    std::string output;\n    unsigned long long produced = 0;\n    unsigned column = 0;\n\n    // Unbounded linear-fractional spigot: consume terms until the\n    // lower and upper bounds agree on the next decimal digit.\n    for (std::uint64_t k = 1; produced < n; ++k) {\n        const std::uint64_t factor = 2 * k + 1;\n\n        probe = numerator;\n        probe <<= 1;\n        accumulator += probe;\n        accumulator *= factor;\n        denominator *= factor;\n        numerator *= k;\n\n        if (accumulator < numerator) continue;\n\n        probe = numerator * 3;\n        probe += accumulator;\n        quotient = probe / denominator;\n        const unsigned digit = quotient.convert_to<unsigned>();\n\n        product = denominator * digit;\n        remainder = probe - product;\n        remainder += numerator;\n\n        if (remainder >= denominator) continue;\n\n        output.push_back(static_cast<char>('0' + digit));\n        ++produced;\n        ++column;\n\n        if (column == 10 || produced == n) {\n            output.append(10 - column, ' ');\n            output += \"\\t:\";\n            output += std::to_string(produced);\n            output.push_back('\\n');\n            column = 0;\n        }\n\n        if (produced == n) break;\n\n        accumulator -= product;\n        accumulator *= 10;\n        numerator *= 10;\n    }\n\n    std::fwrite(output.data(), 1, output.size(), stdout);\n    return 0;\n}",
+  "trace": {
+    "prompt": "Solve this benchmark problem `pidigits` in C++.\n\n# pidigits\n\nCompute the first N decimal digits of pi using an unbounded spigot algorithm. Print the digits in groups of 10 per line, followed by a tab, a colon, and the running digit index.\n\n## Input\nA single positive integer N read as a command-line argument.\n\n## Output\n```\n<digits 1-10>\\t:10\n<digits 11-20>\\t:20\n...\n<digits N-9..N>\\t:N\n```\n\n## Invocation\nThe program is invoked as: <prog> 10000\n\n**Default N:** `10000` \u00b7 **Validation N:** `28` \u00b7 **Algorithm class:** arbitrary-precision arithmetic\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained C++ program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `argv[1]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```cpp code block with nothing else outside it.",
+    "raw_response": "```cpp\n#include <boost/multiprecision/cpp_int.hpp>\n#include <cstdint>\n#include <cstdio>\n#include <cstdlib>\n#include <string>\n\nint main(int argc, char* argv[]) {\n    if (argc < 2) return 1;\n\n    char* end = nullptr;\n    const unsigned long long n = std::strtoull(argv[1], &end, 10);\n    if (end == argv[1] || *end != '\\0' || n == 0) return 1;\n\n    using boost::multiprecision::cpp_int;\n\n    cpp_int numerator = 1;\n    cpp_int accumulator = 0;\n    cpp_int denominator = 1;\n    cpp_int probe, quotient, remainder, product;\n\n    std::string output;\n    unsigned long long produced = 0;\n    unsigned column = 0;\n\n    // Unbounded linear-fractional spigot: consume terms until the\n    // lower and upper bounds agree on the next decimal digit.\n    for (std::uint64_t k = 1; produced < n; ++k) {\n        const std::uint64_t factor = 2 * k + 1;\n\n        probe = numerator;\n        probe <<= 1;\n        accumulator += probe;\n        accumulator *= factor;\n        denominator *= factor;\n        numerator *= k;\n\n        if (accumulator < numerator) continue;\n\n        probe = numerator * 3;\n        probe += accumulator;\n        quotient = probe / denominator;\n        const unsigned digit = quotient.convert_to<unsigned>();\n\n        product = denominator * digit;\n        remainder = probe - product;\n        remainder += numerator;\n\n        if (remainder >= denominator) continue;\n\n        output.push_back(static_cast<char>('0' + digit));\n        ++produced;\n        ++column;\n\n        if (column == 10 || produced == n) {\n            output.append(10 - column, ' ');\n            output += \"\\t:\";\n            output += std::to_string(produced);\n            output.push_back('\\n');\n            column = 0;\n        }\n\n        if (produced == n) break;\n\n        accumulator -= product;\n        accumulator *= 10;\n        numerator *= 10;\n    }\n\n    std::fwrite(output.data(), 1, output.size(), stdout);\n    return 0;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T10:06:35.507821+00:00",
+    "wall_clock_ms": 42662,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 410,
+        "completion_tokens": 1837,
+        "total_tokens": 2247,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1344,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T10:06:35.508935+00:00"
+}

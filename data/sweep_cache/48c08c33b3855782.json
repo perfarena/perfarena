@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|reformat-date",
+  "code": "class Solution {\n    public String reformatDate(String date) {\n        String[] parts = date.split(\" \");\n        // parts[0] = day with suffix, parts[1] = month, parts[2] = year\n        String dayPart = parts[0].replaceAll(\"\\\\D\", \"\"); // remove non-digit characters\n        if (dayPart.length() == 1) dayPart = \"0\" + dayPart;\n        String monthPart = parts[1];\n        String yearPart = parts[2];\n        \n        String monthNum;\n        switch (monthPart) {\n            case \"Jan\": monthNum = \"01\"; break;\n            case \"Feb\": monthNum = \"02\"; break;\n            case \"Mar\": monthNum = \"03\"; break;\n            case \"Apr\": monthNum = \"04\"; break;\n            case \"May\": monthNum = \"05\"; break;\n            case \"Jun\": monthNum = \"06\"; break;\n            case \"Jul\": monthNum = \"07\"; break;\n            case \"Aug\": monthNum = \"08\"; break;\n            case \"Sep\": monthNum = \"09\"; break;\n            case \"Oct\": monthNum = \"10\"; break;\n            case \"Nov\": monthNum = \"11\"; break;\n            case \"Dec\": monthNum = \"12\"; break;\n            default: monthNum = \"00\"; break;\n        }\n        \n        return yearPart + \"-\" + monthNum + \"-\" + dayPart;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `reformat-date` in Java.\n\nGiven a `date` string in the form `Day Month Year`, where:\n\n*   `Day` is in the set `{ \"1st \", \"2nd \", \"3rd \", \"4th \", ..., \"30th \", \"31st \"}`.\n*   `Month` is in the set `{ \"Jan \", \"Feb \", \"Mar \", \"Apr \", \"May \", \"Jun \", \"Jul \", \"Aug \", \"Sep \", \"Oct \", \"Nov \", \"Dec \"}`.\n*   `Year` is in the range `[1900, 2100]`.\n\nConvert the date string to the format `YYYY-MM-DD`, where:\n\n*   `YYYY` denotes the 4 digit year.\n*   `MM` denotes the 2 digit month.\n*   `DD` denotes the 2 digit day.\n\n**Example 1:**\n\n**Input:** date =  \"20th Oct 2052 \"\n**Output:**  \"2052-10-20 \"\n\n**Example 2:**\n\n**Input:** date =  \"6th Jun 1933 \"\n**Output:**  \"1933-06-06 \"\n\n**Example 3:**\n\n**Input:** date =  \"26th May 1960 \"\n**Output:**  \"1960-05-26 \"\n\n**Constraints:**\n\n*   The given dates are guaranteed to be valid, so no error handling is necessary.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public String reformatDate(String date) {\n        String[] parts = date.split(\" \");\n        // parts[0] = day with suffix, parts[1] = month, parts[2] = year\n        String dayPart = parts[0].replaceAll(\"\\\\D\", \"\"); // remove non-digit characters\n        if (dayPart.length() == 1) dayPart = \"0\" + dayPart;\n        String monthPart = parts[1];\n        String yearPart = parts[2];\n        \n        String monthNum;\n        switch (monthPart) {\n            case \"Jan\": monthNum = \"01\"; break;\n            case \"Feb\": monthNum = \"02\"; break;\n            case \"Mar\": monthNum = \"03\"; break;\n            case \"Apr\": monthNum = \"04\"; break;\n            case \"May\": monthNum = \"05\"; break;\n            case \"Jun\": monthNum = \"06\"; break;\n            case \"Jul\": monthNum = \"07\"; break;\n            case \"Aug\": monthNum = \"08\"; break;\n            case \"Sep\": monthNum = \"09\"; break;\n            case \"Oct\": monthNum = \"10\"; break;\n            case \"Nov\": monthNum = \"11\"; break;\n            case \"Dec\": monthNum = \"12\"; break;\n            default: monthNum = \"00\"; break;\n        }\n        \n        return yearPart + \"-\" + monthNum + \"-\" + dayPart;\n    }\n}\n```",
+    "reasoning": "**Implementing date reformatting**\n\nI need to tackle the LeetCode problem of reformatting dates. First, I\u2019ll think about the method signature, which is likely in the format of a class. I'll be handling input like \"20th Oct 2052\" and need to clean it up of any trailing spaces. \n\nTo parse, I'll split the date by spaces, extract the day while removing suffixes like \"st\" or \"nd.\" Then I'll map months to numbers and pad the day with leading zeros as necessary. With these elements in place, I can format and return the final string.\n\n**Crafting Java code**\n\nI\u2019m focusing on writing the Java code for the reformatDate method within a Solution class. I need to keep it simple and not import anything unnecessary. It makes sense to use Integer.parseInt for parsing integer values. I\u2019ll return a string result. Since this is for LeetCode, including a main method isn't necessary; I should stick to the requirement of just having the class and the method signature. Now, I\u2019ll generate the code block.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:20:46.047998+00:00",
+    "wall_clock_ms": 15694,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 377,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 598,
+        "output_tokens_details": {
+          "reasoning_tokens": 256
+        },
+        "total_tokens": 975,
+        "prompt_tokens": 377,
+        "completion_tokens": 598
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:20:46.048197+00:00"
+}

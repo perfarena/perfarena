@@ -1,0 +1,10 @@
+def max_profit(prices):
+    profit = 0
+    for i in range(1, len(prices)):
+        if prices[i] > prices[i - 1]:
+            profit += prices[i] - prices[i - 1]
+    return profit
+
+# Test the function with the given example
+prices = [1, 5, 3, 6, 4]
+print(max_profit(prices))  # Output should be 7

@@ -745,3 +745,96 @@ validate confirm sweep is the authoritative check.
     client's `MEASURABLE_LANGUAGES`); this is purely per-competition problem
     content: fill each cell, then validate it with `run_validate.sh`, exactly as
     done for Dart on the first two competitions.
+
+
+## Anti-cheat: purge confirmed cheats + disclose rules in prompts (2026-10-04)
+
+43. **TODO (DO NOT START until explicitly asked) — purge the 6 confirmed cheating
+    attempts from the deployed system, and add the anti-cheat rule lines to the
+    affected CLBG problem statements.** An audit of the prod export (speed-outlier
+    detector scoped to whole-program CLBG, `h=3`) found exactly 6 real cheats out
+    of 171 raw flags; the rest are false positives (LeetCode-judge quantization on
+    `h=1`, and genuine-optimization outliers on per-op problems like
+    `partition-to-k-equal-sum-subsets`, fasta, pidigits — all verified legitimate).
+
+    **(a) Purge these 6 attempts** (keep the submission row or disqualify per
+    whatever policy we land on; they must NOT count in rankings). Two cheat
+    mechanisms:
+    - **Closed-form binary-trees** (compute the checksum arithmetically, never
+      allocate/free a node — exactly what the benchmark measures against):
+      - php — sub#326 att#18622 — deepseek-v4.1-flash
+      - python3 — sub#431 att#19644 — gemma4:e4b (the one Rui first spotted)
+      - python3 — sub#327 att#17728 — deepseek-v4.1-flash
+      - python3 — sub#338 att#17797 — gpt-5.5
+      - typescript — sub#325 att#17725 — deepseek-v4.1-flash
+    - **Native-code offload** (runs the whole workload in compiled C via
+      `ctypes`+`cc -O2`, so it isn't measuring the submission language at all; it
+      is the ONLY n-body entry that does this — 1439 ms vs ~93–95 s for every other
+      python3 entry):
+      - n-body — python3 — sub#408 att#19257 — claude-opus-5-5
+    Use the existing purge-script pattern (`scripts/purge_failed_clbg_attempts.py`,
+    `scripts/purge_fixed_clbg_attempts.py`) as a template. Target the LIVE prod DB
+    (not the local `leetcode_crawler-backend-1` Docker Desktop container, which is
+    a stale Sep-16 copy — the real data is reachable only via the prod HTTPS API /
+    the actual prod host, TBD).
+
+    **(b) Add these rule lines to the CLBG problem statements** (seed from
+    `Energy-Languages/perfarena/configs/problems.yaml` → re-run the CLBG seed so
+    `problem.content` updates live, same flow as the N-leak fix):
+    - **binary-trees** — the anti-closed-form line is ALREADY added (submodule
+      9cca2ae4). No change needed; listed here for completeness.
+    - **regex-redux** — add: "You must use <language>'s built-in regular-expression
+      facility for the matching and substitutions; hand-rolled character matching
+      that bypasses the regex engine is not allowed." NOTE: enforcing this
+      invalidates the existing hand-rolled entries (5 of 7 C++ plus others) — decide
+      whether to re-run or disqualify them. (Benchmark-semantics call, see item (c).)
+    - **all CLBG, interpreted langs (python3/php/javascript/typescript/ruby)** — add:
+      "Your solution must run entirely within <language>'s own runtime: do not shell
+      out to a compiler, load native libraries, or use a foreign-function interface
+      (e.g. ctypes/cffi/FFI, child_process, JNI, P/Invoke) to run the workload in
+      another language." Allow `multiprocessing`/`threading`/`asyncio` (CLBG permits
+      multicore) — ban only the foreign-toolchain escape.
+
+    **(c) (follow-on, separate) static enforcement gate** — the above is prompt
+    disclosure + one-time purge. The durable fix is the `check_integrity(slug,
+    language, code, rules)` gate beside `validate_code` (reject native-offload +
+    missing-regex-engine at ingest as `prefailed_reason`, keeping the evidence), the
+    declarative `integrity:` block in `problems.yaml`, and scoping the statistical
+    detector to whole-program CLBG only (drop the `h=1` LeetCode-judge harness and
+    the per-op leetcode-perf problems — both produce 30–150× spreads from legit
+    algorithmic/pruning differences, not cheating). Design agreed; not yet built.
+
+
+## Parallel oracle execution via replica pools — PLAN WRITTEN, not started (2026-10-07)
+
+44. **DESIGN + IMPLEMENTATION PLAN done; implementation NOT started.** Full plan:
+    `docs/parallel-oracle-replicas-plan.md`. Goal: register N interchangeable
+    runners behind ONE logical oracle and farm pending attempts across them, so a
+    sweep that runs serially today finishes about Nx faster on N machines.
+
+    **The crux is comparability, not scheduling.** Runtime/energy is only
+    comparable within one `(machine, energy_tool, config)` triple — that IS the
+    `MeasurementProfile` key (`measurement_profile.config_hash` +
+    `get_or_create_profile` dedup on `(machine_id, config_hash)`), and a submission
+    is pinned to one machine (`dispatch._assign_machine` treats a second machine as
+    a conflict). So a naive fan-out across N machines scatters one model's runs
+    across N profiles and breaks the leaderboard.
+
+    **Shape:** split the LOGICAL oracle (identity Submissions/Runs reference,
+    unchanged) from PHYSICAL replicas (interchangeable runner endpoints, additive).
+    Add a `MachineClass` equivalence so N identical machines pool into one profile;
+    re-key `get_or_create_profile` on the effective class (a classless machine is
+    its own singleton class → byte-identical hash → zero repopulation, same
+    compat trick as the agent change). Replace the per-submission dispatch loop with
+    an attempt-level claim-based queue (claim → lease → done/requeue), one in-flight
+    per replica (the runner already 429s when busy).
+
+    **Correctness replicas are the easy case** (deterministic verdict, no machine
+    class, no calibration — pure fan-out). **Perf replicas are the hard case** (need
+    the machine class + a calibration/admission gate that proves equivalence before
+    pooling). Phases: (0) correctness replicas, (1) MachineClass + profile re-key
+    [compat-critical], (2) perf replicas + calibration, (3) scheduler cutover.
+
+    **Open decisions before Phase 1** (see plan §"Open decisions"): calibration gate
+    vs declaration-only; fan out within a submission vs only across submissions;
+    in-process queue vs separate dispatcher.

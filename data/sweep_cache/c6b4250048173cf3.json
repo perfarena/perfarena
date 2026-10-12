@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system-with-shape|cpp|regex-redux",
+  "code": "#include <bits/stdc++.h>\n#include <regex>\n\nusing namespace std;\n\nstatic inline void replace_all(string& s, const string& from, const string& to) {\n    if (from.empty()) return;\n    size_t pos = 0;\n    while ((pos = s.find(from, pos)) != string::npos) {\n        s.replace(pos, from.size(), to);\n        pos += to.size();\n    }\n}\n\nint main(int argc, char* argv[]) {\n    (void)argc;\n    (void)argv;\n\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    static const pair<const char*, const char*> patterns[] = {\n        {\"agggtaaa|tttaccct\", \"\"},\n        {\"[cgt]gggtaaa|tttaccc[acg]\", \"\"},\n        {\"a[act]ggtaaa|tttacc[agt]t\", \"\"},\n        {\"ag[act]gtaaa|tttac[agt]ct\", \"\"},\n        {\"agg[act]taaa|ttta[agt]cct\", \"\"},\n        {\"aggg[acg]aaa|ttt[cgt]ccct\", \"\"},\n        {\"agggt[cgt]aa|tt[a|c|g]accct\", \"\"},\n        {\"agggta[cgt]a|t[acg]taccct\", \"\"}\n    };\n\n    vector<string> lines;\n    string line;\n    size_t original_length = 0;\n    while (getline(cin, line)) {\n        original_length += line.size() + 1;\n        if (!line.empty() && line[0] == '>') continue;\n        lines.push_back(line);\n    }\n\n    string seq;\n    seq.reserve(original_length);\n    for (const auto& l : lines) seq += l;\n\n    for (const auto& p : patterns) {\n        regex re(p.first, regex_constants::ECMAScript | regex_constants::optimize);\n        size_t count = distance(sregex_iterator(seq.begin(), seq.end(), re), sregex_iterator());\n        cout << p.first << ' ' << count << '\\n';\n    }\n\n    cout << original_length << '\\n';\n    cout << seq.size() << '\\n';\n\n    static const pair<const char*, const char*> subs[] = {\n        {\"B\", \"(c|g|t)\"},\n        {\"D\", \"(a|g|t)\"},\n        {\"H\", \"(a|c|t)\"},\n        {\"K\", \"(g|t)\"},\n        {\"M\", \"(a|c)\"},\n        {\"N\", \"(a|c|g|t)\"},\n        {\"R\", \"(a|g)\"},\n        {\"S\", \"(c|g)\"},\n        {\"V\", \"(a|c|g)\"},\n        {\"W\", \"(a|t)\"},\n        {\"Y\", \"(c|t)\"}\n    };\n\n    for (const auto& p : subs) replace_all(seq, p.first, p.second);\n\n    cout << seq.size() << '\\n';\n    return 0;\n}",
+  "trace": {
+    "prompt": "Solve this benchmark problem `regex-redux` in C++.\n\n# regex-redux\n\nRead a FASTA-formatted DNA sequence from stdin, strip the FASTA headers and newlines, count occurrences of eight specific IUPAC regex patterns on the stripped sequence, then apply a series of regex substitutions to produce an \"IUPAC-encoded\" sequence and report the original and post-processing lengths.\n\n## Input\nA FASTA-formatted DNA sequence on stdin.\n\n## Output\n```\n<pattern_1> <count>\n...\n<pattern_8> <count>\n<original length>\n<stripped length>\n<post-substitution length>\n```\n\n## Invocation\nThe program reads from stdin. Input is piped from the fasta output.\n\n**Default N:** `0` \u00b7 **Validation N:** `0` \u00b7 **Algorithm class:** regex engine, string I/O\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained C++ program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `argv[1]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```cpp code block with nothing else outside it.",
+    "raw_response": "```cpp\n#include <bits/stdc++.h>\n#include <regex>\n\nusing namespace std;\n\nstatic inline void replace_all(string& s, const string& from, const string& to) {\n    if (from.empty()) return;\n    size_t pos = 0;\n    while ((pos = s.find(from, pos)) != string::npos) {\n        s.replace(pos, from.size(), to);\n        pos += to.size();\n    }\n}\n\nint main(int argc, char* argv[]) {\n    (void)argc;\n    (void)argv;\n\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    static const pair<const char*, const char*> patterns[] = {\n        {\"agggtaaa|tttaccct\", \"\"},\n        {\"[cgt]gggtaaa|tttaccc[acg]\", \"\"},\n        {\"a[act]ggtaaa|tttacc[agt]t\", \"\"},\n        {\"ag[act]gtaaa|tttac[agt]ct\", \"\"},\n        {\"agg[act]taaa|ttta[agt]cct\", \"\"},\n        {\"aggg[acg]aaa|ttt[cgt]ccct\", \"\"},\n        {\"agggt[cgt]aa|tt[a|c|g]accct\", \"\"},\n        {\"agggta[cgt]a|t[acg]taccct\", \"\"}\n    };\n\n    vector<string> lines;\n    string line;\n    size_t original_length = 0;\n    while (getline(cin, line)) {\n        original_length += line.size() + 1;\n        if (!line.empty() && line[0] == '>') continue;\n        lines.push_back(line);\n    }\n\n    string seq;\n    seq.reserve(original_length);\n    for (const auto& l : lines) seq += l;\n\n    for (const auto& p : patterns) {\n        regex re(p.first, regex_constants::ECMAScript | regex_constants::optimize);\n        size_t count = distance(sregex_iterator(seq.begin(), seq.end(), re), sregex_iterator());\n        cout << p.first << ' ' << count << '\\n';\n    }\n\n    cout << original_length << '\\n';\n    cout << seq.size() << '\\n';\n\n    static const pair<const char*, const char*> subs[] = {\n        {\"B\", \"(c|g|t)\"},\n        {\"D\", \"(a|g|t)\"},\n        {\"H\", \"(a|c|t)\"},\n        {\"K\", \"(g|t)\"},\n        {\"M\", \"(a|c)\"},\n        {\"N\", \"(a|c|g|t)\"},\n        {\"R\", \"(a|g)\"},\n        {\"S\", \"(c|g)\"},\n        {\"V\", \"(a|c|g)\"},\n        {\"W\", \"(a|t)\"},\n        {\"Y\", \"(c|t)\"}\n    };\n\n    for (const auto& p : subs) replace_all(seq, p.first, p.second);\n\n    cout << seq.size() << '\\n';\n    return 0;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.0
+    },
+    "created_at": "2026-09-05T09:37:14.958787+00:00",
+    "wall_clock_ms": 5258,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 430,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 648,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 1078,
+        "prompt_tokens": 430,
+        "completion_tokens": 648
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5.4-mini-2026-03-17",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-09-05T09:37:14.959039+00:00"
+}

@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|permutation-sequence",
+  "code": "class Solution {\n    public String getPermutation(int n, int k) {\n        int[] fact = new int[n + 1];\n        fact[0] = 1;\n        for (int i = 1; i <= n; i++) fact[i] = fact[i - 1] * i;\n\n        java.util.List<Integer> nums = new java.util.ArrayList<>();\n        for (int i = 1; i <= n; i++) nums.add(i);\n\n        int kk = k - 1; // zero-based\n        StringBuilder sb = new StringBuilder();\n        for (int i = n; i >= 1; i--) {\n            int f = fact[i - 1];\n            int index = kk / f;\n            sb.append(nums.remove(index));\n            kk %= f;\n        }\n        return sb.toString();\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `permutation-sequence` in Java.\n\nThe set `[1, 2, 3, ..., n]` contains a total of `n!` unique permutations.\n\nBy listing and labeling all of the permutations in order, we get the following sequence for `n = 3`:\n\n1.  `\"123 \"`\n2.  `\"132 \"`\n3.  `\"213 \"`\n4.  `\"231 \"`\n5.  `\"312 \"`\n6.  `\"321 \"`\n\nGiven `n` and `k`, return the `kth` permutation sequence.\n\n**Example 1:**\n\n**Input:** n = 3, k = 3\n**Output:** \"213\"\n\n**Example 2:**\n\n**Input:** n = 4, k = 9\n**Output:** \"2314\"\n\n**Example 3:**\n\n**Input:** n = 3, k = 1\n**Output:** \"123\"\n\n**Constraints:**\n\n*   `1 <= n <= 9`\n*   `1 <= k <= n!`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public String getPermutation(int n, int k) {\n        int[] fact = new int[n + 1];\n        fact[0] = 1;\n        for (int i = 1; i <= n; i++) fact[i] = fact[i - 1] * i;\n\n        java.util.List<Integer> nums = new java.util.ArrayList<>();\n        for (int i = 1; i <= n; i++) nums.add(i);\n\n        int kk = k - 1; // zero-based\n        StringBuilder sb = new StringBuilder();\n        for (int i = n; i >= 1; i--) {\n            int f = fact[i - 1];\n            int index = kk / f;\n            sb.append(nums.remove(index));\n            kk %= f;\n        }\n        return sb.toString();\n    }\n}\n```",
+    "reasoning": "**Implementing permutation algorithm**\n\nI'm thinking about how to implement the getPermutation(n, k) function, using classic factorial representation. I need a list of digits from 1 to n and adjust k to be zero-based. \n\nI\u2019ll loop down from n and calculate the index using k. I should also use precomputed factorials and handle edge cases. The implementation should involve a Java class with a method that returns a string, while making sure to use a StringBuilder and ArrayList<Integer>. I\u2019ll be cautious about variable naming too!",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T18:06:21.170317+00:00",
+    "wall_clock_ms": 11909,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 301,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 555,
+        "output_tokens_details": {
+          "reasoning_tokens": 320
+        },
+        "total_tokens": 856,
+        "prompt_tokens": 301,
+        "completion_tokens": 555
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T18:06:21.170766+00:00"
+}

@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|python3|regex-redux",
+  "code": "import re\nimport sys\n\n\ndef main():\n    n = int(sys.argv[1])\n\n    data = sys.stdin.buffer.read()\n    original_length = len(data)\n    sequence = re.sub(rb\">.*\\n|\\n\", b\"\", data)\n    stripped_length = len(sequence)\n    del data\n\n    patterns = (\n        b\"agggtaaa|tttaccct\",\n        b\"[cgt]gggtaaa|tttaccc[acg]\",\n        b\"a[act]ggtaaa|tttacc[agt]t\",\n        b\"ag[act]gtaaa|tttac[agt]ct\",\n        b\"agg[act]taaa|ttta[agt]cct\",\n        b\"aggg[acg]aaa|ttt[cgt]ccct\",\n        b\"agggt[cgt]aa|tt[acg]accct\",\n        b\"agggta[cgt]a|t[acg]taccct\",\n        b\"agggtaa[cgt]|[acg]ttaccct\",\n    )\n\n    output = [\n        f\"{pattern.decode('ascii')} {len(re.findall(pattern, sequence))}\"\n        for pattern in patterns\n    ]\n\n    substitutions = (\n        (rb\"tHa[Nt]\", b\"<4>\"),\n        (rb\"aND|caN|Ha[DS]|WaS\", b\"<3>\"),\n        (rb\"a[NSt]|BY\", b\"<2>\"),\n        (rb\"<[^>]*>\", b\"|\"),\n        (rb\"\\|[^|][^|]*\\|\", b\"-\"),\n    )\n\n    for pattern, replacement in substitutions:\n        sequence = re.sub(pattern, replacement, sequence)\n\n    output.extend((\n        \"\",\n        str(original_length),\n        str(stripped_length),\n        str(len(sequence)),\n    ))\n    sys.stdout.write(\"\\n\".join(output) + \"\\n\")\n\n\nif __name__ == \"__main__\":\n    main()",
+  "trace": {
+    "prompt": "Solve this benchmark problem `regex-redux` in Python 3.\n\n# regex-redux\n\nRead a FASTA-formatted DNA sequence from stdin, strip the FASTA headers and newlines, count occurrences of eight specific IUPAC regex patterns on the stripped sequence, then apply a series of regex substitutions to produce an \"IUPAC-encoded\" sequence and report the original and post-processing lengths.\n\n## Input\nA FASTA-formatted DNA sequence on stdin.\n\n## Output\n```\n<pattern_1> <count>\n...\n<pattern_8> <count>\n<original length>\n<stripped length>\n<post-substitution length>\n```\n\n## Invocation\nThe program reads from stdin. Input is piped from the fasta output.\n\n**Default N:** `0` \u00b7 **Validation N:** `0` \u00b7 **Algorithm class:** regex engine, string I/O\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```python\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained Python 3 program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `sys.argv[1]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```python code block with nothing else outside it.",
+    "raw_response": "```python\nimport re\nimport sys\n\n\ndef main():\n    n = int(sys.argv[1])\n\n    data = sys.stdin.buffer.read()\n    original_length = len(data)\n    sequence = re.sub(rb\">.*\\n|\\n\", b\"\", data)\n    stripped_length = len(sequence)\n    del data\n\n    patterns = (\n        b\"agggtaaa|tttaccct\",\n        b\"[cgt]gggtaaa|tttaccc[acg]\",\n        b\"a[act]ggtaaa|tttacc[agt]t\",\n        b\"ag[act]gtaaa|tttac[agt]ct\",\n        b\"agg[act]taaa|ttta[agt]cct\",\n        b\"aggg[acg]aaa|ttt[cgt]ccct\",\n        b\"agggt[cgt]aa|tt[acg]accct\",\n        b\"agggta[cgt]a|t[acg]taccct\",\n        b\"agggtaa[cgt]|[acg]ttaccct\",\n    )\n\n    output = [\n        f\"{pattern.decode('ascii')} {len(re.findall(pattern, sequence))}\"\n        for pattern in patterns\n    ]\n\n    substitutions = (\n        (rb\"tHa[Nt]\", b\"<4>\"),\n        (rb\"aND|caN|Ha[DS]|WaS\", b\"<3>\"),\n        (rb\"a[NSt]|BY\", b\"<2>\"),\n        (rb\"<[^>]*>\", b\"|\"),\n        (rb\"\\|[^|][^|]*\\|\", b\"-\"),\n    )\n\n    for pattern, replacement in substitutions:\n        sequence = re.sub(pattern, replacement, sequence)\n\n    output.extend((\n        \"\",\n        str(original_length),\n        str(stripped_length),\n        str(len(sequence)),\n    ))\n    sys.stdout.write(\"\\n\".join(output) + \"\\n\")\n\n\nif __name__ == \"__main__\":\n    main()\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T10:18:30.829637+00:00",
+    "wall_clock_ms": 17861,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 433,
+        "completion_tokens": 822,
+        "total_tokens": 1255,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 399,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T10:18:30.829922+00:00"
+}

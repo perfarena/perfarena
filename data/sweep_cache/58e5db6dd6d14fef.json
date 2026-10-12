@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|maximum-binary-string-after-change",
+  "code": "class Solution {\n    public String maximumBinaryString(String binary) {\n        int n = binary.length();\n        int firstZero = binary.indexOf('0');\n        if (firstZero == -1) return binary;\n        int zeros = 0;\n        for (int i = 0; i < n; ++i) if (binary.charAt(i) == '0') zeros++;\n        int onesAfter = 0;\n        for (int i = firstZero + 1; i < n; ++i) if (binary.charAt(i) == '1') onesAfter++;\n        StringBuilder sb = new StringBuilder(n);\n        // ones before first zero\n        for (int i = 0; i < firstZero; ++i) sb.append('1');\n        // ones created from zeros except the single remaining zero\n        for (int i = 0; i < zeros - 1; ++i) sb.append('1');\n        // the single zero\n        sb.append('0');\n        // append the ones that were to the right of the first zero\n        for (int i = 0; i < onesAfter; ++i) sb.append('1');\n        return sb.toString();\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `maximum-binary-string-after-change` in Java.\n\nYou are given a binary string `binary` consisting of only `0`'s or `1`'s. You can apply each of the following operations any number of times:\n\n*   Operation 1: If the number contains the substring `\"00 \"`, you can replace it with `\"10 \"`.\n    *   For example, `\"00010 \" -> \"10010` \"\n*   Operation 2: If the number contains the substring `\"10 \"`, you can replace it with `\"01 \"`.\n    *   For example, `\"00010 \" -> \"00001 \"`\n\n_Return the **maximum binary string** you can obtain after any number of operations. Binary string `x` is greater than binary string `y` if `x`'s decimal representation is greater than `y`'s decimal representation._\n\n**Example 1:**\n\n**Input:** binary =  \"000110 \"\n**Output:**  \"111011 \"\n**Explanation:** A valid transformation sequence can be:\n \"000110 \" ->  \"000101 \" \n \"000101 \" ->  \"100101 \" \n \"100101 \" ->  \"110101 \" \n \"110101 \" ->  \"110011 \" \n \"110011 \" ->  \"111011 \"\n\n**Example 2:**\n\n**Input:** binary =  \"01 \"\n**Output:**  \"01 \"\n**Explanation:**  \"01 \" cannot be transformed any further.\n\n**Constraints:**\n\n*   `1 <= binary.length <= 105`\n*   `binary` consist of `'0'` and `'1'`.\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public String maximumBinaryString(String binary) {\n        int n = binary.length();\n        int firstZero = binary.indexOf('0');\n        if (firstZero == -1) return binary;\n        int zeros = 0;\n        for (int i = 0; i < n; ++i) if (binary.charAt(i) == '0') zeros++;\n        int onesAfter = 0;\n        for (int i = firstZero + 1; i < n; ++i) if (binary.charAt(i) == '1') onesAfter++;\n        StringBuilder sb = new StringBuilder(n);\n        // ones before first zero\n        for (int i = 0; i < firstZero; ++i) sb.append('1');\n        // ones created from zeros except the single remaining zero\n        for (int i = 0; i < zeros - 1; ++i) sb.append('1');\n        // the single zero\n        sb.append('0');\n        // append the ones that were to the right of the first zero\n        for (int i = 0; i < onesAfter; ++i) sb.append('1');\n        return sb.toString();\n    }\n}\n```",
+    "reasoning": "**Understanding the problem**\n\nI\u2019m thinking about the LeetCode problem 1702, sometimes referenced as \"maximum-binary-string-after-change.\" The key idea is to move all zeros to one position. If there's at most one zero, I can return the original string. If there are no zeros, the result is the same. If there\u2019s exactly one zero, it can be positioned at the end. So essentially, if the count of zeros is zero, I return the original string, and if there's one, I can produce a string of all ones with one zero at the end.\n\n**Exploring the binary string transformation**\n\nI\u2019m considering examples like \"01\" which remains unchanged. For \"10,\" I can transform it to \"01,\" but that results in a smaller decimal value. The maximum binary string I want is \"10,\" which is larger than \"01.\" It seems that I need at least one '0' and one '1' to work with. \n\nSo for a string of all '0's, I could perform operations to ultimately create a string with leading ones. If there are no zeros, I return the original string, and I have to count the zeros and determine the number of '1's before the first zero.\n\n**Testing zeros in binary transformations**\n\nIf I have one zero (z == 1), it can be moved to the end of the string. For instance, from \"01,\" the first zero is at index 1 and there's one '1' before it. So it remains \"01.\"\n\nThinking about the operations, \"00\" can transform into \"10,\" which decreases the zero count by one and increases the one count. The substring remains the same length, but now there\u2019s one '1' instead of two zeros. \n\nThen, for \"10\" transforming to \"01,\" it basically swaps their positions without changing the counts. So that means operation impacts are important to understand!\n\n**Positioning the zeros for max value**\n\nI realize that using operation 1 on adjacent \"00\" pairs reduces zeros. So if I start with z zeros, I can keep applying this operation until I have at most one left. \n\nOnce I get down to one zero, I can't do anything more because there are no \"00\" pairs available. Therefore, if I start with at least one zero, I can\u2019t reach zero zeros. The final outcome will always have exactly one zero. \n\nNow, the question is: where should I position that single zero to maximize the numeric value of the binary string?",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T17:52:52.780654+00:00",
+    "wall_clock_ms": 62830,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 415,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 4312,
+        "output_tokens_details": {
+          "reasoning_tokens": 4032
+        },
+        "total_tokens": 4727,
+        "prompt_tokens": 415,
+        "completion_tokens": 4312
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T17:52:52.781188+00:00"
+}

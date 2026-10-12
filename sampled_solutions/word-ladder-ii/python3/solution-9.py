@@ -1,0 +1,1 @@
+collections.sort(intervals, key=lambda x: x[0])

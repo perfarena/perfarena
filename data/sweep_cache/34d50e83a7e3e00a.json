@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5.4-mini|experiment-system-with-shape|cpp|reverse-complement",
+  "code": "#include <bits/stdc++.h>\nusing namespace std;\n\nstatic inline char comp_base(char c) {\n    switch (c) {\n        case 'A': return 'T';\n        case 'C': return 'G';\n        case 'G': return 'C';\n        case 'T': return 'A';\n        case 'U': return 'A';\n        case 'M': return 'K';\n        case 'R': return 'Y';\n        case 'W': return 'W';\n        case 'S': return 'S';\n        case 'Y': return 'R';\n        case 'K': return 'M';\n        case 'V': return 'B';\n        case 'H': return 'D';\n        case 'D': return 'H';\n        case 'B': return 'V';\n        case 'N': return 'N';\n        default:  return c;\n    }\n}\n\nint main(int argc, char* argv[]) {\n    (void)argc;\n    (void)argv;\n\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    string line;\n    string header;\n    string seq;\n    bool have_seq = false;\n\n    auto flush_record = [&]() {\n        if (!have_seq) return;\n        string rc;\n        rc.resize(seq.size());\n        for (size_t i = 0, j = seq.size(); i < seq.size(); ++i) {\n            rc[i] = comp_base(seq[--j]);\n        }\n        cout << header << '\\n';\n        const size_t width = 60;\n        for (size_t i = 0; i < rc.size(); i += width) {\n            cout.write(rc.data() + i, min(width, rc.size() - i));\n            cout.put('\\n');\n        }\n    };\n\n    while (getline(cin, line)) {\n        if (!line.empty() && line[0] == '>') {\n            flush_record();\n            header = line;\n            seq.clear();\n            have_seq = true;\n        } else {\n            for (char c : line) {\n                if (!isspace(static_cast<unsigned char>(c))) seq.push_back(c);\n            }\n        }\n    }\n    flush_record();\n\n    return 0;\n}",
+  "trace": {
+    "prompt": "Solve this benchmark problem `reverse-complement` in C++.\n\n# reverse-complement\n\nRead FASTA-formatted DNA from stdin. For each sequence, reverse it and complement each base (A<->T, C<->G, with IUPAC ambiguity codes handled symmetrically), then write the reverse-complemented sequence to stdout preserving the original FASTA header and line-wrapping.\n\n## Input\nA FASTA-formatted DNA sequence on stdin.\n\n## Output\n```\nFASTA-formatted reverse-complemented sequences on stdout.\n```\n\n## Invocation\nThe program reads from stdin. Input is piped from the fasta output.\n\n**Default N:** `0` \u00b7 **Validation N:** `0` \u00b7 **Algorithm class:** linear-scan I/O with in-place transformation\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\n\n```\n\n",
+    "system_prompt": "You are an expert performance engineer. Write a COMPLETE, self-contained C++ program that solves the benchmark below. This is NOT a LeetCode problem: do NOT define a `class Solution` or any method wrapper; write a whole program with a normal entry point.\n\nINPUT/OUTPUT CONTRACT \u2014 follow it EXACTLY. The harness always invokes the program as `<program> N`:\n1. Read N as the FIRST command-line argument, i.e. `argv[1]`, and parse it as an integer. N equals the Default N shown below. Do NOT read N from standard input and do NOT hardcode it.\n2. Read from standard input ONLY if the Input section below describes an input stream (for example FASTA data on stdin); otherwise read nothing from standard input.\n3. Print the result to standard output EXACTLY as the Output section shows: identical values, formatting, ordering, and whitespace, with no labels, prompts, debug lines, or anything before or after.\n\nThink step by step, then return the final program in a single ```cpp code block with nothing else outside it.",
+    "raw_response": "```cpp\n#include <bits/stdc++.h>\nusing namespace std;\n\nstatic inline char comp_base(char c) {\n    switch (c) {\n        case 'A': return 'T';\n        case 'C': return 'G';\n        case 'G': return 'C';\n        case 'T': return 'A';\n        case 'U': return 'A';\n        case 'M': return 'K';\n        case 'R': return 'Y';\n        case 'W': return 'W';\n        case 'S': return 'S';\n        case 'Y': return 'R';\n        case 'K': return 'M';\n        case 'V': return 'B';\n        case 'H': return 'D';\n        case 'D': return 'H';\n        case 'B': return 'V';\n        case 'N': return 'N';\n        default:  return c;\n    }\n}\n\nint main(int argc, char* argv[]) {\n    (void)argc;\n    (void)argv;\n\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n\n    string line;\n    string header;\n    string seq;\n    bool have_seq = false;\n\n    auto flush_record = [&]() {\n        if (!have_seq) return;\n        string rc;\n        rc.resize(seq.size());\n        for (size_t i = 0, j = seq.size(); i < seq.size(); ++i) {\n            rc[i] = comp_base(seq[--j]);\n        }\n        cout << header << '\\n';\n        const size_t width = 60;\n        for (size_t i = 0; i < rc.size(); i += width) {\n            cout.write(rc.data() + i, min(width, rc.size() - i));\n            cout.put('\\n');\n        }\n    };\n\n    while (getline(cin, line)) {\n        if (!line.empty() && line[0] == '>') {\n            flush_record();\n            header = line;\n            seq.clear();\n            have_seq = true;\n        } else {\n            for (char c : line) {\n                if (!isspace(static_cast<unsigned char>(c))) seq.push_back(c);\n            }\n        }\n    }\n    flush_record();\n\n    return 0;\n}\n```",
+    "reasoning": null,
+    "model": "gpt-5.4-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 0.0
+    },
+    "created_at": "2026-09-05T09:47:53.906119+00:00",
+    "wall_clock_ms": 7614,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 416,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 466,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 882,
+        "prompt_tokens": 416,
+        "completion_tokens": 466
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5.4-mini-2026-03-17",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-09-05T09:47:53.906532+00:00"
+}

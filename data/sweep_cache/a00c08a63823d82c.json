@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|maximum-and-sum-of-array",
+  "code": "#include <vector>\n#include <algorithm>\nusing namespace std;\n\nclass Solution {\npublic:\n    int maximumANDSum(vector<int>& nums, int numSlots) {\n        vector<int> power3(numSlots + 1, 1);\n        for (int i = 1; i <= numSlots; ++i) {\n            power3[i] = power3[i - 1] * 3;\n        }\n\n        const int totalStates = power3[numSlots];\n        const int n = nums.size();\n        vector<int> dp(totalStates, -1);\n        dp[0] = 0;\n\n        int answer = 0;\n        for (int state = 0; state < totalStates; ++state) {\n            if (dp[state] == -1) continue;\n\n            int placed = 0;\n            for (int x = state; x > 0; x /= 3) {\n                placed += x % 3;\n            }\n\n            if (placed == n) {\n                answer = max(answer, dp[state]);\n                continue;\n            }\n\n            int occupancy = state;\n            for (int slot = 0; slot < numSlots; ++slot) {\n                if (occupancy % 3 < 2) {\n                    int nextState = state + power3[slot];\n                    dp[nextState] = max(\n                        dp[nextState],\n                        dp[state] + (nums[placed] & (slot + 1))\n                    );\n                }\n                occupancy /= 3;\n            }\n        }\n\n        return answer;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `maximum-and-sum-of-array` in C++.\n\nYou are given an integer array `nums` of length `n` and an integer `numSlots` such that `2 * numSlots >= n`. There are `numSlots` slots numbered from `1` to `numSlots`.\n\nYou have to place all `n` integers into the slots such that each slot contains at **most** two numbers. The **AND sum** of a given placement is the sum of the **bitwise** `AND` of every number with its respective slot number.\n\n*   For example, the **AND sum** of placing the numbers `[1, 3]` into slot `1` and `[4, 6]` into slot `2` is equal to `(1 AND 1) + (3 AND 1) + (4 AND 2) + (6 AND 2) = 1 + 1 + 0 + 2 = 4`.\n\nReturn _the maximum possible **AND sum** of_ `nums` _given_ `numSlots` _slots._\n\n**Example 1:**\n\n**Input:** nums = \\[1,2,3,4,5,6\\], numSlots = 3\n**Output:** 9\n**Explanation:** One possible placement is \\[1, 4\\] into slot 1, \\[2, 6\\] into slot 2, and \\[3, 5\\] into slot 3. \nThis gives the maximum AND sum of (1 AND 1) + (4 AND 1) + (2 AND 2) + (6 AND 2) + (3 AND 3) + (5 AND 3) = 1 + 0 + 2 + 2 + 3 + 1 = 9.\n\n**Example 2:**\n\n**Input:** nums = \\[1,3,10,4,7,1\\], numSlots = 9\n**Output:** 24\n**Explanation:** One possible placement is \\[1, 1\\] into slot 1, \\[3\\] into slot 3, \\[4\\] into slot 4, \\[7\\] into slot 7, and \\[10\\] into slot 9.\nThis gives the maximum AND sum of (1 AND 1) + (1 AND 1) + (3 AND 3) + (4 AND 4) + (7 AND 7) + (10 AND 9) = 1 + 1 + 3 + 4 + 7 + 8 = 24.\nNote that slots 2, 5, 6, and 8 are empty which is permitted.\n\n**Constraints:**\n\n*   `n == nums.length`\n*   `1 <= numSlots <= 9`\n*   `1 <= n <= 2 * numSlots`\n*   `1 <= nums[i] <= 15`\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    int maximumANDSum(vector<int>& nums, int numSlots) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\n#include <vector>\n#include <algorithm>\nusing namespace std;\n\nclass Solution {\npublic:\n    int maximumANDSum(vector<int>& nums, int numSlots) {\n        vector<int> power3(numSlots + 1, 1);\n        for (int i = 1; i <= numSlots; ++i) {\n            power3[i] = power3[i - 1] * 3;\n        }\n\n        const int totalStates = power3[numSlots];\n        const int n = nums.size();\n        vector<int> dp(totalStates, -1);\n        dp[0] = 0;\n\n        int answer = 0;\n        for (int state = 0; state < totalStates; ++state) {\n            if (dp[state] == -1) continue;\n\n            int placed = 0;\n            for (int x = state; x > 0; x /= 3) {\n                placed += x % 3;\n            }\n\n            if (placed == n) {\n                answer = max(answer, dp[state]);\n                continue;\n            }\n\n            int occupancy = state;\n            for (int slot = 0; slot < numSlots; ++slot) {\n                if (occupancy % 3 < 2) {\n                    int nextState = state + power3[slot];\n                    dp[nextState] = max(\n                        dp[nextState],\n                        dp[state] + (nums[placed] & (slot + 1))\n                    );\n                }\n                occupancy /= 3;\n            }\n        }\n\n        return answer;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:52:12.879007+00:00",
+    "wall_clock_ms": 8193,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 769,
+        "completion_tokens": 411,
+        "total_tokens": 1180,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 80,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:52:12.879376+00:00"
+}

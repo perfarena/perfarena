@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|java|count-square-sum-triples",
+  "code": "class Solution {\n    public int countTriples(int n) {\n        int limit = n * n;\n        boolean[] isSquare = new boolean[limit + 1];\n\n        for (int c = 1; c <= n; c++) {\n            isSquare[c * c] = true;\n        }\n\n        int count = 0;\n        for (int a = 1; a <= n; a++) {\n            for (int b = 1; b <= n; b++) {\n                int sum = a * a + b * b;\n                if (sum > limit) {\n                    break;\n                }\n                if (isSquare[sum]) {\n                    count++;\n                }\n            }\n        }\n\n        return count;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `count-square-sum-triples` in Java.\n\nA **square triple** `(a,b,c)` is a triple where `a`, `b`, and `c` are **integers** and `a2 + b2 = c2`.\n\nGiven an integer `n`, return _the number of **square triples** such that_ `1 <= a, b, c <= n`.\n\n**Example 1:**\n\n**Input:** n = 5\n**Output:** 2\n**Explanation**: The square triples are (3,4,5) and (4,3,5).\n\n**Example 2:**\n\n**Input:** n = 10\n**Output:** 4\n**Explanation**: The square triples are (3,4,5), (4,3,5), (6,8,10), and (8,6,10).\n\n**Constraints:**\n\n*   `1 <= n <= 250`\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```java\nclass Solution {\n    public int countTriples(int n) {\n        \n    }\n}\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nclass Solution {\n    public int countTriples(int n) {\n        int limit = n * n;\n        boolean[] isSquare = new boolean[limit + 1];\n\n        for (int c = 1; c <= n; c++) {\n            isSquare[c * c] = true;\n        }\n\n        int count = 0;\n        for (int a = 1; a <= n; a++) {\n            for (int b = 1; b <= n; b++) {\n                int sum = a * a + b * b;\n                if (sum > limit) {\n                    break;\n                }\n                if (isSquare[sum]) {\n                    count++;\n                }\n            }\n        }\n\n        return count;\n    }\n}\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:51:08.687511+00:00",
+    "wall_clock_ms": 8290,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 338,
+        "completion_tokens": 310,
+        "total_tokens": 648,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 145,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:51:08.687969+00:00"
+}

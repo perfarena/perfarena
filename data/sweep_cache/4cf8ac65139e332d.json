@@ -1,0 +1,48 @@
+{
+  "tuple_key": "z-ai/glm-5.3-flash|experiment-system-with-shape|typescript|sum-of-all-odd-length-subarrays",
+  "code": "function sumOddLengthSubarrays(arr: number[]): number {\n    const n = arr.length;\n    let sum = 0;\n    for (let i = 0; i < n; i++) {\n        // Number of subarrays containing index i:\n        // (i + 1) choices for the left endpoint, (n - i) for the right endpoint.\n        const total = (i + 1) * (n - i);\n        // Of those, the count of odd-length subarrays is ceil(total / 2).\n        const oddCount = Math.floor((total + 1) / 2);\n        sum += arr[i] * oddCount;\n    }\n    return sum;\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `sum-of-all-odd-length-subarrays` in TypeScript.\n\nGiven an array of positive integers `arr`, return _the sum of all possible **odd-length subarrays** of_ `arr`.\n\nA **subarray** is a contiguous subsequence of the array.\n\n**Example 1:**\n\n**Input:** arr = \\[1,4,2,5,3\\]\n**Output:** 58\n**Explanation:** The odd-length subarrays of arr and their sums are:\n\\[1\\] = 1\n\\[4\\] = 4\n\\[2\\] = 2\n\\[5\\] = 5\n\\[3\\] = 3\n\\[1,4,2\\] = 7\n\\[4,2,5\\] = 11\n\\[2,5,3\\] = 10\n\\[1,4,2,5,3\\] = 15\nIf we add all these together we get 1 + 4 + 2 + 5 + 3 + 7 + 11 + 10 + 15 = 58\n\n**Example 2:**\n\n**Input:** arr = \\[1,2\\]\n**Output:** 3\n**Explanation:** There are only 2 subarrays of odd length, \\[1\\] and \\[2\\]. Their sum is 3.\n\n**Example 3:**\n\n**Input:** arr = \\[10,11,12\\]\n**Output:** 66\n\n**Constraints:**\n\n*   `1 <= arr.length <= 100`\n*   `1 <= arr[i] <= 1000`\n\n**Follow up:**\n\nCould you solve this problem in O(n) time complexity?\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```typescript\nfunction sumOddLengthSubarrays(arr: number[]): number {\n    \n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in TypeScript.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```typescript code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```typescript\nfunction sumOddLengthSubarrays(arr: number[]): number {\n    const n = arr.length;\n    let sum = 0;\n    for (let i = 0; i < n; i++) {\n        // Number of subarrays containing index i:\n        // (i + 1) choices for the left endpoint, (n - i) for the right endpoint.\n        const total = (i + 1) * (n - i);\n        // Of those, the count of odd-length subarrays is ceil(total / 2).\n        const oddCount = Math.floor((total + 1) / 2);\n        sum += arr[i] * oddCount;\n    }\n    return sum;\n}\n```",
+    "reasoning": "The problem: sum of all odd-length subarrays.\n\nO(n) approach: for each element at index i, count how many odd-length subarrays contain it. The number of subarrays containing index i is (i+1) * (n-i), where (i+1) is choices for left endpoint and (n-i) for right endpoint. Among these, the number of odd-length ones: total = (i+1)*(n-i). Odd-length subarrays count = ceil(total / 2)? Let me verify.\n\nA subarray from l to r containing i has length r - l + 1. Length is odd when (r - l) is even. Let left choices = i+1 (l from 0..i), right choices = n-i (r from i..n-1). Number of pairs (l, r) with r - l even.\n\nLet a = i+1, b = n-i. Count of pairs with (r - l) even = number of pairs where l and r have same parity. Among l in [0, i]: odd count of l values = ceil(a/2)? l values 0..i: number of even l = floor(i/2)+1 = ceil(a/2), odd l = floor(a/2). Similarly r in [i, n-1]: even r count and odd r count.\n\nSame parity pairs = evenL*evenR + oddL*oddR.\n\nAlternatively, known formula: odd-length count = ((a*b) + 1) / 2 when... Actually the standard trick: total subarrays containing i is a*b. Odd-length count = (a*b + 1) // 2? Let's check: a=1,b=1 (single element): total=1, odd count=1, (1+1)/2=1 \u2713. a=2,b=2 (i=1 in n=3): total=4, subarrays containing index 1: [0,1],[0,2],[1,1],[1,2] lengths 2,3,1,2 \u2192 odd count 2. (4+1)/2 = 2 (integer division) \u2713. a=3,b=3 (i=2, n=5): total=9, lengths: pairs (l,r) with l\u22642\u2264r. l\u2208{0,1,2}, r\u2208{2,3,4}. r-l even: (0,2),(0,4),(1,3),(2,2),(2,4) \u2192 5. (9+1)/2=5 \u2713.\n\nIs it always ceil(a*b/2)? Hmm, check a=1, b=2 (i=0, n=2): total=2, subarrays [0,0] len1, [0,1] len2 \u2192 odd count 1. ceil(2/2)=1 \u2713. a=2,b=1: same by symmetry \u2713. a=2,b=3 (i=1, n=4): total=6. l\u2208{0,1}, r\u2208{1,2,3}. r-l even: (0,2)? wait l=0: r=2 \u2192 even diff, r=0? no. pairs: (0,1) diff1, (0,2) diff2 \u2713, (0,3) diff3, (1,1) diff0 \u2713, (1,2) diff1, (1,3) diff2 \u2713 \u2192 3 odd. ceil(6/2)=3 \u2713. a=1,b=3 (i=0,n=3): total=3, subarrays [0,0],[0,1],[0,2] lengths 1,2,3 \u2192 odd 2. ceil(3/2)=2 \u2713. a=3,b=1: same \u2713. a=2,b=4: total=8. l\u2208{0,1}, r\u2208{1,2,3,4}. evenL=1 (l=0), oddL=1 (l=1). evenR: r\u2208{2,4} \u2192 2, oddR: r\u2208{1,3} \u2192 2. same parity = 1*2+1*2=4. ceil(8/2)=4 \u2713. a=3,b=2: total=6. l\u2208{0,1,2}: evenL=2 (0,2), oddL=1 (1). r\u2208{2,3}: evenR=1 (2), oddR=1 (3). same = 2*1+1*1=3. ceil(6/2)=3 \u2713.\n\nHmm, is it always ceil(a*b/2)? Let's test a=3,b=4: total=12. l\u2208{0,1,2}: evenL=2, oddL=1. r\u2208{2,3,4,5}: evenR=2 (2,4), oddR=2 (3,5). same = 2*2+1*2=6. ceil(12/2)=6 \u2713. a=4,b=4: evenL=2, oddL=2; evenR=2, oddR=2 \u2192 8. ceil(16/2)=8 \u2713. a=5,b=5: evenL=3, oddL=2; evenR=3, oddR=2 \u2192 9+4=13. total=25, ceil=13 \u2713. a=2,b=5: evenL=1, oddL=1; r\u2208{1..5}: evenR=2, oddR=3 \u2192 1*2+1*3=5. total=10, ceil=5 \u2713. a=3,b=5: evenL=2, oddL=1; evenR=2, oddR=3 \u2192 4+3=7. total=15, ceil=8. 7 \u2260 8! \n\nWait, let me recheck. a=3 means i=2, b=5 means n=7. l\u2208{0,1,2}, r\u2208{2,3,4,5,6}. evenL: l=0,2 \u2192 2. oddL: l=1 \u2192 1. evenR: r=2,4,6 \u2192 3. oddR: r=3,5 \u2192 2. same parity = 2*3 + 1*2 = 8. I made an error: evenR for r\u2208{2,...,6} is 3 (2,4,6), oddR is 2 (3,5). So 8 = ceil(15/2) \u2713. Good.\n\nSo the formula oddCount = Math.floor((a*b + 1) / 2) = Math.ceil(a*b/2) works. Actually let me prove: same parity pairs = evenL*evenR + oddL*oddR. With a = evenL + oddL, b = evenR + oddR. Hmm, is this always ceil(ab/2)? \n\nCase: a even, b even: evenL=oddL=a/2, evenR=oddR=b/2 \u2192 ab/2 = ceil(ab/2) since ab even \u2713.\na even, b odd: evenL=oddL=a/2. evenR=ceil(b/2), oddR=floor(b/2). same = (a/2)(evenR+oddR) = (a/2)*b = ab/2, ab even \u2192 \u2713.\na odd, b even: symmetric \u2713.\na odd, b odd: evenL=ceil(a/2)=(a+1)/2, oddL=(a-1)/2; evenR=(b+1)/2, oddR=(b-1)/2. same = ((a+1)(b+1) + (a-1)(b-1))/4 = (ab+a+b+1+ab-a-b+1)/4 = (2ab+2)/4 = (ab+1)/2 = ceil(ab/2) since ab odd \u2713.\n\nGreat, so answer = sum over i of arr[i] * ceil((i+1)*(n-i)/2).\n\nAlternatively simpler: total = (i+1)*(n-i); odd = Math.floor((total+1)/2).\n\nCode:\n\n```typescript\nfunction sumOddLengthSubarrays(arr: number[]): number {\n    const n = arr.length;\n    let sum = 0;\n    for (let i = 0; i < n; i++) {\n        const total = (i + 1) * (n - i);\n        const oddCount = Math.floor((total + 1) / 2);\n        sum += arr[i] * oddCount;\n    }\n    return sum;\n}\n```\n\nVerify example 1: arr=[1,4,2,5,3], n=5.\ni=0: total=1*5=5, odd=3, contribution 1*3=3.\ni=1: total=2*4=8, odd=4 (floor(9/2)=4), contribution 4*4=16.\ni=2: total=3*3=9, odd=5, contribution 2*5=10.\ni=3: total=4*2=8, odd=4, contribution 5*4=20.\ni=4: total=5*1=5, odd=3, contribution 3*3=9.\nSum = 3+16+10+20+9 = 58 \u2713.\n\nExample 2: [1,2], n=2. i=0: total=2, odd=1 (floor(3/2)=1), contrib 1. i=1: total=2, odd=1, contrib 2. Sum=3 \u2713.\n\nExample 3: [10,11,12], n=3. i=0: total=3, odd=2, contrib 20. i=1: total=4, odd=2, contrib 22. i=2: total=3, odd=2, contrib 24. Sum=66 \u2713.\n\nThe starter code is a function, not a class. I'll match it exactly.",
+    "model": "z-ai/glm-5.3-flash",
+    "provider": "openai",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "params": {
+      "temperature": 0.0
+    },
+    "created_at": "2026-09-19T12:46:55.030750+00:00",
+    "wall_clock_ms": 36498,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 502,
+        "completion_tokens": 2336,
+        "total_tokens": 2838,
+        "cost": 0.0012433,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0012433,
+          "upstream_inference_prompt_cost": 7.53e-05,
+          "upstream_inference_completions_cost": 0.001168
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2185,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "z-ai/glm-5.3-flash",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-19T12:46:55.038174+00:00"
+}

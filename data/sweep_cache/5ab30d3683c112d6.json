@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|minimum-depth-of-binary-tree",
+  "code": "import java.util.*;\n\nclass Solution {\n    public int minDepth(TreeNode root) {\n        if (root == null) return 0;\n        Queue<TreeNode> q = new LinkedList<>();\n        q.offer(root);\n        int depth = 1;\n        while (!q.isEmpty()) {\n            int sz = q.size();\n            for (int i = 0; i < sz; i++) {\n                TreeNode node = q.poll();\n                if (node.left == null && node.right == null) return depth;\n                if (node.left != null) q.offer(node.left);\n                if (node.right != null) q.offer(node.right);\n            }\n            depth++;\n        }\n        return depth;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `minimum-depth-of-binary-tree` in Java.\n\nGiven a binary tree, find its minimum depth.\n\nThe minimum depth is the number of nodes along the shortest path from the root node down to the nearest leaf node.\n\n**Note:** A leaf is a node with no children.\n\n**Example 1:**\n\n**Input:** root = \\[3,9,20,null,null,15,7\\]\n**Output:** 2\n\n**Example 2:**\n\n**Input:** root = \\[2,null,3,null,4,null,5,null,6\\]\n**Output:** 5\n\n**Constraints:**\n\n*   The number of nodes in the tree is in the range `[0, 105]`.\n*   `-1000 <= Node.val <= 1000`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public int minDepth(TreeNode root) {\n        if (root == null) return 0;\n        Queue<TreeNode> q = new LinkedList<>();\n        q.offer(root);\n        int depth = 1;\n        while (!q.isEmpty()) {\n            int sz = q.size();\n            for (int i = 0; i < sz; i++) {\n                TreeNode node = q.poll();\n                if (node.left == null && node.right == null) return depth;\n                if (node.left != null) q.offer(node.left);\n                if (node.right != null) q.offer(node.right);\n            }\n            depth++;\n        }\n        return depth;\n    }\n}\n```",
+    "reasoning": "**Crafting a Java Solution**\n\nI need to create a Java solution in LeetCode's required style, specifically a class named `Solution` with a method `public int minDepth(TreeNode root)`. I'm a bit unsure whether to include the TreeNode class definition. While LeetCode often provides it, I think it's best to omit it to align with their environment, even though some solutions do include it. My approach involves using BFS to find the minimum depth by tracking the first leaf, handling edge cases, and using a Queue. I'll implement this while keeping complexities in mind.\n\n**Finalizing the Code Block**\n\nI need to provide just the code block for the final version. While LeetCode has the TreeNode class defined, I think it's best not to include it to avoid duplicating the class. I\u2019ll focus on returning a single coherent block with the necessary import and the `Solution` class. Here\u2019s how I\u2019ll structure it:\n\n```java\nimport java.util.*;\n\nclass Solution {\n    public int minDepth(TreeNode root) {\n        if (root == null) return 0;\n        Queue<TreeNode> q = new LinkedList<>();\n        q.offer(root);\n        int depth = 1;\n        while (!q.isEmpty()) {\n            int sz = q.size();\n            for (int i = 0; i < sz; i++) {\n                TreeNode node = q.poll();\n                if (node.left == null && node.right == null) return depth;\n                if (node.left != null) q.offer(node.left);\n                if (node.right != null) q.offer(node.right);\n            }\n            depth++;\n        }\n        return depth;\n    }\n}\n```",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T17:54:52.779981+00:00",
+    "wall_clock_ms": 10789,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 243,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 631,
+        "output_tokens_details": {
+          "reasoning_tokens": 448
+        },
+        "total_tokens": 874,
+        "prompt_tokens": 243,
+        "completion_tokens": 631
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T17:54:52.780329+00:00"
+}

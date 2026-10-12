@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|clumsy-factorial",
+  "code": "class Solution {\npublic:\n    int clumsy(int n) {\n        int result = 0;\n        int term = n;\n        int sign = 1;\n        int operation = 0;\n\n        for (int i = n - 1; i >= 1; --i) {\n            if (operation == 0) {\n                term *= i;\n            } else if (operation == 1) {\n                term /= i;\n            } else {\n                result += sign * term;\n                term = i;\n                sign = (operation == 2) ? 1 : -1;\n            }\n            operation = (operation + 1) % 4;\n        }\n\n        return result + sign * term;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `clumsy-factorial` in C++.\n\nThe **factorial** of a positive integer `n` is the product of all positive integers less than or equal to `n`.\n\n*   For example, `factorial(10) = 10 * 9 * 8 * 7 * 6 * 5 * 4 * 3 * 2 * 1`.\n\nWe make a **clumsy factorial** using the integers in decreasing order by swapping out the multiply operations for a fixed rotation of operations with multiply `'*'`, divide `'/'`, add `'+'`, and subtract `'-'` in this order.\n\n*   For example, `clumsy(10) = 10 * 9 / 8 + 7 - 6 * 5 / 4 + 3 - 2 * 1`.\n\nHowever, these operations are still applied using the usual order of operations of arithmetic. We do all multiplication and division steps before any addition or subtraction steps, and multiplication and division steps are processed left to right.\n\nAdditionally, the division that we use is floor division such that `10 * 9 / 8 = 90 / 8 = 11`.\n\nGiven an integer `n`, return _the clumsy factorial of_ `n`.\n\n**Example 1:**\n\n**Input:** n = 4\n**Output:** 7\n**Explanation:** 7 = 4 \\* 3 / 2 + 1\n\n**Example 2:**\n\n**Input:** n = 10\n**Output:** 12\n**Explanation:** 12 = 10 \\* 9 / 8 + 7 - 6 \\* 5 / 4 + 3 - 2 \\* 1\n\n**Constraints:**\n\n*   `1 <= n <= 104`\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    int clumsy(int n) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\nclass Solution {\npublic:\n    int clumsy(int n) {\n        int result = 0;\n        int term = n;\n        int sign = 1;\n        int operation = 0;\n\n        for (int i = n - 1; i >= 1; --i) {\n            if (operation == 0) {\n                term *= i;\n            } else if (operation == 1) {\n                term /= i;\n            } else {\n                result += sign * term;\n                term = i;\n                sign = (operation == 2) ? 1 : -1;\n            }\n            operation = (operation + 1) % 4;\n        }\n\n        return result + sign * term;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:49:03.087219+00:00",
+    "wall_clock_ms": 5202,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 516,
+        "completion_tokens": 239,
+        "total_tokens": 755,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 76,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:49:03.087631+00:00"
+}

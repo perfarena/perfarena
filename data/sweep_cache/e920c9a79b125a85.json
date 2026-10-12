@@ -1,0 +1,39 @@
+{
+  "tuple_key": "gpt-5-mini|experiment-system|java|validate-binary-tree-nodes",
+  "code": "import java.util.*;\n\nclass Solution {\n    public boolean validateBinaryTreeNodes(int n, int[] leftChild, int[] rightChild) {\n        int[] indegree = new int[n];\n        for (int i = 0; i < n; i++) {\n            int l = leftChild[i];\n            int r = rightChild[i];\n            if (l != -1) {\n                indegree[l]++;\n                if (indegree[l] > 1) return false; // a node has more than one parent\n            }\n            if (r != -1) {\n                indegree[r]++;\n                if (indegree[r] > 1) return false;\n            }\n        }\n        int root = -1;\n        for (int i = 0; i < n; i++) {\n            if (indegree[i] == 0) {\n                if (root != -1) return false; // more than one root\n                root = i;\n            }\n        }\n        if (root == -1) return false; // no root\n        \n        boolean[] visited = new boolean[n];\n        ArrayDeque<Integer> dq = new ArrayDeque<>();\n        dq.add(root);\n        visited[root] = true;\n        int count = 0;\n        while (!dq.isEmpty()) {\n            int node = dq.poll();\n            count++;\n            int l = leftChild[node];\n            int r = rightChild[node];\n            if (l != -1) {\n                if (visited[l]) return false; // cycle or multiple parents (caught here)\n                visited[l] = true;\n                dq.add(l);\n            }\n            if (r != -1) {\n                if (visited[r]) return false;\n                visited[r] = true;\n                dq.add(r);\n            }\n        }\n        return count == n;\n    }\n}",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `validate-binary-tree-nodes` in Java.\n\nYou have `n` binary tree nodes numbered from `0` to `n - 1` where node `i` has two children `leftChild[i]` and `rightChild[i]`, return `true` if and only if **all** the given nodes form **exactly one** valid binary tree.\n\nIf node `i` has no left child then `leftChild[i]` will equal `-1`, similarly for the right child.\n\nNote that the nodes have no values and that we only use the node numbers in this problem.\n\n**Example 1:**\n\n**Input:** n = 4, leftChild = \\[1,-1,3,-1\\], rightChild = \\[2,-1,-1,-1\\]\n**Output:** true\n\n**Example 2:**\n\n**Input:** n = 4, leftChild = \\[1,-1,3,-1\\], rightChild = \\[2,3,-1,-1\\]\n**Output:** false\n\n**Example 3:**\n\n**Input:** n = 2, leftChild = \\[1,0\\], rightChild = \\[-1,-1\\]\n**Output:** false\n\n**Constraints:**\n\n*   `n == leftChild.length == rightChild.length`\n*   `1 <= n <= 104`\n*   `-1 <= leftChild[i], rightChild[i] <= n - 1`\n\n\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in Java using LeetCode's standard `Solution` shape (the exact class and method names LeetCode expects).\n\n\n\n\n\nThink step by step, then return the final solution in a single ```java code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```java\nimport java.util.*;\n\nclass Solution {\n    public boolean validateBinaryTreeNodes(int n, int[] leftChild, int[] rightChild) {\n        int[] indegree = new int[n];\n        for (int i = 0; i < n; i++) {\n            int l = leftChild[i];\n            int r = rightChild[i];\n            if (l != -1) {\n                indegree[l]++;\n                if (indegree[l] > 1) return false; // a node has more than one parent\n            }\n            if (r != -1) {\n                indegree[r]++;\n                if (indegree[r] > 1) return false;\n            }\n        }\n        int root = -1;\n        for (int i = 0; i < n; i++) {\n            if (indegree[i] == 0) {\n                if (root != -1) return false; // more than one root\n                root = i;\n            }\n        }\n        if (root == -1) return false; // no root\n        \n        boolean[] visited = new boolean[n];\n        ArrayDeque<Integer> dq = new ArrayDeque<>();\n        dq.add(root);\n        visited[root] = true;\n        int count = 0;\n        while (!dq.isEmpty()) {\n            int node = dq.poll();\n            count++;\n            int l = leftChild[node];\n            int r = rightChild[node];\n            if (l != -1) {\n                if (visited[l]) return false; // cycle or multiple parents (caught here)\n                visited[l] = true;\n                dq.add(l);\n            }\n            if (r != -1) {\n                if (visited[r]) return false;\n                visited[r] = true;\n                dq.add(r);\n            }\n        }\n        return count == n;\n    }\n}\n```",
+    "reasoning": "**Implementing binary tree validation**\n\nI need to tackle Problem 1361: Validate Binary Tree Nodes. The goal is to check if the nodes can form a valid binary tree. The conditions include having exactly one root, ensuring all other nodes have an indegree of 1, and no cycles in a connected graph. \n\nI'll create an indegree array, increment it based on child nodes, and check for any indegrees over 1. Counting roots will help confirm there's only one. Then, for reachability, I'll use DFS or BFS from the root, ensuring all nodes are visited without cycles.\n\n**Handling edge cases in tree validation**\n\nI\u2019m considering edge cases for my binary tree validation. For n = 1 with both children as -1, there's technically one root, and it's reachable, so that should return true. If I encounter any invalid child indices, that\u2019s not allowed per the constraints.\n\nFor the implementation, I\u2019ll use BFS with a stack and prepare a Java solution in a class called `Solution`. Using `ArrayDeque` for the queue and a boolean array for visited nodes will help. I'll check for cycles by seeing if a child was already visited when adding it, which would indicate a cycle. Finally, I need to ensure the count of visited nodes equals n for success.\n\n**Demonstrating edge cases with examples**\n\nI'm looking at edge cases using examples like `leftChild = [1,-1,3,-1]` and `rightChild = [2,-1,-1,-1]`. The indegree array shows that node0 has an indegree of 0 (it's the root), while nodes 1, 2, and 3 each have an indegree of 1. Using BFS from node 0 allows me to visit all four nodes.\n\nFor the second example, if `rightChild[1]=3`, then node 3 has an indegree of 2, which means I need to return false. I must check for indegree exceeding 1 right away and ensure only one root exists. I\u2019ll produce the Java code, naming the class `Solution` with the method `public boolean validateBinaryTreeNodes(int n, int[] leftChild, int[] rightChild)`, and I\u2019ll include `java.util.*` for `ArrayDeque`.",
+    "model": "gpt-5-mini",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-08-20T19:05:12.549601+00:00",
+    "wall_clock_ms": 13124,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "input_tokens": 386,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 985,
+        "output_tokens_details": {
+          "reasoning_tokens": 576
+        },
+        "total_tokens": 1371,
+        "prompt_tokens": 386,
+        "completion_tokens": 985
+      },
+      "finish_reason": "completed",
+      "model_resolved": "gpt-5-mini-2025-08-07",
+      "api": "responses"
+    }
+  },
+  "saved_at": "2026-08-20T19:05:12.549922+00:00"
+}

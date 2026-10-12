@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|count-collisions-on-a-road",
+  "code": "#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int countCollisions(string directions) {\n        int left = 0;\n        int right = static_cast<int>(directions.size()) - 1;\n\n        while (left <= right && directions[left] == 'L') {\n            ++left;\n        }\n        while (left <= right && directions[right] == 'R') {\n            --right;\n        }\n\n        int collisions = 0;\n        for (int i = left; i <= right; ++i) {\n            if (directions[i] != 'S') {\n                ++collisions;\n            }\n        }\n\n        return collisions;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `count-collisions-on-a-road` in C++.\n\nThere are `n` cars on an infinitely long road. The cars are numbered from `0` to `n - 1` from left to right and each car is present at a **unique** point.\n\nYou are given a **0-indexed** string `directions` of length `n`. `directions[i]` can be either `'L'`, `'R'`, or `'S'` denoting whether the `ith` car is moving towards the **left**, towards the **right**, or **staying** at its current point respectively. Each moving car has the **same speed**.\n\nThe number of collisions can be calculated as follows:\n\n*   When two cars moving in **opposite** directions collide with each other, the number of collisions increases by `2`.\n*   When a moving car collides with a stationary car, the number of collisions increases by `1`.\n\nAfter a collision, the cars involved can no longer move and will stay at the point where they collided. Other than that, cars cannot change their state or direction of motion.\n\nReturn _the **total number of collisions** that will happen on the road_.\n\n**Example 1:**\n\n**Input:** directions =  \"RLRSLL \"\n**Output:** 5\n**Explanation:**\nThe collisions that will happen on the road are:\n- Cars 0 and 1 will collide with each other. Since they are moving in opposite directions, the number of collisions becomes 0 + 2 = 2.\n- Cars 2 and 3 will collide with each other. Since car 3 is stationary, the number of collisions becomes 2 + 1 = 3.\n- Cars 3 and 4 will collide with each other. Since car 3 is stationary, the number of collisions becomes 3 + 1 = 4.\n- Cars 4 and 5 will collide with each other. After car 4 collides with car 3, it will stay at the point of collision and get hit by car 5. The number of collisions becomes 4 + 1 = 5.\nThus, the total number of collisions that will happen on the road is 5. \n\n**Example 2:**\n\n**Input:** directions =  \"LLRR \"\n**Output:** 0\n**Explanation:**\nNo cars will collide with each other. Thus, the total number of collisions that will happen on the road is 0.\n\n**Constraints:**\n\n*   `1 <= directions.length <= 105`\n*   `directions[i]` is either `'L'`, `'R'`, or `'S'`.\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    int countCollisions(string directions) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int countCollisions(string directions) {\n        int left = 0;\n        int right = static_cast<int>(directions.size()) - 1;\n\n        while (left <= right && directions[left] == 'L') {\n            ++left;\n        }\n        while (left <= right && directions[right] == 'R') {\n            --right;\n        }\n\n        int collisions = 0;\n        for (int i = left; i <= right; ++i) {\n            if (directions[i] != 'S') {\n                ++collisions;\n            }\n        }\n\n        return collisions;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:50:29.598319+00:00",
+    "wall_clock_ms": 4135,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 695,
+        "completion_tokens": 171,
+        "total_tokens": 866,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 20,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:50:29.598528+00:00"
+}

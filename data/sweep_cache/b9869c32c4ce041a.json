@@ -1,0 +1,41 @@
+{
+  "tuple_key": "gpt-6-astra|experiment-system-with-shape|cpp|count-vowel-substrings-of-a-string",
+  "code": "#include <algorithm>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int countVowelSubstrings(string word) {\n        int last[5] = {-1, -1, -1, -1, -1};\n        int boundary = -1;\n        int answer = 0;\n\n        for (int i = 0; i < static_cast<int>(word.size()); ++i) {\n            int vowel;\n            switch (word[i]) {\n                case 'a': vowel = 0; break;\n                case 'e': vowel = 1; break;\n                case 'i': vowel = 2; break;\n                case 'o': vowel = 3; break;\n                case 'u': vowel = 4; break;\n                default:\n                    boundary = i;\n                    continue;\n            }\n\n            last[vowel] = i;\n            int earliest = *min_element(last, last + 5);\n            if (earliest > boundary) {\n                answer += earliest - boundary;\n            }\n        }\n\n        return answer;\n    }\n};",
+  "trace": {
+    "prompt": "Solve this LeetCode problem `count-vowel-substrings-of-a-string` in C++.\n\nA **substring** is a contiguous (non-empty) sequence of characters within a string.\n\nA **vowel substring** is a substring that **only** consists of vowels (`'a'`, `'e'`, `'i'`, `'o'`, and `'u'`) and has **all five** vowels present in it.\n\nGiven a string `word`, return _the number of **vowel substrings** in_ `word`.\n\n**Example 1:**\n\n**Input:** word =  \"aeiouu \"\n**Output:** 2\n**Explanation:** The vowel substrings of word are as follows (underlined):\n-  \"**aeiou**u \"\n-  \"**aeiouu** \"\n\n**Example 2:**\n\n**Input:** word =  \"unicornarihan \"\n**Output:** 0\n**Explanation:** Not all 5 vowels are present, so there are no vowel substrings.\n\n**Example 3:**\n\n**Input:** word =  \"cuaieuouac \"\n**Output:** 7\n**Explanation:** The vowel substrings of word are as follows (underlined):\n-  \"c**uaieuo**uac \"\n-  \"c**uaieuou**ac \"\n-  \"c**uaieuoua**c \"\n-  \"cu**aieuo**uac \"\n-  \"cu**aieuou**ac \"\n-  \"cu**aieuoua**c \"\n-  \"cua**ieuoua**c \"\n\n**Constraints:**\n\n*   `1 <= word.length <= 100`\n*   `word` consists of lowercase English letters only.\n\n\n\nSTARTER CODE (your solution must conform to this exact shape \u2014 implement the method body):\n```cpp\nclass Solution {\npublic:\n    int countVowelSubstrings(string word) {\n        \n    }\n};\n```\n\n",
+    "system_prompt": "You are a competitive-programming assistant. Solve the problem in C++.\n\nMANDATORY SHAPE: your final code MUST match the class and method signature shown in the starter snippet below. Don't rename the method, don't change argument names or types, don't wrap the Solution class in another class.\n\n\n\n\n\nThink step by step, then return the final solution in a single ```cpp code block. Don't include any other comments or text outside the code block.",
+    "raw_response": "```cpp\n#include <algorithm>\n#include <string>\nusing namespace std;\n\nclass Solution {\npublic:\n    int countVowelSubstrings(string word) {\n        int last[5] = {-1, -1, -1, -1, -1};\n        int boundary = -1;\n        int answer = 0;\n\n        for (int i = 0; i < static_cast<int>(word.size()); ++i) {\n            int vowel;\n            switch (word[i]) {\n                case 'a': vowel = 0; break;\n                case 'e': vowel = 1; break;\n                case 'i': vowel = 2; break;\n                case 'o': vowel = 3; break;\n                case 'u': vowel = 4; break;\n                default:\n                    boundary = i;\n                    continue;\n            }\n\n            last[vowel] = i;\n            int earliest = *min_element(last, last + 5);\n            if (earliest > boundary) {\n                answer += earliest - boundary;\n            }\n        }\n\n        return answer;\n    }\n};\n```",
+    "reasoning": null,
+    "model": "gpt-6-astra",
+    "provider": "openai",
+    "endpoint": "https://api.openai.com/v1",
+    "params": {
+      "temperature": 1
+    },
+    "created_at": "2026-09-13T09:51:44.946833+00:00",
+    "wall_clock_ms": 6502,
+    "provider_meta": {
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 498,
+        "completion_tokens": 307,
+        "total_tokens": 805,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 75,
+          "audio_tokens": 0,
+          "accepted_prediction_tokens": 0,
+          "rejected_prediction_tokens": 0
+        }
+      },
+      "finish_reason": "stop",
+      "model_resolved": "gpt-6-astra",
+      "api": "chat_completions"
+    }
+  },
+  "saved_at": "2026-09-13T09:51:44.947231+00:00"
+}
