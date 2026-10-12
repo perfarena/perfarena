@@ -55,6 +55,7 @@ from .models import (
 )
 from . import integrity
 from . import provenance
+from . import replicas
 from . import snapshot as snapshot_mod
 from .validation import validate_code
 from .schemas import (
@@ -175,6 +176,11 @@ def _mark_stale_pending_attempts() -> int:
                 (Attempt.logged_at < cutoff) | (Attempt.logged_at.is_(None)),
             )
         ).all()
+        # The work queue owns queued/claimed attempts (they may wait in line
+        # longer than the cutoff); leave them alone while it is on.
+        from . import scheduler
+        if scheduler.enabled():
+            stale = [a for a in stale if a.dispatch_state not in scheduler.OPEN]
         if not stale:
             return 0
         for a in stale:
@@ -542,6 +548,10 @@ app = FastAPI(
     openapi_url="/openapi.json" if _enable_docs else None,
 )
 
+# Replica pools, machine classes, calibration, work queue (replica_api.py).
+from .replica_api import router as _replica_router                      # noqa: E402
+app.include_router(_replica_router)
+
 
 @app.get("/api/version")
 def api_version():
@@ -775,6 +785,15 @@ def _startup() -> None:
         print(f"[startup] in-flight recovery failed: {e!r}",
               file=sys.stderr)
     _start_stale_marker_thread()
+    # Claim-based scheduler: requeue a previous process's claims and restart
+    # workers (no-op while dispatch.scheduler_queue=0). Then the periodic
+    # replica recalibration (only touches classes with admitted replicas).
+    from . import scheduler
+    try:
+        scheduler.start()
+    except Exception as e:                                         # noqa: BLE001
+        print(f"[startup] scheduler start failed: {e!r}", file=sys.stderr)
+    replicas.start_recalibration_thread()
 
 
 def _recover_in_flight_dispatches_on_startup() -> int:
@@ -2752,6 +2771,7 @@ def list_machines(session: Session = Depends(get_session)):
             id=m.id, name=m.name, hostname=m.hostname, cpu_model=m.cpu_model,
             cores=m.cores, energy_source=m.energy_source, os=m.os, notes=m.notes,
             created_at=m.created_at, n_submissions=counts.get(m.id, 0),
+            machine_class_id=m.machine_class_id,
         )
         for m in machines
     ]
@@ -2780,6 +2800,7 @@ def edit_machine(
         id=m.id, name=m.name, hostname=m.hostname, cpu_model=m.cpu_model,
         cores=m.cores, energy_source=m.energy_source, os=m.os, notes=m.notes,
         created_at=m.created_at, n_submissions=n_subs,
+        machine_class_id=m.machine_class_id,
     )
 
 
@@ -2788,6 +2809,13 @@ def edit_machine(
 # the harness GET endpoints are public (no auth required to view a harness).
 _SECRET_CONFIG_KEYS = {"auth_token", "token", "api_key", "apikey",
                        "password", "secret", "credential", "credentials"}
+
+
+def _check_replica_policy(config: dict | None, *, performance: bool) -> None:
+    """400 on a bad `config.replicas` (policy name or knob), see replicas.py."""
+    err = replicas.check_policy_config(config, performance=performance)
+    if err:
+        raise HTTPException(400, err)
 
 
 def _public_harness_config(config: dict | None, viewer: "User | None") -> dict | None:
@@ -3023,8 +3051,10 @@ def add_harness(
 ):
     if session.exec(select(Harness).where(Harness.slug == payload.slug)).first():
         raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    _check_replica_policy(payload.config, performance=True)
     h = Harness(**payload.model_dump(), created_by_user_id=admin.id)
     session.add(h); session.commit(); session.refresh(h)
+    replicas.ensure_primary(session, h)
     return HarnessPublic(
         id=h.id, slug=h.slug, name=h.name, description=h.description,
         kind=h.kind, status=h.status, created_at=h.created_at, config=h.config,
@@ -3045,9 +3075,11 @@ def edit_harness(
         clash = session.exec(select(Harness).where(Harness.slug == payload.slug)).first()
         if clash and clash.id != hid:
             raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    _check_replica_policy(payload.config, performance=True)
     for k, v in payload.model_dump().items():
         setattr(h, k, v)
     session.add(h); session.commit(); session.refresh(h)
+    replicas.ensure_primary(session, h)
     n_comps, n_subs, n_runs, _l, _j = _harness_stats(session, h.id)
     return HarnessPublic(
         id=h.id, slug=h.slug, name=h.name, description=h.description,
@@ -3341,8 +3373,10 @@ def add_correctness_oracle(
     if session.exec(select(CorrectnessOracle).where(
             CorrectnessOracle.slug == payload.slug)).first():
         raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    _check_replica_policy(payload.config, performance=False)
     o = CorrectnessOracle(**payload.model_dump(), created_by_user_id=admin.id)
     session.add(o); session.commit(); session.refresh(o)
+    replicas.ensure_primary(session, o)
     return CorrectnessOraclePublic(
         id=o.id, slug=o.slug, name=o.name, description=o.description,
         kind=o.kind, status=o.status, created_at=o.created_at, config=o.config,
@@ -3366,9 +3400,11 @@ def edit_correctness_oracle(
         ).first()
         if clash and clash.id != oid:
             raise HTTPException(409, f"slug '{payload.slug}' already in use")
+    _check_replica_policy(payload.config, performance=False)
     for k, v in payload.model_dump().items():
         setattr(o, k, v)
     session.add(o); session.commit(); session.refresh(o)
+    replicas.ensure_primary(session, o)
     n_comps, n_subs, n_runs, _l, _j = _correctness_oracle_stats(session, o.id)
     return CorrectnessOraclePublic(
         id=o.id, slug=o.slug, name=o.name, description=o.description,

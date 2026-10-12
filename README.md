@@ -478,6 +478,8 @@ Register it in the backend (Harnesses page or `register-harness.sh`) with the en
 
 Runtime knobs (repeats, TLE retries, correctness-gate retries, per-account gap) are also editable live from the admin **Variables** tab (`/admin/settings`) without an env change or restart — an override there wins over the env var. The same tab shows live health of every registered harness.
 
+**More runners (replica pools).** Several runner endpoints can serve one harness or correctness oracle, with a spreading policy, machine classes, calibration, and an optional claim-based queue. Upgrading needs no configuration change. See `docs/deploy-replica-pools.md` for the upgrade steps, adding replicas, and roll-back.
+
 ### 4. Run a sweep
 
 ```bash

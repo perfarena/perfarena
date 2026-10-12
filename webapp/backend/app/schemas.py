@@ -1005,6 +1005,97 @@ class MachinePublic(BaseModel):
     notes: str | None = None
     created_at: datetime
     n_submissions: int = 0
+    machine_class_id: int | None = None
+
+
+class MachineClassPublic(BaseModel):
+    """A declared set of identical machines whose measurements may pool into
+    one profile once each member passes calibration (see replicas.py)."""
+    id: int
+    slug: str
+    name: str
+    description: str | None = None
+    spec: dict | None = None
+    energy_tool: str | None = None
+    status: str
+    calibration: dict | None = None
+    baseline: dict | None = None
+    created_at: datetime
+    machine_ids: list[int] = []
+
+
+class MachineClassIn(BaseModel):
+    slug: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str | None = None
+    spec: dict | None = None
+    energy_tool: str | None = None
+    status: str = "active"
+    # {"attempt_id": int, "repeats": int, "tolerance_pct": float}
+    calibration: dict | None = None
+
+
+class MachineClassAssignIn(BaseModel):
+    """Declare (or clear, with null) the class of one machine."""
+    machine_class_slug: str | None = None
+
+
+class ReplicaPublic(BaseModel):
+    """One runner endpoint of an oracle's pool. The auth token is never
+    returned, only whether one is set. `load`, `cooling`, and `latency_s` are
+    the backend's live view (in flight jobs, skip window, smoothed latency)."""
+    id: int
+    harness_id: int | None = None
+    correctness_oracle_id: int | None = None
+    name: str
+    endpoint: str
+    has_auth_token: bool = False
+    is_primary: bool
+    status: str
+    weight: int
+    priority: int
+    capacity: int
+    machine_id: int | None = None
+    admitted_class_id: int | None = None
+    last_health_at: datetime | None = None
+    last_health_ok: bool | None = None
+    last_health_msg: str | None = None
+    created_at: datetime
+    load: int = 0
+    cooling: str | None = None
+    latency_s: float | None = None
+
+
+class ReplicaIn(BaseModel):
+    """Register a replica under exactly one oracle (by slug)."""
+    harness_slug: str | None = None
+    correctness_oracle_slug: str | None = None
+    name: str = Field(min_length=1)
+    endpoint: str = Field(min_length=1)
+    auth_token: str | None = None
+    status: str = "active"
+    weight: int = Field(default=1, ge=1)
+    priority: int = 100
+    capacity: int = Field(default=1, ge=1)
+
+
+class ReplicaPatch(BaseModel):
+    """Partial update; omitted fields stay as they are."""
+    name: str | None = None
+    endpoint: str | None = None
+    auth_token: str | None = None
+    status: str | None = None
+    weight: int | None = Field(default=None, ge=1)
+    priority: int | None = None
+    capacity: int | None = Field(default=None, ge=1)
+
+
+class CalibrateIn(BaseModel):
+    """Run the class reference workload on a performance replica. Declare
+    the class here for a first calibration; set_baseline re-bases the class
+    on this replica."""
+    machine_class_slug: str | None = None
+    set_baseline: bool = False
 
 
 class MachineIn(BaseModel):

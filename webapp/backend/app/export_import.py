@@ -37,7 +37,7 @@ from sqlmodel import Session, select
 from .db import engine
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
-    CorrectnessOracle, Harness, Machine, MeasurementProfile, Problem,
+    CorrectnessOracle, Harness, Machine, MachineClass, MeasurementProfile, Problem,
     PromptTemplate, RegisteredModel, Run, Submission, User,
 )
 from . import leetcode_accounts as _lc_accounts
@@ -61,7 +61,9 @@ EXPORTABLE: list[tuple[str, type]] = [
     ("correctness_oracles",  CorrectnessOracle),
     # Provenance of a run's numbers: the physical box + the (tool, config)
     # profile it ran under. Machine before profiles (profile FKs machine);
-    # both before submissions/runs, which FK into them.
+    # both before submissions/runs, which FK into them. Machine classes come
+    # first: machines, profiles, and submissions FK into them.
+    ("machine_classes",      MachineClass),
     ("machines",             Machine),
     ("measurement_profiles", MeasurementProfile),
     ("competitions",         Competition),
@@ -403,6 +405,7 @@ _NATURAL_KEYS: dict[str, Callable[[dict], tuple]] = {
     "competitions":       lambda r: (r.get("slug"),),
     "harnesses":          lambda r: (r.get("slug"),),
     "correctness_oracles": lambda r: (r.get("slug"),),
+    "machine_classes":    lambda r: (r.get("slug"),),
     "blog_posts":         lambda r: (r.get("slug"),),
     "baselines":          lambda r: (r.get("problem_id"), r.get("language")),
     # composite-PK join — natural key IS the PK.
@@ -416,6 +419,13 @@ def _existing_natural_keys(session: Session, name: str) -> set[tuple]:
     model = TABLE_BY_NAME[name]
     keyfn = _NATURAL_KEYS[name]
     return {keyfn(_row_to_dict(r)) for r in session.exec(select(model)).all()}
+
+
+def _remap(payload: dict, col: str, id_map: dict[int, int]) -> None:
+    """Translate one FK column through an old->new id map (NULL passes)."""
+    v = payload.get(col)
+    if v is not None:
+        payload[col] = id_map.get(int(v), v)
 
 
 def import_bundle(session: Session, bundle: dict) -> dict:
@@ -444,7 +454,8 @@ def import_bundle(session: Session, bundle: dict) -> dict:
     id_maps: dict[str, dict[int, int]] = {
         "users": {}, "problems": {}, "prompt_templates": {},
         "registered_models": {}, "competitions": {}, "harnesses": {},
-        "correctness_oracles": {}, "machines": {}, "measurement_profiles": {},
+        "correctness_oracles": {}, "machine_classes": {}, "machines": {},
+        "measurement_profiles": {},
         "blog_posts": {}, "submissions": {}, "attempts": {},
         "runs": {}, "baselines": {},
     }
@@ -454,7 +465,7 @@ def import_bundle(session: Session, bundle: dict) -> dict:
     # Competition FKs into both and we want the remaps ready.
     natural_first = ["users", "problems", "prompt_templates",
                      "registered_models", "harnesses",
-                     "correctness_oracles", "competitions",
+                     "correctness_oracles", "machine_classes", "competitions",
                      "blog_posts", "baselines"]
     for tname in natural_first:
         rows = incoming.get(tname) or []
@@ -520,6 +531,7 @@ def import_bundle(session: Session, bundle: dict) -> dict:
         try:
             payload = _coerce_for_table(Machine, row)
             old_id = payload.pop("id", None)
+            _remap(payload, "machine_class_id", id_maps["machine_classes"])
             obj = Machine(**payload)
             session.add(obj)
             session.flush()
@@ -537,6 +549,7 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             mid = payload.get("machine_id")
             if mid is not None:
                 payload["machine_id"] = id_maps["machines"].get(int(mid), mid)
+            _remap(payload, "machine_class_id", id_maps["machine_classes"])
             obj = MeasurementProfile(**payload)
             session.add(obj)
             session.flush()
@@ -585,6 +598,7 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             mid = payload.get("machine_id")
             if mid is not None:
                 payload["machine_id"] = id_maps["machines"].get(int(mid), mid)
+            _remap(payload, "machine_class_id", id_maps["machine_classes"])
             obj = Submission(**payload)
             session.add(obj)
             session.flush()
@@ -615,6 +629,9 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             prev = payload.get("previous_attempt_id")
             if prev is not None:
                 payload["previous_attempt_id"] = id_maps["attempts"].get(int(prev), prev)
+            # Imported attempts are never live work for this instance's queue.
+            for col in ("dispatch_state", "claimed_by", "lease_until", "not_before"):
+                payload[col] = None
             obj = Attempt(**payload)
             session.add(obj)
             session.flush()
@@ -651,6 +668,10 @@ def import_bundle(session: Session, bundle: dict) -> dict:
                 payload["measurement_profile_id"] = (
                     id_maps["measurement_profiles"].get(int(mpid), mpid)
                 )
+            _remap(payload, "machine_id", id_maps["machines"])
+            # Replica rows are site config and are not exported; the physical
+            # provenance travels as machine_id.
+            payload["replica_id"] = None
             obj = Run(**payload)
             session.add(obj)
             report["runs"]["inserted"] += 1

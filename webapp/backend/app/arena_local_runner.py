@@ -91,9 +91,10 @@ Notes for future us
   extension — swap the httpx.post for a `stream=True` iteration and
   keep calling `on_run_completed` per line.
 
-* No credential pool. The endpoint is a single fixed URL per Harness;
-  scale-out is the runner's problem (put a load balancer in front of
-  N boxes and stamp them all with the same auth_token).
+* No credential pool. `config.endpoint` is the oracle's primary replica;
+  scale-out registers more replicas (OracleReplica) and spreads work by
+  the oracle's `config.replicas.policy` — see replicas.py. Each helper
+  below takes an optional `replica` to target one endpoint of the pool.
 
 * No inter-submission delay. The remote machine is ours, not LC's, so
   there's no anti-bot heuristic to appease. The dispatcher's outer
@@ -110,7 +111,7 @@ from typing import Any, Callable
 
 import httpx
 
-from .models import CorrectnessOracle, Harness, Problem
+from .models import CorrectnessOracle, Harness, OracleReplica, Problem
 
 
 def _log(msg: str) -> None:
@@ -140,14 +141,20 @@ _Runner = Harness | CorrectnessOracle
 
 
 def _client(runner: _Runner, *,
-            timeout_cap_s: float | None = None) -> tuple[httpx.Client, str]:
+            timeout_cap_s: float | None = None,
+            replica: OracleReplica | None = None) -> tuple[httpx.Client, str]:
     """Build a client for the runner's endpoint. Raises ValueError when
     the config is missing or malformed — callers should stamp
     dispatch_warning and abort the attempt in that case. `timeout_cap_s`
     caps the client timeout below the configured value (used by /validate to
-    enforce a 5-minute maximum regardless of config)."""
+    enforce a 5-minute maximum regardless of config). `replica` targets one
+    replica of the oracle's pool instead of `config.endpoint`; its own
+    auth_token wins over the oracle's when set."""
     cfg = runner.config or {}
-    endpoint = (cfg.get("endpoint") or "").rstrip("/")
+    if replica is not None:
+        endpoint = (replica.endpoint or "").rstrip("/")
+    else:
+        endpoint = (cfg.get("endpoint") or "").rstrip("/")
     if not endpoint:
         kind_label = (
             "harness" if isinstance(runner, Harness) else "correctness oracle"
@@ -157,7 +164,8 @@ def _client(runner: _Runner, *,
             f"{kind_label} '{runner.slug}' has no endpoint configured — "
             f"set config.endpoint on {page} to the runner's base URL"
         )
-    token = cfg.get("auth_token") or ""
+    token = ((replica.auth_token if replica is not None else None)
+             or cfg.get("auth_token") or "")
     timeout = float(cfg.get("timeout_s") or _DEFAULT_TIMEOUT_S)
     if timeout_cap_s is not None:
         timeout = min(timeout, timeout_cap_s)
@@ -173,11 +181,13 @@ def _client(runner: _Runner, *,
     return client, endpoint
 
 
-def probe_healthz(runner: _Runner) -> tuple[bool, str]:
+def probe_healthz(runner: _Runner, *, replica: OracleReplica | None = None,
+                  timeout_cap_s: float | None = None) -> tuple[bool, str]:
     """Ping the runner's /healthz. Returns (ok, info-line). Used by the
     SPA's admin "Test connection" button and the dispatcher pre-flight."""
     try:
-        client, endpoint = _client(runner)
+        client, endpoint = _client(runner, replica=replica,
+                                   timeout_cap_s=timeout_cap_s)
     except ValueError as e:
         return False, str(e)
     try:
@@ -301,6 +311,7 @@ def dispatch_via_arena_local(
     on_run_completed: Callable[[dict, int], None] | None = None,
     meta: dict | None = None,
     metrics: list[str] | None = None,
+    replica: OracleReplica | None = None,
 ) -> list[dict]:
     """POST the code to the harness runner and stream the N results back.
 
@@ -315,7 +326,7 @@ def dispatch_via_arena_local(
     retry-later without writing garbage Runs to the DB.
     """
     try:
-        client, endpoint = _client(harness)
+        client, endpoint = _client(harness, replica=replica)
     except ValueError as e:
         return _synthetic_failure(repeats, "Dispatch error", str(e))
 
@@ -448,6 +459,7 @@ def validate_via_arena_local(
     oracle: CorrectnessOracle,
     *,
     meta: dict | None = None,
+    replica: OracleReplica | None = None,
 ) -> dict:
     """POST the code to the oracle runner's /validate and return a single
     verdict dict.
@@ -471,7 +483,8 @@ def validate_via_arena_local(
     "oracle unreachable" without conflating them.
     """
     try:
-        client, endpoint = _client(oracle, timeout_cap_s=_VALIDATE_MAX_TIMEOUT_S)
+        client, endpoint = _client(oracle, timeout_cap_s=_VALIDATE_MAX_TIMEOUT_S,
+                                   replica=replica)
     except ValueError as e:
         return {"status_msg": "Dispatch error",
                 "raw_response": {"note": str(e)},

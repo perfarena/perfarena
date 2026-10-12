@@ -45,6 +45,34 @@ REGISTRY: list[dict[str, Any]] = [
      "group": "Dispatch", "min": 0, "max": 3600,
      "help": "Minimum seconds between LeetCode submissions on the same account "
              "(anti-abuse pacing)."},
+    # Replica pools + claim-based scheduler (replicas.py, scheduler.py).
+    {"key": "dispatch.replica_pools", "label": "Replica pools (0/1)", "type": "int",
+     "env": "ARENA_REPLICA_POOLS", "default": 1, "group": "Replicas",
+     "min": 0, "max": 1,
+     "help": "1 = spread work over each runner oracle's registered replicas by "
+             "its config.replicas.policy. 0 = primary endpoint only (the "
+             "single-endpoint path), whatever is registered."},
+    {"key": "dispatch.replica_wait_s", "label": "Max wait for a free replica (s)",
+     "type": "float", "env": "ARENA_REPLICA_WAIT_S", "default": 900.0,
+     "group": "Replicas", "min": 0, "max": 86400,
+     "help": "How long a dispatch waits for a free, compatible replica before "
+             "it gives up for now (the attempt stays pending)."},
+    {"key": "dispatch.scheduler_queue", "label": "Claim-based scheduler (0/1)",
+     "type": "int", "env": "ARENA_SCHEDULER_QUEUE", "default": 0,
+     "group": "Replicas", "min": 0, "max": 1,
+     "help": "1 = runner-oracle submissions go to the attempt work queue, "
+             "processed in parallel by one worker per replica slot. 0 = the "
+             "legacy sequential per-submission loop."},
+    {"key": "dispatch.queue_max_tries", "label": "Queue tries per attempt",
+     "type": "int", "env": "ARENA_QUEUE_MAX_TRIES", "default": 5,
+     "group": "Replicas", "min": 1, "max": 50,
+     "help": "Claims per attempt before a system failure (dead runner, busy "
+             "pool) parks it with a dispatch warning."},
+    {"key": "replicas.recalibrate_interval_h", "label": "Recalibration interval (h)",
+     "type": "float", "env": "ARENA_RECALIBRATE_INTERVAL_H", "default": 24.0,
+     "group": "Replicas", "min": 0, "max": 8760,
+     "help": "Re-run the class reference workload on every admitted performance "
+             "replica this often. A replica out of band is quarantined. 0 = off."},
 ]
 _BY_KEY = {e["key"]: e for e in REGISTRY}
 

@@ -36,7 +36,7 @@ services:
     networks: [perfarena, harness_internal]
     restart: unless-stopped
 
-  harness:
+  harness: &harness
     build:
       context: ./docker/harness-test
     image: perfarena-harness-test:latest
@@ -124,6 +124,51 @@ services:
     # still reaches it at http://harness:8787 over this same network.
     networks: [harness_internal]
     restart: unless-stopped
+
+  # Extra runner replicas for trying replica pools (app/replicas.py). Off by
+  # default; start them and register them as replicas of `arena-local`:
+  #
+  #   docker compose -f docker-compose.local.yml --profile replicas up -d
+  #   ./docker/harness-test/register-replicas.sh
+  #
+  # Each replica works on its OWN copy of Energy-Languages (copied at start,
+  # .git excluded): two runners building the same cell directory at once would
+  # clobber each other. Harness edits therefore reach a replica on restart.
+  harness2:
+    <<: *harness
+    profiles: ["replicas"]
+    volumes: &replica_volumes
+      - ./Energy-Languages:/src/Energy-Languages:ro
+      - ./webapp/examples:/work/webapp/examples:ro
+      - ./logs/harness-replicas:/var/log/perfarena
+    environment: &replica_env
+      PERFARENA_ROOT: /work/Energy-Languages
+      PYTHONPATH: /work/Energy-Languages
+      PERFARENA_RUNNER_TOKEN: ${PERFARENA_RUNNER_TOKEN:-}
+      PERFARENA_PROFILER: codecarbon
+      PERFARENA_CLBG_WARMUP_RUNS: "1"
+      PERFARENA_CLBG_MEASURE_RUNS: "7"
+      PERFARENA_IDLE_S: "1"
+      PERFARENA_HANDLER_TIMEOUT_S: "1200"
+      PERFARENA_LC_MEASURE_TIMEOUT_S: "420"
+      PERFARENA_REQUEST_TIMEOUT_S: "1320"
+      PERFARENA_ISOLATION_CHECK: "0"
+      TSC: tsc
+      PERFARENA_LOG_FILE: /var/log/perfarena/runner-harness2.log
+    entrypoint: &replica_entry
+      - sh
+      - -c
+      - mkdir -p /work/Energy-Languages && tar -C /src/Energy-Languages --exclude=.git -cf - . | tar -C /work/Energy-Languages -xf - && exec "$$@"
+      - --
+
+  harness3:
+    <<: *harness
+    profiles: ["replicas"]
+    volumes: *replica_volumes
+    environment:
+      <<: *replica_env
+      PERFARENA_LOG_FILE: /var/log/perfarena/runner-harness3.log
+    entrypoint: *replica_entry
 
 volumes:
   perfarena-data:

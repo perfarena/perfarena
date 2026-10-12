@@ -6,7 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import event, text
 from sqlalchemy.pool import NullPool
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 
 DB_PATH = Path(os.environ.get("ARENA_DB", Path(__file__).parent.parent / "arena.db"))
 DB_URL = f"sqlite:///{DB_PATH}"
@@ -237,6 +237,21 @@ _ADDITIVE_COLUMNS = [
     ("submission", "machine_id", "INTEGER"),
     ("submission", "energy_tool", "VARCHAR"),
     ("run", "measurement_profile_id", "INTEGER"),
+    # Replica pools + machine classes (replicas.py, scheduler.py). The new
+    # tables come from create_all. These columns on pre-existing tables are
+    # all nullable and stay NULL on every legacy row: a machine with no class
+    # keeps its per-machine profile key, a run from the single-endpoint path
+    # has no replica, and an attempt outside the queue has no work state.
+    ("machine", "machine_class_id", "INTEGER"),
+    ("measurementprofile", "machine_class_id", "INTEGER"),
+    ("submission", "machine_class_id", "INTEGER"),
+    ("run", "replica_id", "INTEGER"),
+    ("run", "machine_id", "INTEGER"),
+    ("attempt", "dispatch_state", "VARCHAR"),
+    ("attempt", "claimed_by", "VARCHAR"),
+    ("attempt", "lease_until", "DATETIME"),
+    ("attempt", "not_before", "DATETIME"),
+    ("attempt", "dispatch_tries", "INTEGER"),
 ]
 
 
@@ -408,6 +423,18 @@ def _seed_default_agent() -> None:
             pass
 
 
+def _seed_primary_replicas() -> None:
+    """Fold every runner oracle's `config.endpoint` into its primary replica
+    row, so each one is a pool of size 1. Idempotent (see
+    replicas.ensure_primary)."""
+    from . import replicas
+    from .models import CorrectnessOracle, Harness
+    with Session(engine) as session:
+        for model in (Harness, CorrectnessOracle):
+            for oracle in session.exec(select(model)).all():
+                replicas.ensure_primary(session, oracle)
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported before create_all
     SQLModel.metadata.create_all(engine)
@@ -415,6 +442,7 @@ def init_db() -> None:
     _seed_default_harness()
     _seed_default_correctness_oracle()
     _seed_default_agent()
+    _seed_primary_replicas()
 
 
 def get_session():

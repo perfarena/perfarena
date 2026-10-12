@@ -211,6 +211,37 @@ class Submission(SQLModel, table=True):
     # opus" ranks apart from "direct + opus". NOT part of the trace hash or the
     # model digest, so adding it leaves every existing provenance record valid.
     agent_id: int | None = Field(default=None, foreign_key="agent.id", index=True)
+    # Machine CLASS the submission's runs pooled under, when its runs span
+    # several machines of one class (replica pools, see replicas.py). Also set
+    # when a single classed machine measured it. NULL = no class (legacy).
+    machine_class_id: int | None = Field(
+        default=None, foreign_key="machineclass.id", index=True)
+
+
+class MachineClass(SQLModel, table=True):
+    """A declared set of physically identical machines (same hardware, same
+    energy tool, same config) whose measurements may pool into one
+    measurement profile. A machine with no class is its own singleton class,
+    so legacy profiles keep their (machine, config) key.
+
+    Declaration alone does not pool energy: a performance replica joins the
+    pool only after its calibration run (a fixed reference attempt) lands
+    within `tolerance_pct` of the class `baseline` (see replicas.calibrate)."""
+    id: int | None = Field(default=None, primary_key=True)
+    slug: str = Field(index=True, unique=True)
+    name: str
+    description: str | None = None
+    # Free-form hardware spec the members share (cpu_model, cores, ram_gb, ...).
+    spec: dict | None = Field(default=None, sa_column=Column(JSON))
+    energy_tool: str | None = None
+    status: str = Field(default="active", index=True)    # active | retired
+    # Admission-gate reference: {"attempt_id": int, "repeats": int,
+    # "tolerance_pct": float}. The attempt's code is the reference workload.
+    calibration: dict | None = Field(default=None, sa_column=Column(JSON))
+    # Reference numbers the members must match: {"runtime_ms", "energy_j",
+    # "replica_id", "machine_id", "set_at"}. Set by the first calibration.
+    baseline: dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Machine(SQLModel, table=True):
@@ -227,6 +258,9 @@ class Machine(SQLModel, table=True):
     os: str | None = None
     notes: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Declared machine class. NULL = singleton class (the machine itself).
+    machine_class_id: int | None = Field(
+        default=None, foreign_key="machineclass.id", index=True)
 
 
 class MeasurementProfile(SQLModel, table=True):
@@ -246,6 +280,10 @@ class MeasurementProfile(SQLModel, table=True):
     # config_hash) pair is the dedup key so the same setup resolves to one row.
     config_hash: str = Field(index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Set on a CLASS-level profile (machine_id is then NULL): the dedup key is
+    # (machine_class_id, config_hash). NULL on every per-machine profile.
+    machine_class_id: int | None = Field(
+        default=None, foreign_key="machineclass.id", index=True)
 
 
 class Attempt(SQLModel, table=True):
@@ -346,6 +384,14 @@ class Attempt(SQLModel, table=True):
     # confidence (B3). NULL on LeetCode-scored attempts.
     avg_iterations: float | None = None
 
+    # Work-queue state for the claim-based scheduler (scheduler.py). All NULL
+    # on the legacy per-submission loop. queued -> claimed -> done | failed.
+    dispatch_state: str | None = Field(default=None, index=True)
+    claimed_by: str | None = None          # worker id that holds the lease
+    lease_until: datetime | None = None    # claim expires (requeue) after this
+    not_before: datetime | None = None     # retry backoff: claimable after this
+    dispatch_tries: int | None = None      # claims taken so far
+
 
 class Baseline(SQLModel, table=True):
     """LeetCode-population reference performance for one (problem, language) pair.
@@ -440,6 +486,93 @@ class Run(SQLModel, table=True):
     measurement_profile_id: int | None = Field(
         default=None, foreign_key="measurementprofile.id", index=True,
     )
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Physical provenance under replica pools: the replica endpoint and the
+    # machine that produced THIS run, even when the profile pools at the class
+    # level. NULL on runs from the single-endpoint (legacy) path.
+    replica_id: int | None = Field(
+        default=None, foreign_key="oraclereplica.id", index=True)
+    machine_id: int | None = Field(
+        default=None, foreign_key="machine.id", index=True)
+
+
+class OracleReplica(SQLModel, table=True):
+    """One physical runner endpoint behind a logical oracle. Exactly one of
+    harness_id (performance) / correctness_oracle_id (correctness) is set.
+
+    The oracle's own `config.endpoint` is the PRIMARY replica (is_primary),
+    kept in sync with that config, so a one-runner oracle is a pool of size 1.
+    How work spreads over the pool is the oracle's `config.replicas.policy`
+    (see replicas.py)."""
+    id: int | None = Field(default=None, primary_key=True)
+    harness_id: int | None = Field(default=None, foreign_key="harness.id", index=True)
+    correctness_oracle_id: int | None = Field(
+        default=None, foreign_key="correctnessoracle.id", index=True)
+    name: str
+    endpoint: str
+    # NULL = use the oracle's config.auth_token.
+    auth_token: str | None = None
+    is_primary: bool = Field(default=False)
+    # active | disabled | quarantined. Quarantined = failed calibration.
+    status: str = Field(default="active", index=True)
+    weight: int = Field(default=1, ge=1)       # `weighted` policy share
+    priority: int = Field(default=100)         # `failover` order, low first
+    capacity: int = Field(default=1, ge=1)     # concurrent jobs the runner takes
+    # Machine this endpoint measures on (learned from its runs).
+    machine_id: int | None = Field(default=None, foreign_key="machine.id", index=True)
+    # Class this replica passed calibration for. NULL = not admitted to pool.
+    admitted_class_id: int | None = Field(default=None, foreign_key="machineclass.id")
+    last_health_at: datetime | None = None
+    last_health_ok: bool | None = None
+    last_health_msg: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ReplicaCalibration(SQLModel, table=True):
+    """One admission-gate run of the class reference workload on one
+    performance replica. Kept as provenance: who was admitted, against which
+    baseline, with which numbers."""
+    id: int | None = Field(default=None, primary_key=True)
+    replica_id: int = Field(foreign_key="oraclereplica.id", index=True)
+    machine_class_id: int | None = Field(default=None, foreign_key="machineclass.id", index=True)
+    machine_id: int | None = Field(default=None, foreign_key="machine.id")
+    reference_attempt_id: int | None = Field(default=None, foreign_key="attempt.id")
+    runtime_ms: float | None = None            # median over accepted runs
+    energy_j: float | None = None
+    baseline_runtime_ms: float | None = None
+    baseline_energy_j: float | None = None
+    tolerance_pct: float | None = None
+    passed: bool = False
+    became_baseline: bool = False
+    note: str | None = None
+    detail: dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ReplicaResult(SQLModel, table=True):
+    """Per-replica results that are NOT an attempt's canonical Run rows:
+    correctness votes (broadcast / broadcast_merge / quorum) and broadcast
+    shadow measurements from other machines. Kept apart from Run so every
+    existing read surface sees exactly one comparable set of runs."""
+    id: int | None = Field(default=None, primary_key=True)
+    attempt_id: int = Field(foreign_key="attempt.id", index=True)
+    replica_id: int | None = Field(default=None, foreign_key="oraclereplica.id", index=True)
+    machine_id: int | None = Field(default=None, foreign_key="machine.id")
+    stage: str                                 # validate | measure
+    role: str                                  # vote | shadow
+    run_index: int = 1
+    status_msg: str
+    runtime_ms: float | None = None
+    memory_mb: float | None = None
+    runtime_energy_j: float | None = None
+    iterations: int | None = None
+    energy_j_per_op: float | None = None
+    time_us_per_op: float | None = None
+    total_correct: int | None = None
+    total_testcases: int | None = None
+    measurement_profile_id: int | None = Field(
+        default=None, foreign_key="measurementprofile.id")
+    raw_response: dict | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
