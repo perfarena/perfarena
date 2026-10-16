@@ -101,11 +101,9 @@ LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {
 }
 
 # The subset the perf harness can actually validate + measure — MUST track
-# perfarena_handler._LANG_MAP (the runner's authority). swift/scala are valid
-# LeetCode languages the sweep understands but the harness can't score yet, so
-# they are deliberately excluded here: a default sweep won't waste attempts on
-# them (they'd fail the correctness gate with "not measurable"). Pass them
-# explicitly via --languages only if you know support has landed.
+# perfarena_handler._LANG_MAP (the runner's authority). Today that is every
+# language in LANGUAGE_DISPLAY (swift and scala included); drop a language
+# here if the harness ever loses it, so a default sweep skips it.
 MEASURABLE_LANGUAGES: tuple[str, ...] = (
     "python3", "cpp", "c", "rust", "java", "csharp", "javascript",
     "typescript", "golang", "kotlin", "swift", "scala", "ruby", "php",
@@ -1576,6 +1574,13 @@ def main() -> None:
                          "leetcode-99-perf). The slug given by --slug must "
                          "belong to this competition; pass@k uses its problem "
                          "count as the denominator.")
+    ap.add_argument("--harness", default=None, metavar="SLUG",
+                    help="performance harness that measures the submission "
+                         "(required by the API when this run creates a new "
+                         "submission; /api/harnesses lists them)")
+    ap.add_argument("--correctness-oracle", default=None, metavar="SLUG",
+                    help="optional correctness oracle (validated before the "
+                         "harness measures)")
     ap.add_argument("--provider", default="ollama", choices=sorted(PROVIDERS),
                     help="LLM backend. ollama (default) uses --ollama-url; "
                          "openai uses --openai-base-url + --openai-api-key "
@@ -1940,6 +1945,10 @@ def main() -> None:
             include_hints=bool(args.hints),
             optimization_target=args.target,
             n_rounds=1,        # this script is single-shot by design
+            # Scope to this run's competition and harness, so the attempt
+            # never lands in a submission of another problem set or oracle.
+            competition_slug=args.competition,
+            harness_slug=args.harness,
         )
         if existing is not None:
             target_sub_id = existing["id"]
@@ -1960,6 +1969,9 @@ def main() -> None:
         sub_id = resp["submission_id"]
         print(f"  appended {resp['appended']} attempt(s) to submission #{sub_id}")
     else:
+        if not args.harness:
+            raise SystemExit("creating a submission needs --harness SLUG "
+                             "(the API requires a harness)")
         print(f"• submitting {len(attempts)} attempt(s) as a new submission (k={k}) …")
         created = http_json(
             "POST", f"{base}/api/submissions", token=args.api_key,
@@ -1982,6 +1994,9 @@ def main() -> None:
                 # total_problems / pass@k use that competition's size
                 # rather than the full Problem table count.
                 "competition_slug": args.competition,
+                "harness_slug": args.harness,
+                **({"correctness_oracle_slug": args.correctness_oracle}
+                   if args.correctness_oracle else {}),
                 "attempts": attempts,
             },
         )

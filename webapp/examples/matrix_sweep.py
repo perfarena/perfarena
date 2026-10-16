@@ -1343,10 +1343,9 @@ def _resolve_prompts(base: str, names_arg: str | None) -> list[dict]:
 
 
 def _resolve_languages(arg: str | None) -> list[str]:
-    # Default to the harness-measurable set only — dispatching swift/scala
-    # (valid LeetCode langs the harness can't score yet) just burns attempts on
-    # a guaranteed "not measurable" rejection. Explicit --languages may still
-    # name them for a deliberate run.
+    # Default to the harness-measurable set only (MEASURABLE_LANGUAGES), so a
+    # sweep never burns attempts on a language the harness cannot score.
+    # Explicit --languages may still name any supported language.
     if not arg:
         return sorted(MEASURABLE_LANGUAGES)
     out = [l.strip() for l in arg.split(",") if l.strip()]
@@ -1509,7 +1508,7 @@ def main() -> None:
     ap.add_argument("--prompts",   default=None, metavar="NAME[,NAME]",
                     help="comma-separated registry prompt names. Default: all.")
     ap.add_argument("--languages", default=None, metavar="SLUG[,SLUG]",
-                    help="comma-separated language slugs. Default: the 12 harness-measurable languages (excludes swift/scala).")
+                    help="comma-separated language slugs. Default: every harness-measurable language (MEASURABLE_LANGUAGES).")
     ap.add_argument("--slugs",     default=None, metavar="SLUG[,SLUG]",
                     help="comma-separated problem slugs. Default: every problem "
                          "in the chosen --competition.")

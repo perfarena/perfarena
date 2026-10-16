@@ -1,5 +1,11 @@
 # PerfArena API examples
 
+> The `perfarena` SDK, CLI, and MCP server in `clients/python/` cover these
+> workflows with one `RunSpec`. These scripts stay maintained as the reference
+> implementation: `clients/python/tests/test_parity_*.py` run both on the same
+> inputs and require identical prompts, attempts, and submissions. When you
+> change the behavior of a script, change the SDK too (and the reverse).
+
 ## Provider plugin layer
 
 Every script in this directory is provider-agnostic. Pick the backend with

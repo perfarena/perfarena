@@ -551,6 +551,9 @@ app = FastAPI(
 # Replica pools, machine classes, calibration, work queue (replica_api.py).
 from .replica_api import router as _replica_router                      # noqa: E402
 app.include_router(_replica_router)
+# Client helpers: attempt state, submission upsert, pricing (sdk_api.py).
+from .sdk_api import router as _sdk_router                              # noqa: E402
+app.include_router(_sdk_router)
 
 
 @app.get("/api/version")
@@ -5965,7 +5968,7 @@ def _build_error_log(raw: dict | None, status_msg: str | None) -> RunErrorLog | 
 def _ingest_attempts(
     session: Session, sub: Submission, attempts: list[AttemptIn],
     slug_to_id: dict[str, int],
-) -> None:
+) -> list[int]:
     """Persist attempts with provenance: content-binding hash, model digest,
     optional signature verification, then anchor each in the append-only
     transparency log (server-timestamped, hash-chained).
@@ -6041,6 +6044,8 @@ def _ingest_attempts(
     # newly-ingested ones plus any from earlier appends). Done at ingest, not
     # dispatch, because the figures are known the moment the client sends them.
     _recompute_submission_costs(session, sub)
+    # Ids in payload order, so a client can poll exactly the attempts it sent.
+    return [att.id for att, _ in created]
 
 
 def _recompute_submission_costs(session: Session, sub: Submission) -> None:
@@ -6205,11 +6210,12 @@ def submit_batch(
     )
 
     _reject_oversampling(session, sub, slug_to_id, payload.attempts)
-    _ingest_attempts(session, sub, payload.attempts, slug_to_id)
+    attempt_ids = _ingest_attempts(session, sub, payload.attempts, slug_to_id)
 
     if payload.attempts:
         bg.add_task(dispatch_submission, sub.id)
-    return {"submission_id": sub.id, "status": sub.status, "attempts_received": len(payload.attempts)}
+    return {"submission_id": sub.id, "status": sub.status,
+            "attempts_received": len(payload.attempts), "attempt_ids": attempt_ids}
 
 
 @app.post("/api/submissions/{submission_id}/attempts", status_code=status.HTTP_202_ACCEPTED)
@@ -6270,9 +6276,10 @@ def append_attempts(
               f"attempt(s) on submission #{sub.id}", file=sys.stderr)
     _reject_oversampling(session, sub, slug_to_id, payload.attempts)
 
-    _ingest_attempts(session, sub, payload.attempts, slug_to_id)
+    attempt_ids = _ingest_attempts(session, sub, payload.attempts, slug_to_id)
     bg.add_task(dispatch_submission, sub.id)
-    return {"submission_id": sub.id, "appended": len(payload.attempts), "status": sub.status}
+    return {"submission_id": sub.id, "appended": len(payload.attempts),
+            "status": sub.status, "attempt_ids": attempt_ids}
 
 
 def _progress_for(sub: Submission, session: Session) -> SubmissionProgress:

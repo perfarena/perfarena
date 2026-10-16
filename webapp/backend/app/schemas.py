@@ -1098,6 +1098,89 @@ class CalibrateIn(BaseModel):
     set_baseline: bool = False
 
 
+class AttemptState(BaseModel):
+    """One attempt's machine-readable dispatch state, for API clients that
+    poll a single attempt (GET /api/attempts/{id}).
+
+    state:
+      queued   - waiting for dispatch (no run yet)
+      running  - claimed by the queue, or some runs landed but no verdict
+      done     - terminal verdict in `verdict` (final status, or the client's
+                 prefailed reason)
+      failed   - system failure, no verdict (runner/LeetCode unreachable);
+                 `dispatch_warning` says why, and a re-dispatch can retry
+    """
+    attempt_id: int
+    submission_id: int
+    problem_slug: str
+    round_index: int = 0
+    previous_attempt_id: int | None = None
+    state: str
+    terminal: bool
+    verdict: str | None = None
+    accepted: bool = False
+    prefailed_reason: str | None = None
+    dispatch_warning: str | None = None
+    dispatch_state: str | None = None
+    n_runs: int = 0
+    n_accepted_runs: int = 0
+    avg_runtime_ms: float | None = None
+    best_runtime_ms: float | None = None
+    avg_memory_mb: float | None = None
+    best_memory_mb: float | None = None
+    avg_runtime_percentile: float | None = None
+    avg_memory_percentile: float | None = None
+    avg_runtime_energy_j: float | None = None
+    best_runtime_energy_j: float | None = None
+    runs: list[AttemptRunDetail] = []
+    # The submitted code (public, like the /api/datasets/solutions export).
+    code: str | None = None
+
+
+class SubmissionUpsertIn(BaseModel):
+    """Find-or-create a submission by its experiment cell (PUT
+    /api/submissions/upsert). Same fields as SubmissionIn without attempts.
+
+    Match rule (the caller's own, non-deleted submissions, newest first):
+    equal model_name, model_version, language, prompt_id, include_hints,
+    optimization_target, n_rounds, and agent; the competition, harness, and
+    correctness oracle must be equal or NULL on the existing row (legacy rows
+    predate them). A fully-accepted submission matches only with
+    include_fully_accepted. model_params are not compared. With create=false
+    nothing is created: submission_id is null when no submission matches."""
+    model_name: str
+    model_version: str
+    language: str
+    prompt_template: str = Field(min_length=10)
+    model_params: dict
+    n_samples_per_problem: int = Field(default=1, ge=1, le=200)
+    prompt_id: int | None = None
+    n_rounds: int = Field(default=1, ge=1, le=10)
+    include_hints: bool = False
+    optimization_target: str | None = Field(default=None, pattern="^(latency|memory)$")
+    stop_on_accept: bool = False
+    competition_slug: str | None = None
+    harness_slug: str = Field(min_length=1)
+    correctness_oracle_slug: str | None = None
+    agent_slug: str | None = None
+    include_fully_accepted: bool = False
+    create: bool = True
+
+
+class SubmissionUpsertOut(BaseModel):
+    submission_id: int | None
+    created: bool
+    status: str | None
+
+
+class ModelPrice(BaseModel):
+    """Per-1M-token USD rates an admin set on a registered model."""
+    model_name: str
+    model_version: str
+    input_price_per_1m_usd: float
+    output_price_per_1m_usd: float
+
+
 class MachineIn(BaseModel):
     """Admin-editable machine metadata. `id`, `created_at`, and `n_submissions`
     are derived and not settable. Machines are auto-registered when a runner

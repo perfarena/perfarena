@@ -1,6 +1,8 @@
 # Plan: a PerfArena client SDK and an MCP server
 
-Status: PLAN ONLY, for discussion (2026-10-12). Nothing is implemented.
+Status: IMPLEMENTED (2026-10-13) in `clients/python/` (see its README). The
+section "As built" at the end records the decisions and the changes against
+this plan. The plan text below is kept as written.
 
 ## Goal
 
@@ -243,3 +245,49 @@ to end with the fake runners from `tests/replica_fakes.py`.
    stay with the user. Should we keep that, or plan for runs as backend jobs?
 8. **Legacy formats:** migrate `data/sweep_log.json` (committed today) into
    the new ledger, or start fresh?
+
+## As built (2026-10-13)
+
+Decisions (your answers): the package lives in `clients/python/` in this repo.
+A spec's `replicas:` only checks the live policy. MCP write tools need an
+admin key. The backend helper endpoints are added. The client scripts are not
+reduced to shims: they stay maintained as the reference implementation, and
+the parity tests check the SDK against them. Defaults taken: YAML specs and
+TOML profiles, an argparse CLI generated from the schema, a sync core with
+threads, and LLM calls on the client.
+
+Backend (additive):
+
+- `GET /api/attempts/{id}`: state `queued` | `running` | `done` | `failed`, the
+  verdict, the metrics, the per-run error logs, and the code.
+- `PUT /api/submissions/upsert`: find-or-create by cell. With `create: false`
+  it only looks.
+- `GET /api/pricing`.
+- `POST /api/submissions` and `POST /api/submissions/{id}/attempts` now also
+  return `attempt_ids`.
+
+The code is in `webapp/backend/app/sdk_api.py`, with tests in
+`webapp/backend/tests/test_sdk_api.py`.
+
+Scripts fixed (they are still the reference):
+
+- `submit_with_local_model.py` could not create a submission. It now takes
+  `--harness` and `--correctness-oracle`, and scopes its lookup to the
+  competition and the harness.
+- `iterative_refine.py` read results in the middle of a dispatch and waited
+  until its timeout on a prefailed or dispatch-warned attempt. It now uses
+  the sweep's terminal-state rule.
+- The language-list comments now agree with `MEASURABLE_LANGUAGES`.
+
+Changes against the plan:
+
+- **Old scripts as shims (phase F) is dropped:** the scripts stay, as asked.
+- **`compare_models`** takes `models`, `language`, and `competition` (the
+  arguments of `/api/compare`).
+- **MCP list tools** return one JSON object (`{"problems": [...]}`): the MCP
+  SDK would split a list into separate content blocks.
+- **The OpenAPI contract test (backend item 4)** is not built. The SDK tests
+  instead run against the real backend in process.
+
+The intended differences from the scripts are listed in
+`clients/python/README.md` ("Differences from the scripts, on purpose").

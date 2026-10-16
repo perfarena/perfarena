@@ -425,9 +425,17 @@ def _poll_for_attempt(base: str, sub_id: int, slug: str, round_idx: int,
                 continue
             if a.get("round_index", 0) != round_idx:
                 continue
-            if a["status"] != "queued" and a["n_runs"] > 0:
+            # Terminal = a verdict (final_status, or the client's prefailed
+            # reason). "Pending" means runs are still landing: returning then
+            # would read partial results. A dispatch failure has no verdict.
+            status = a.get("status")
+            if status not in ("queued", "Pending", "Dispatch failed"):
                 return a["attempt_id"]
-            last_status = a["status"]
+            if a.get("dispatch_warning") or status == "Dispatch failed":
+                raise SystemExit(
+                    f"round {round_idx} of {slug} was not dispatched: "
+                    f"{a.get('dispatch_warning') or status}")
+            last_status = status
         time.sleep(2)
     raise SystemExit(
         f"timed out after {poll_seconds}s waiting for round {round_idx} of "

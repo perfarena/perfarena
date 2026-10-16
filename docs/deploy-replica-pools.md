@@ -157,6 +157,13 @@ legacy loop. `GET /api/admin/queue` shows the attempts per state and the live
 workers. Set the value back to 0 to return to the legacy loop. Attempts still
 queued are then picked up by the next dispatch call of their submission.
 
+## Client helper endpoints
+
+The same backend version also serves `GET /api/attempts/{id}`,
+`PUT /api/submissions/upsert`, and `GET /api/pricing` for the `perfarena`
+SDK and its MCP server (`clients/python/`). They are additive: no setting,
+no migration, and older clients are unaffected.
+
 ## Roll back
 
 - To turn off the new behavior, set `dispatch.replica_pools=0` (primary
