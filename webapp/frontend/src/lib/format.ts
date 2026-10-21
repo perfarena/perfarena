@@ -33,6 +33,22 @@ export function formatPassAt1(frac: number | null | undefined): string {
   return `${(frac * 100).toFixed(1)}%`;
 }
 
+/** Bradley-Terry win probability (0..1) as a percentage. */
+export function formatWinProb(p: number | null | undefined): string {
+  if (p == null) return DASH;
+  return `${(p * 100).toFixed(1)}%`;
+}
+
+/** US dollars: 4 decimals below $0.01 (most LLM calls), fewer above. */
+export function formatDollar(v: number | null | undefined): string {
+  if (v == null) return DASH;
+  if (v === 0) return "$0";
+  if (v < 0.01)  return `$${v.toFixed(4)}`;
+  if (v < 1)     return `$${v.toFixed(3)}`;
+  if (v < 1000)  return `$${v.toFixed(2)}`;
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
 /** Generation wall-clock (ms) → compact human duration: "820 ms", "12.3 s",
  *  "2m 05s". Reasoning models can take minutes, so scale the unit. */
 export function formatDuration(ms: number | null | undefined): string {

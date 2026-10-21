@@ -495,6 +495,7 @@ class RankingEntry(BaseModel):
     # direct run of the same model.
     agent_slug: str | None = None
     agent_name: str | None = None
+    agent_kind: str | None = None             # direct | agentic | custom | reference
     # Token + cost accounting — surfaced as sortable columns on the SPA
     # rankings table. `total_*` is the sum across every attempt in this
     # submission; `median_*_per_attempt` is the per-attempt median so two

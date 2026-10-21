@@ -17,7 +17,7 @@ from datetime import date, datetime
 
 from sqlmodel import Session, select
 
-from .models import PromptTemplate, Snapshot, Submission, SubmissionStatus, User
+from .models import Competition, PromptTemplate, Snapshot, Submission, SubmissionStatus, User
 
 
 def _label_for(d: date | None = None) -> str:
@@ -89,6 +89,7 @@ def build_report(session: Session) -> dict:
 
     return {
         "generated_at": datetime.utcnow().isoformat(),
+        "efficiency": efficiency_by_competition(session),
         "totals": {
             "n_submissions": n_subs,
             "n_distinct_submitters": len(submitters),
@@ -101,6 +102,33 @@ def build_report(session: Session) -> dict:
             {"language": lang, **dict(stats)} for lang, stats in sorted(by_lang.items())
         ],
     }
+
+
+def efficiency_by_competition(session: Session) -> list[dict]:
+    """The efficiency ranking of every active competition as it stands now (the
+    default view: all workflows, the competition's main harness), so a dated
+    snapshot keeps the ranking even after new results change it."""
+    from .ranking_api import efficiency_rankings     # avoid an import cycle
+    out = []
+    for comp in session.exec(select(Competition).where(Competition.status == "active")).all():
+        r = efficiency_rankings(session, comp.slug)
+        if not r["entrants"]:
+            continue
+        out.append({
+            "competition": comp.slug, "competition_name": comp.name, "harness": r["harness"],
+            "computed_at": r["computed_at"], "n_problems": r["n_problems"],
+            "languages": r["languages"],
+            "entrants": [
+                {"key": e["key"], "model_name": e["model_name"],
+                 "model_version": e["model_version"], "workflow": e["workflow"],
+                 "pass_at_1": e["pass_at_1"], "cost_per_attempt_usd": e["cost_per_attempt_usd"],
+                 "pareto_level": e["pareto_level"], "reference": e["reference"],
+                 "metrics": {m: {k: v[k] for k in ("win_prob", "tied_leader", "rank", "rated")
+                                 if k in v}
+                             for m, v in e["metrics"].items()}}
+                for e in r["entrants"]],
+        })
+    return out
 
 
 def capture(session: Session, label: str | None = None) -> Snapshot:

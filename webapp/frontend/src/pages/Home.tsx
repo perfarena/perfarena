@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, CompetitionPublic, EfficiencyRanks } from "../lib/api";
-import BumpChart from "../components/BumpChart";
+import BumpChart, { bumpColors } from "../components/BumpChart";
 
 // Default competition the "Top of the leaderboard" preview is scoped to.
 // Matches Rankings.tsx's default — the seed LC-99 contains every problem
 // on a fresh install, so this is a no-op there.
 const PRIMARY_COMPETITION_SLUG = "leetcode-99-perf";
+const METRIC_TITLE: Record<string, string> = {
+  latency: "Latency", energy: "Energy", memory: "Memory",
+};
 
 export default function Home() {
   const [comps, setComps] = useState<CompetitionPublic[]>([]);
@@ -16,6 +19,7 @@ export default function Home() {
   const [activeComp, setActiveComp] = useState<string>(PRIMARY_COMPETITION_SLUG);
   const [effByComp, setEffByComp] = useState<Record<string, EfficiencyRanks>>({});
   const [loadingComp, setLoadingComp] = useState<string | null>(null);
+  const [metric, setMetric] = useState<string>("latency");
 
   function loadEff(slug: string) {
     if (effByComp[slug]) return;                    // cached — lazy no-op
@@ -50,6 +54,9 @@ export default function Home() {
   const metricsWithData = eff
     ? eff.metrics.filter(mt => Object.keys(eff.ranks[mt] ?? {}).length > 0)
     : [];
+  const colors = eff ? bumpColors(metricsWithData.map(mt => eff.ranks[mt] ?? {})) : undefined;
+  // A metric without data in this competition falls back to the first one.
+  const shownMetric = metricsWithData.includes(metric) ? metric : metricsWithData[0];
   // Other competitions (besides the primary) get their own card row below
   // the primary card so visitors discover the multi-competition story.
   const other = comps.filter(c => c.slug !== PRIMARY_COMPETITION_SLUG);
@@ -131,14 +138,27 @@ export default function Home() {
         ) : metricsWithData.length === 0 ? (
           <div className="empty">No measured solutions in this competition yet.</div>
         ) : (
-          <div className="col" style={{ gap: 16 }}>
-            {metricsWithData.map(metric => (
-              <BumpChart key={metric}
-                         title={metric === "latency" ? "Latency" : metric === "energy" ? "Energy" : metric}
-                         languages={eff!.languages}
-                         ranked={eff!.ranks[metric] ?? {}} />
-            ))}
-          </div>
+          <>
+            <div className="muted" style={{ fontSize: "0.85rem", marginBottom: 8 }}>
+              Rank by language (1 = best), from each model's win probability on the
+              problems that both models solved. Hover a point for its value.
+            </div>
+            {/* Inner tabs: one chart per metric. The chosen metric stays when
+                the competition changes, and a model keeps one color in all charts. */}
+            <div className="tabs" role="tablist" aria-label="Metric" style={{ marginBottom: 12 }}>
+              {metricsWithData.map(mt => (
+                <button key={mt} role="tab" aria-selected={mt === shownMetric}
+                        className={`tab${mt === shownMetric ? " active" : ""}`}
+                        onClick={() => setMetric(mt)}>
+                  {METRIC_TITLE[mt] ?? mt}
+                </button>
+              ))}
+            </div>
+            <BumpChart title={METRIC_TITLE[shownMetric] ?? shownMetric}
+                       languages={eff!.languages}
+                       ranked={eff!.ranks[shownMetric] ?? {}}
+                       colors={colors} />
+          </>
         )}
         <div className="row" style={{ marginTop: 12 }}>
           <Link to={`/rankings?competition=${encodeURIComponent(activeComp)}`}>See the full leaderboard →</Link>

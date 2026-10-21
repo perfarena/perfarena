@@ -73,6 +73,35 @@ REGISTRY: list[dict[str, Any]] = [
      "group": "Replicas", "min": 0, "max": 8760,
      "help": "Re-run the class reference workload on every admitted performance "
              "replica this often. A replica out of band is quarantined. 0 = off."},
+    # Efficiency rankings (ranking.py): the method of the paper.
+    {"key": "ranking.bootstrap_samples", "label": "Ranking bootstrap samples", "type": "int",
+     "env": "ARENA_RANKING_BOOTSTRAP", "default": 1000, "group": "Rankings",
+     "min": 0, "max": 20000,
+     "help": "Bootstrap samples behind the tied leaders and the Pareto levels. "
+             "More samples give steadier significance at a higher first-load cost "
+             "(results are cached per data version)."},
+    {"key": "ranking.tie_latency_pct", "label": "Latency tie margin (%)", "type": "float",
+     "env": "ARENA_RANKING_TIE_LATENCY", "default": 1.84, "group": "Rankings",
+     "min": 0, "max": 50,
+     "help": "Two latencies closer than this tie (half a win each). Default: the "
+             "noise of a difference of two 7-run means on LeetCode."},
+    {"key": "ranking.tie_energy_pct", "label": "Energy tie margin (%)", "type": "float",
+     "env": "ARENA_RANKING_TIE_ENERGY", "default": 1.84, "group": "Rankings",
+     "min": 0, "max": 50,
+     "help": "Two energy readings closer than this tie."},
+    {"key": "ranking.tie_memory_pct", "label": "Memory tie margin (%)", "type": "float",
+     "env": "ARENA_RANKING_TIE_MEMORY", "default": 7.35, "group": "Rankings",
+     "min": 0, "max": 50,
+     "help": "Two peak-memory readings closer than this tie (one reading per solution)."},
+    {"key": "ranking.min_cells_per_language", "label": "Min solved problems per language",
+     "type": "int", "env": "ARENA_RANKING_MIN_CELLS", "default": 3, "group": "Rankings",
+     "min": 1, "max": 100,
+     "help": "An LLM with fewer solved problems in a language gets no rank there."},
+    {"key": "ranking.min_problem_clusters", "label": "Problems needed to resample problems",
+     "type": "int", "env": "ARENA_RANKING_MIN_CLUSTERS", "default": 30, "group": "Rankings",
+     "min": 2, "max": 10000,
+     "help": "With at least this many problems, the bootstrap resamples whole problems "
+             "(the languages of a problem are correlated); with fewer, it resamples cells."},
 ]
 _BY_KEY = {e["key"]: e for e in REGISTRY}
 

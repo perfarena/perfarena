@@ -554,6 +554,8 @@ app.include_router(_replica_router)
 # Client helpers: attempt state, submission upsert, pricing (sdk_api.py).
 from .sdk_api import router as _sdk_router                              # noqa: E402
 app.include_router(_sdk_router)
+from .ranking_api import router as _ranking_router                      # noqa: E402
+app.include_router(_ranking_router)
 
 
 @app.get("/api/version")
@@ -1423,6 +1425,16 @@ def rankings(
                     "correct' independently of 'who measured how fast it "
                     "was'. Legacy rows all resolve to `leetcode`.",
     ),
+    agent: str | None = Query(
+        None,
+        description="restrict to one workflow: the producing agent (slug), "
+                    "e.g. `direct` for single-shot generation. Single-shot and "
+                    "agentic submissions share the board; this filter separates them.",
+    ),
+    agent_kind: str | None = Query(None, description="restrict to one agent kind"),
+    rounds: str | None = Query(
+        None, pattern="^(single|multi)$",
+        description="`single`: one round per problem; `multi`: refinement rounds"),
     sort: str = Query(
         "pass_at_1",
         regex="^(pass_at_1|pass_at_k|pass_at_full|avg_runtime_percentile|avg_memory_percentile|time_human_avg|time_human_expert|mem_human_avg|mem_human_expert)$",
@@ -1505,6 +1517,22 @@ def rankings(
             if _resolve_submission_correctness_oracle_id(s, _comps_all)
                 == target_co.id
         ]
+
+    # Workflow scope: single-shot and agentic submissions share the board, and
+    # these filters separate them (producing agent, its kind, refinement rounds).
+    if agent or agent_kind:
+        _agents = {a.id: a for a in session.exec(select(Agent)).all()}
+        _direct_id = next((a.id for a in _agents.values() if a.slug == "direct"), None)
+
+        def _agent_ok(s: Submission) -> bool:
+            a = _agents.get(_resolve_submission_agent_id(s, _direct_id))
+            slug, kind = (a.slug, a.kind) if a else ("direct", "direct")
+            return (not agent or slug == agent) and (not agent_kind or kind == agent_kind)
+        subs = [s for s in subs if _agent_ok(s)]
+    if rounds == "single":
+        subs = [s for s in subs if (s.n_rounds or 1) == 1]
+    elif rounds == "multi":
+        subs = [s for s in subs if (s.n_rounds or 1) > 1]
 
     # Eligibility gate: only complete (all problems attempted) submissions with
     # > 25% accepted solutions appear on the leaderboard.
@@ -1670,6 +1698,7 @@ def rankings(
             correctness_oracle_name=correctness_row.name if correctness_row else None,
             agent_slug=agent_row.slug if agent_row else None,
             agent_name=agent_row.name if agent_row else None,
+            agent_kind=agent_row.kind if agent_row else None,
             total_response_tokens=total_tokens,
             median_response_tokens_per_attempt=_median_or_none(per_tokens),
             total_cost_usd=total_cost,
@@ -3587,100 +3616,18 @@ def _competition_problem_slugs(session: Session, comp_slug: str) -> set[str] | N
     ).all())
 
 
-# Octoverse-2025 language order (most to least used on GitHub), matching the
-# paper's per-language figures. Only the six measured languages.
-_EFF_LANGS = ["typescript", "python3", "java", "csharp", "php", "cpp"]
-_EFF_METRICS = [("latency", "best_runtime_ms"), ("energy", "best_runtime_energy_j")]
-
-
 @app.get("/api/efficiency-ranks")
 def efficiency_ranks(competition: str, session: Session = Depends(get_session)):
-    """Per-language model rankings by latency and energy for one competition,
-    scored as the MEDIAN RATIO to the best correct solution on each problem (the
-    same metric as the paper's per-language efficiency tables). This drives the
-    home-page bump charts. Within each language, models are ordered lowest ratio
-    (fastest / most efficient) first. Energy is omitted for a language when no
-    model has an energy measurement there (LeetCode-judged rows carry none)."""
-    import statistics
-    from collections import defaultdict
-
-    comp = session.exec(
-        select(Competition).where(Competition.slug == competition)
-    ).first()
+    """Per-language rankings by latency and energy for one competition, for the
+    home-page bump charts: the Bradley-Terry win probability inside each
+    language (the method of the paper and of /api/efficiency-rankings), best
+    first. An LLM with fewer than `ranking.min_cells_per_language` solved
+    problems in a language gets no rank there."""
+    from .ranking_api import per_language_point_ranks
+    comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
     if comp is None:
         raise HTTPException(404, "competition not found")
-    comp_pids = {
-        cp.problem_id for cp in session.exec(
-            select(CompetitionProblem).where(CompetitionProblem.competition_id == comp.id)
-        ).all()
-    }
-    empty = {"competition": competition, "languages": [],
-             "metrics": [m for m, _ in _EFF_METRICS], "ranks": {}}
-    if not comp_pids:
-        return empty
-
-    subs = session.exec(
-        select(Submission).where(
-            Submission.competition_id == comp.id,
-            Submission.status == SubmissionStatus.judged,
-            Submission.deleted_at.is_(None),
-            Submission.language.in_(_EFF_LANGS),
-        )
-    ).all()
-    if not subs:
-        return empty
-    sub_meta = {s.id: (s.model_name, s.language) for s in subs}
-
-    attempts = session.exec(
-        select(Attempt).where(Attempt.submission_id.in_(list(sub_meta)))
-    ).all()
-    # Best ACCEPTED attempt per (language, problem, model): the fastest one, by
-    # best_runtime_ms. Its energy comes from the same attempt so the two metrics
-    # are read off one solution, mirroring /api/compare's per-problem best.
-    best: dict[tuple, Attempt] = {}
-    for a in attempts:
-        if a.final_status != "Accepted" or a.problem_id not in comp_pids:
-            continue
-        model, lang = sub_meta[a.submission_id]
-        key = (lang, a.problem_id, model)
-        cur = best.get(key)
-        if cur is None or (a.best_runtime_ms or 1e18) < (cur.best_runtime_ms or 1e18):
-            best[key] = a
-
-    ranks: dict[str, dict] = {}
-    langs_present: set[str] = set()
-    for metric, field in _EFF_METRICS:
-        # (lang, pid) -> {model: value}
-        by_problem: dict[tuple, dict] = defaultdict(dict)
-        for (lang, pid, model), a in best.items():
-            v = getattr(a, field)
-            if v is not None and v > 0:
-                by_problem[(lang, pid)][model] = v
-        # ratio to the per-problem best, then median per (lang, model)
-        lang_model_ratios: dict[str, dict] = defaultdict(lambda: defaultdict(list))
-        for (lang, _pid), mv in by_problem.items():
-            best_v = min(mv.values())
-            if best_v <= 0:
-                continue
-            for model, v in mv.items():
-                lang_model_ratios[lang][model].append(v / best_v)
-        out: dict[str, list] = {}
-        for lang, mr in lang_model_ratios.items():
-            ranked = sorted(
-                ((model, statistics.median(rs)) for model, rs in mr.items() if rs),
-                key=lambda t: t[1],
-            )
-            if ranked:
-                out[lang] = [{"model": m, "ratio": round(r, 3)} for m, r in ranked]
-                langs_present.add(lang)
-        ranks[metric] = out
-
-    return {
-        "competition": competition,
-        "languages": [l for l in _EFF_LANGS if l in langs_present],
-        "metrics": [m for m, _ in _EFF_METRICS],
-        "ranks": ranks,
-    }
+    return {"competition": competition, **per_language_point_ranks(session, competition)}
 
 
 @app.get("/api/compare", response_model=CompareResponse)
@@ -5893,7 +5840,8 @@ def _backfill_registered_model_stubs_from_submissions() -> None:
             select(Submission).where(Submission.deleted_at.is_(None))
         ).all():
             key = (s.model_name, s.model_version)
-            if key in seen:
+            # A reference submission (the golden baseline) is not a model.
+            if key in seen or (s.model_params or {}).get("reference"):
                 continue
             seen[key] = (s.model_params, s.user_id)
 

@@ -3,9 +3,10 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   api, CompareResponse, CompareSummaryRow, CompareWinners,
   ComparePromptRow, ComparePromptsResponse, ComparePromptsWinners,
-  CompetitionPublic, ModelListEntry, ProblemPublic, PromptTemplatePublic,
-  SubmissionPublic,
+  CompetitionPublic, EfficiencyMetricName, HeadToHead, ModelListEntry, ProblemPublic,
+  PromptTemplatePublic, SubmissionPublic,
 } from "../lib/api";
+import { METRIC_LABEL } from "../components/EfficiencyBoard";
 import CompareBars, {
   MODEL_COLOURS, shouldShowEnergyColumn,
 } from "../components/CompareHistogram";
@@ -152,6 +153,8 @@ function CompareView() {
   const [promptIdSel, setPromptIdSel] = useState<string>("");
   const [problemFilter, setProblemFilter] = useState<string[]>([]);
   const [data, setData] = useState<CompareResponse | null>(null);
+  // Head-to-head results of the picked models, pair by pair (needs a competition).
+  const [h2h, setH2h] = useState<HeadToHead[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -173,6 +176,17 @@ function CompareView() {
         competition: competition || undefined,
       });
       setData(r);
+      const pairs: [string, string][] = [];
+      const firstFew = picked.slice(0, H2H_MAX_MODELS);
+      // The golden baseline is always side B, so "A/B" is the ratio to it.
+      firstFew.forEach((a, i) => firstFew.slice(i + 1).forEach(b =>
+        pairs.push(a === GOLDEN_MODEL ? [b, a] : [a, b])));
+      const res = competition
+        ? await Promise.all(pairs.map(([a, b]) => api.headToHead({
+            competition, a, b, language: language || undefined,
+          }).catch(() => null)))
+        : [];
+      setH2h(res.filter((x): x is HeadToHead => x !== null));
     } catch (e: unknown) {
       setErr(String(e));
     } finally { setLoading(false); }
@@ -339,6 +353,7 @@ function CompareView() {
         );
       })()}
       {data && <WinnersBanner winners={data.winners} />}
+      {data && <HeadToHeadPanel rows={h2h} models={data.models} competition={competition} />}
       {data && <SummaryTable rows={data.summary} winners={data.winners} />}
       {data && data.by_level && data.by_level.length > 0 && (
         <CompareByLevel models={data.models} rows={data.by_level} />
@@ -353,6 +368,107 @@ function CompareView() {
         <div className="empty">None of the selected models have judged submissions matching this filter.</div>
       )}
     </div>
+  );
+}
+
+// Head-to-head covers the pairs of the first four picked models (six pairs).
+const H2H_MAX_MODELS = 4;
+// Model name of the frozen golden baseline (backend golden_baseline.MODEL_NAME).
+const GOLDEN_MODEL = "golden-baseline";
+
+/** "model|agent|rN" -> "model", or "model (agent, N rounds)" for a workflow. */
+function entrantKeyLabel(key: string): string {
+  const parts = key.split("|");
+  const rounds = Number((parts.pop() ?? "r1").slice(1));
+  const agent = parts.pop() ?? "direct";
+  const model = parts.join("|");
+  if ((agent === "direct" || agent === model) && rounds === 1) return model;
+  return `${model} (${agent}${rounds > 1 ? `, ${rounds} rounds` : ""})`;
+}
+
+/* Head-to-head of two models on the problems that both solved in the same
+ * language (GET /api/head-to-head): the geometric-mean ratio of their values,
+ * and the shares of shared problems that each wins or that tie. Unlike the
+ * summary table, this compares like with like, so it holds across languages. */
+function HeadToHeadPanel({
+  rows, models, competition,
+}: { rows: HeadToHead[]; models: string[]; competition: string }) {
+  if (!competition) {
+    return (
+      <div className="card muted" style={{ fontSize: "0.88rem" }}>
+        Pick a competition above to see the head-to-head ratios and win shares
+        on the problems that both models solved.
+      </div>
+    );
+  }
+  const colour = (key: string) => {
+    const i = models.indexOf(key.split("|").slice(0, -2).join("|"));
+    return MODEL_COLOURS[(i < 0 ? 0 : i) % MODEL_COLOURS.length];
+  };
+  const metrics: EfficiencyMetricName[] = ["latency", "energy", "memory"];
+  const lines = rows.flatMap(h => metrics
+    .filter(m => h.metrics[m].n_shared > 0)
+    .map(m => ({ h, m, r: h.metrics[m] })));
+  if (lines.length === 0) {
+    return (
+      <div className="card muted" style={{ fontSize: "0.88rem" }}>
+        Head-to-head: the picked models share no solved problem in this competition.
+      </div>
+    );
+  }
+  const pct = (v: number | null) => (v == null ? "–" : `${Math.round(v * 100)}%`);
+  return (
+    <section className="col">
+      <h2 style={{ marginBottom: 4 }}>Head-to-head</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.88rem" }}>
+        Each row compares A with B on the problems that both solved in the same
+        language. The ratio is the geometric mean of A's value divided by B's
+        value, so below 1× means A is lower (better). Two values within the
+        measurement noise tie. The prompt and problem filters above do not apply here.
+        {models.length > H2H_MAX_MODELS && <> Only the first {H2H_MAX_MODELS} picked models are paired.</>}
+      </p>
+      <div className="card tbl-scroll" style={{ padding: 0 }}>
+        <table className="tbl">
+          <thead><tr>
+            <th>A</th><th>B</th><th>Metric</th><th>Shared</th><th>Ratio A/B</th>
+            <th>A wins</th><th>Ties</th><th>B wins</th><th></th>
+          </tr></thead>
+          <tbody>
+            {lines.map(({ h, m, r }) => (
+              <tr key={`${h.a}-${h.b}-${m}`}>
+                <td><b>{entrantKeyLabel(h.a)}</b></td>
+                <td><b>{entrantKeyLabel(h.b)}</b></td>
+                <td>{METRIC_LABEL[m]}</td>
+                <td className="metric">{r.n_shared}</td>
+                <td className="metric" title={`ties within ${r.tie_pct}%`}>
+                  {r.ratio == null ? "–" : `${r.ratio.toFixed(2)}×`}
+                  {r.ratio != null && (
+                    <span className="muted" style={{ fontSize: "0.8em", marginLeft: 6 }}>
+                      {Math.round(Math.abs(1 - r.ratio) * 100) === 0 ? "about equal"
+                        : r.ratio < 1 ? `A ${Math.round((1 - r.ratio) * 100)}% lower`
+                        : `A ${Math.round((r.ratio - 1) * 100)}% higher`}
+                    </span>
+                  )}
+                </td>
+                <td className="metric">{pct(r.a_wins)}</td>
+                <td className="metric">{pct(r.ties)}</td>
+                <td className="metric">{pct(r.b_wins)}</td>
+                <td style={{ minWidth: 120 }}>
+                  <div style={{ display: "flex", gap: 2, height: 10 }}
+                       title={`A wins ${pct(r.a_wins)} · ties ${pct(r.ties)} · B wins ${pct(r.b_wins)}`}>
+                    {[[r.a_wins, colour(h.a)], [r.ties, "var(--border)"], [r.b_wins, colour(h.b)]]
+                      .filter(([v]) => (v as number) > 0)
+                      .map(([v, c], i) => (
+                        <div key={i} style={{ flex: v as number, background: c as string, borderRadius: 2 }} />
+                      ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

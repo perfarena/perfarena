@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, SnapshotDetail } from "../lib/api";
-import { formatPassAt1, formatPercentile } from "../lib/format";
+import { api, EfficiencyMetricName, SnapshotDetail, SnapshotEfficiency } from "../lib/api";
+import { formatDollar, formatPassAt1, formatPercentile, formatWinProb } from "../lib/format";
+import { METRIC_LABEL, ReferenceBadge } from "../components/EfficiencyBoard";
 import { SHOW_RELATIVE_METRICS } from "../lib/flags";
 import LanguageLink from "../components/LanguageLink";
 import PromptName from "../components/PromptName";
@@ -32,6 +33,8 @@ export default function SnapshotDetailPage() {
         <Stat label="distinct models" value={String(t.n_distinct_models ?? 0)} />
         <Stat label="languages" value={String(t.n_languages ?? 0)} />
       </div>
+
+      {(s.report.efficiency ?? []).map(c => <EfficiencySnapshot key={c.competition} c={c} />)}
 
       <div>
         <h2>Top models</h2>
@@ -102,6 +105,56 @@ export default function SnapshotDetailPage() {
             </table>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* The efficiency ranking of one competition as it stood at capture time. */
+function EfficiencySnapshot({ c }: { c: SnapshotEfficiency }) {
+  const metrics = (["latency", "energy", "memory"] as EfficiencyMetricName[])
+    .filter(m => c.entrants.some(e => e.metrics[m]?.rated));
+  const rows = [...c.entrants].sort((a, b) =>
+    (a.metrics.latency?.rank ?? Infinity) - (b.metrics.latency?.rank ?? Infinity));
+  return (
+    <div>
+      <h2>Efficiency ranking · {c.competition_name}</h2>
+      <p className="muted" style={{ marginTop: 0, fontSize: "0.85rem" }}>
+        Win probability per metric on the problems that both entrants solved
+        (bold = tied leader) · perf oracle <code>{c.harness ?? "–"}</code> ·
+        {" "}{c.n_problems} problems × {c.languages.length} languages · computed{" "}
+        {new Date(c.computed_at).toLocaleString()}
+      </p>
+      <div className="card tbl-scroll" style={{ padding: 0 }}>
+        <table className="tbl">
+          <thead><tr>
+            <th>Model</th><th>Workflow</th>
+            {metrics.map(m => <th key={m}>{METRIC_LABEL[m]}</th>)}
+            <th>pass@1</th><th>$/attempt</th><th>Pareto</th>
+          </tr></thead>
+          <tbody>
+            {rows.map(e => (
+              <tr key={e.key}>
+                <td><b>{e.model_name}</b>{e.reference && <ReferenceBadge version={e.model_version ?? ""} />}</td>
+                <td>{e.key.endsWith("|direct|r1") ? <span className="muted">direct</span> : e.workflow}</td>
+                {metrics.map(m => {
+                  const v = e.metrics[m];
+                  if (!v?.rated) return <td key={m} className="metric muted">–</td>;
+                  const txt = formatWinProb(v.win_prob);
+                  return (
+                    <td key={m} className="metric">
+                      {v.tied_leader ? <b>{txt}</b> : txt}
+                      {v.rank != null && <span className="muted" style={{ fontSize: "0.75em", marginLeft: 4 }}>#{v.rank}</span>}
+                    </td>
+                  );
+                })}
+                <td className="metric">{formatPassAt1(e.pass_at_1)}</td>
+                <td className="metric">{formatDollar(e.cost_per_attempt_usd)}</td>
+                <td className="metric">{e.pareto_level ?? "–"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

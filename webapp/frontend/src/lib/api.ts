@@ -89,12 +89,83 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export interface EfficiencyRankEntry { model: string; ratio: number; }
+export interface EfficiencyRankEntry { model: string; win_prob: number; }
 export interface EfficiencyRanks {
   competition: string;
   languages: string[];               // languages present, in display order
-  metrics: string[];                 // e.g. ["latency", "energy"]
+  metrics: string[];                 // ["latency", "energy", "memory"]
   ranks: Record<string, Record<string, EfficiencyRankEntry[]>>;  // metric -> language -> ranked (best first)
+}
+
+/* Paper-style efficiency ranking (GET /api/efficiency-rankings). An entrant
+ * is one model under one workflow (agent + number of rounds). */
+export type EfficiencyMetricName = "latency" | "energy" | "memory";
+export interface EfficiencyMetricCell {
+  rated: boolean;                    // false: too few duels (or a partial run)
+  win_prob: number | null;           // mean chance to beat another entrant on a shared cell
+  rating: number | null;             // Bradley-Terry rating on the Elo scale
+  tied_leader: boolean;              // no other entrant is significantly better
+  rank?: number;
+}
+export interface EfficiencyEntrant {
+  key: string;
+  model_name: string;
+  model_version: string;
+  workflow: string;
+  agent_slug: string;
+  agent_name: string;
+  agent_kind: string;
+  n_rounds: number;
+  n_samples: number;
+  languages: string[];
+  submission_ids: number[];
+  pass_at_1: number | null;
+  n_cells: number;
+  n_attempted: number;
+  n_solved: number;
+  cost_per_attempt_usd: number | null;
+  partial: boolean;
+  reference: boolean;                // the frozen golden baseline: listed, never ranked
+  pareto_level: number | null;
+  metrics: Record<EfficiencyMetricName, EfficiencyMetricCell>;
+}
+export interface EfficiencyMetricSummary {
+  sig_pairs: number; n_pairs: number; resampled: string | null;
+  tied_leaders: string[]; n_cells: number; tie_pct: number;
+}
+export interface EfficiencyRankings {
+  competition: string;
+  harness: string | null;
+  language: string | null;
+  languages: string[];
+  n_problems: number;
+  bootstrap: number;
+  min_cells: number;
+  computed_at: string;
+  entrants: EfficiencyEntrant[];
+  metrics: Record<EfficiencyMetricName, EfficiencyMetricSummary>;
+  pareto_edges: [string, string][];  // [dominator, dominated], direct edges only
+  pareto_metrics: EfficiencyMetricName[];   // metrics with data, which the levels use
+}
+export interface HeadToHeadMetric {
+  n_shared: number;
+  ratio: number | null;              // geometric mean of a's value / b's value
+  a_wins: number | null; ties: number | null; b_wins: number | null;   // shares of shared cells
+  tie_pct: number;
+}
+export interface HeadToHead {
+  competition: string; harness: string | null; language: string | null;
+  a: string; b: string;
+  metrics: Record<EfficiencyMetricName, HeadToHeadMetric>;
+}
+export interface AgentSummary { slug: string; name: string; kind: string; }
+
+function queryString(params: Record<string, string | number | undefined | null>): string {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v != null && v !== "")
+      .map(([k, v]) => [k, String(v)]) as [string, string][],
+  ).toString();
+  return qs ? "?" + qs : "";
 }
 
 export const api = {
@@ -148,18 +219,30 @@ export const api = {
     language?: string; level?: string; sort?: string;
     k?: number; prompt_id?: number; competition?: string;
     harness?: string; correctness_oracle?: string;
+    agent?: string; agent_kind?: string; rounds?: string;
   } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => !!v) as [string, string][],
     ).toString();
     return request<RankingEntry[]>(`/api/rankings${qs ? "?" + qs : ""}`);
   },
-  /** Per-language model rankings (median ratio to the best correct solution)
-   * by latency and energy for one competition — drives the home-page bump
-   * charts. See GET /api/efficiency-ranks. */
+  /** Per-language model rankings (Bradley-Terry win probability on shared
+   * problems) by latency and energy for one competition — drives the
+   * home-page bump charts. See GET /api/efficiency-ranks. */
   efficiencyRanks: (competition: string) =>
     request<EfficiencyRanks>(
       `/api/efficiency-ranks?competition=${encodeURIComponent(competition)}`),
+  /** Paper-style efficiency ranking: win probabilities, tied leaders, Pareto
+   * levels, pass@1, and cost per attempted solution. */
+  efficiencyRankings: (params: {
+    competition: string; harness?: string; agent?: string; agent_kind?: string;
+    rounds?: string; prompt_id?: number; language?: string;
+  }) => request<EfficiencyRankings>(`/api/efficiency-rankings${queryString(params)}`),
+  /** Two entrants (entrant keys or model names) on the cells both solved. */
+  headToHead: (params: {
+    competition: string; a: string; b: string; harness?: string; language?: string;
+  }) => request<HeadToHead>(`/api/head-to-head${queryString(params)}`),
+  agents: () => request<AgentSummary[]>(`/api/agents`),
   submissions: () => request<SubmissionPublic[]>(`/api/submissions`),
   submissionDetail: (id: number | string) => request<SubmissionDetail>(`/api/submissions/${id}`),
   deleteSubmission: (id: number | string) =>
@@ -585,6 +668,11 @@ export interface RankingEntry {
    *  "who measured how fast it was". */
   correctness_oracle_slug: string | null;
   correctness_oracle_name: string | null;
+  /** Workflow that produced the solutions ("direct" = a plain prompt;
+   *  kind "reference" = the frozen golden baseline). */
+  agent_slug?: string | null;
+  agent_name?: string | null;
+  agent_kind?: string | null;
   /** Token / $ accounting. Total = sum across all attempts in this submission;
    *  median = per-attempt median so submissions covering different attempt
    *  counts compare on the same axis. Null when no attempt reported the
@@ -1247,6 +1335,22 @@ export interface SnapshotTopModel {
   prompt_name?: string | null;
 }
 
+export interface SnapshotEfficiency {
+  competition: string;
+  competition_name: string;
+  harness: string | null;
+  computed_at: string;
+  n_problems: number;
+  languages: string[];
+  entrants: {
+    key: string; model_name: string; model_version?: string; workflow: string;
+    pass_at_1: number | null; cost_per_attempt_usd: number | null;
+    pareto_level: number | null;
+    reference?: boolean;
+    metrics: Record<EfficiencyMetricName, Partial<EfficiencyMetricCell>>;
+  }[];
+}
+
 export interface SnapshotDetail {
   id: number;
   label: string;
@@ -1257,6 +1361,9 @@ export interface SnapshotDetail {
     top_models: SnapshotTopModel[];
     top_submitters: { submitter: string; n_submissions: number }[];
     language_breakdown: { language: string; n_submissions: number; best_pass_at_1: number | null }[];
+    /* Efficiency ranking per competition at capture time. Absent on
+     * snapshots captured before the ranking existed. */
+    efficiency?: SnapshotEfficiency[];
   };
 }
 

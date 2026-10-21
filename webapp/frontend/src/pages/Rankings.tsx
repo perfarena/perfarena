@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  api, CompetitionPublic, CorrectnessOraclePublic, HarnessPublic, RankingEntry,
+  AgentSummary, api, CompetitionPublic, CorrectnessOraclePublic, HarnessPublic,
+  PromptTemplatePublic, RankingEntry,
 } from "../lib/api";
 import {
-  coefficientClass, formatCoefficient, formatDuration, formatEnergy, formatMemory,
+  coefficientClass, formatCoefficient, formatDollar, formatDuration, formatEnergy, formatMemory,
   formatPassAt1, formatPercentile, formatRuntime,
 } from "../lib/format";
 import Th from "../components/Th";
 import PromptName from "../components/PromptName";
 import LanguageLink from "../components/LanguageLink";
+import EfficiencyBoard, { ReferenceBadge } from "../components/EfficiencyBoard";
 import { SHOW_RELATIVE_METRICS } from "../lib/flags";
+
+// Two views of one competition. "efficiency" (the default) ranks each model ×
+// workflow by win probability per metric; "submissions" lists every judged
+// submission with its raw numbers.
+type View = "efficiency" | "submissions";
 
 // A submission must have attempted at least this fraction of the competition's
 // problems to appear on the leaderboard — a partial run (a handful of problems)
@@ -65,9 +72,24 @@ export default function Rankings() {
   });
   const [correctnessOracles, setCorrectnessOracles] = useState<CorrectnessOraclePublic[]>([]);
   const [err, setErr] = useState<string>("");
+  const [view, setView] = useState<View>(() => {
+    if (typeof window === "undefined") return "efficiency";
+    return new URLSearchParams(window.location.search).get("view") === "submissions"
+      ? "submissions" : "efficiency";
+  });
+  // Workflow filters, shared by both views: agent slug, agent kind, and
+  // single-round vs multi-round. "" = any.
+  const [agent, setAgent] = useState<string>("");
+  const [agentKind, setAgentKind] = useState<string>("");
+  const [rounds, setRounds] = useState<string>("");
+  const [promptId, setPromptId] = useState<string>("");
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [prompts, setPrompts] = useState<PromptTemplatePublic[]>([]);
 
   // Load competitions + harnesses + correctness oracles once for the selectors.
   useEffect(() => {
+    api.agents().then(setAgents).catch(() => setAgents([]));
+    api.prompts().then(setPrompts).catch(() => setPrompts([]));
     api.competitions().then(cs => {
       setCompetitions(cs);
       // Each tab scopes the board to exactly one competition. If the current
@@ -85,8 +107,10 @@ export default function Rankings() {
     if (typeof window === "undefined" || !competitionSlug) return;
     const u = new URL(window.location.href);
     u.searchParams.set("competition", competitionSlug);
+    if (view === "submissions") u.searchParams.set("view", view);
+    else u.searchParams.delete("view");
     window.history.replaceState(null, "", u);
-  }, [competitionSlug]);
+  }, [competitionSlug, view]);
 
   // Client-side view sort, toggled by clicking column headers.
   const [sortKey, setSortKey] = useState<string>("pass_at_1");
@@ -100,17 +124,22 @@ export default function Rankings() {
   const [pageSize, setPageSize] = useState(25);
 
   useEffect(() => {
+    if (view !== "submissions") return;
     const kNum = k === "" ? undefined : Number(k);
     api.rankings({
       language, level, k: kNum,
+      prompt_id: promptId ? Number(promptId) : undefined,
       competition: competitionSlug || undefined,
       harness: harnessSlug || undefined,
       correctness_oracle: correctnessOracleSlug || undefined,
+      agent: agent || undefined,
+      agent_kind: agentKind || undefined,
+      rounds: rounds || undefined,
     })
       .then(setRows).catch((e: unknown) => setErr(String(e)));
-  }, [language, level, k, competitionSlug, harnessSlug, correctnessOracleSlug]);
+  }, [view, language, level, k, promptId, competitionSlug, harnessSlug, correctnessOracleSlug, agent, agentKind, rounds]);
 
-  useEffect(() => { setPage(1); }, [language, level, k, competitionSlug, harnessSlug, correctnessOracleSlug, q, ranges, pageSize, sortKey, sortDir]);
+  useEffect(() => { setPage(1); }, [language, level, k, promptId, competitionSlug, harnessSlug, correctnessOracleSlug, agent, agentKind, rounds, q, ranges, pageSize, sortKey, sortDir]);
 
   const selectedCompetition = competitions.find(c => c.slug === competitionSlug) ?? null;
 
@@ -206,15 +235,21 @@ export default function Rankings() {
       <div className="hero">
         <h1>Leaderboard</h1>
         <p>
-          pass@1, runtime, and memory for every model × language × difficulty,
-          scoped to the competition you pick below. The
+          The efficiency ranking compares models on the problems that both
+          solved, in the same language. For each metric, a model's win
+          probability is its mean chance of beating another model on such a
+          problem. pass@1 and cost sit next to it. The submissions view lists
+          every judged submission with its raw numbers. The
           {" "}<Link to="/competitions">Competitions</Link> page lists
           every competition and lets you add new ones.
         </p>
         <p className="muted" style={{ fontSize: "0.85rem" }}>
-          Only submissions that attempted at least <b>one third</b> of the
-          selected competition's problems are shown — partial runs aren't
-          comparable to full sweeps.
+          {view === "efficiency"
+            ? <>A run that attempted less than <b>one third</b> of its problems is
+                listed as partial and gets no rank.</>
+            : <>Only submissions that attempted at least <b>one third</b> of the
+                selected competition's problems are shown — partial runs aren't
+                comparable to full sweeps.</>}
         </p>
         {competitions.length > 0 && (
           <div className="tabs" role="tablist" aria-label="Competition" style={{ marginTop: 12, marginBottom: 0 }}>
@@ -262,7 +297,18 @@ export default function Rankings() {
         )}
       </div>
 
-      {!language && (
+      <div className="row" style={{ gap: 6, marginBottom: 12 }} role="tablist" aria-label="View">
+        <button className={view === "efficiency" ? "" : "secondary"} role="tab"
+                aria-selected={view === "efficiency"} onClick={() => setView("efficiency")}>
+          Efficiency ranking
+        </button>
+        <button className={view === "submissions" ? "" : "secondary"} role="tab"
+                aria-selected={view === "submissions"} onClick={() => setView("submissions")}>
+          Submissions
+        </button>
+      </div>
+
+      {view === "submissions" && !language && (
         <div className="card" style={{
           borderColor: "var(--medium)",
           background: "rgba(220,180,80,0.08)",
@@ -281,52 +327,92 @@ export default function Rankings() {
       <div className="filter-bar">
         <input
           className="grow"
-          placeholder="Search model, submitter, language…"
+          placeholder={view === "efficiency" ? "Search model, workflow…" : "Search model, submitter, language…"}
           value={q}
           onChange={e => setQ(e.target.value)}
           style={{ minWidth: 240 }}
         />
         <select value={harnessSlug}
                 onChange={e => setHarnessSlug(e.target.value)}
-                title="Scope to submissions scored by one PERFORMANCE oracle (LeetCode, an in-house harness, and so on)">
-          <option value="">All perf oracles</option>
+                title={view === "efficiency"
+                  ? "Performance oracle whose measurements the ranking uses. One ranking never mixes oracles; the default is the one that scored the most submissions."
+                  : "Scope to submissions scored by one PERFORMANCE oracle (LeetCode, an in-house harness, and so on)"}>
+          <option value="">{view === "efficiency" ? "Main perf oracle" : "All perf oracles"}</option>
           {harnesses.map(h => (
             <option key={h.slug} value={h.slug}>{h.name}</option>
           ))}
         </select>
-        <select value={correctnessOracleSlug}
-                onChange={e => setCorrectnessOracleSlug(e.target.value)}
-                title="Scope to submissions scored by one CORRECTNESS oracle (the verdict source, separate from the performance oracle above)">
-          <option value="">All correctness oracles</option>
-          {correctnessOracles.map(o => (
-            <option key={o.slug} value={o.slug}>{o.name}</option>
-          ))}
-        </select>
-        <select value={language} onChange={e => setLanguage(e.target.value)}>
+        {view === "submissions" && (
+          <select value={correctnessOracleSlug}
+                  onChange={e => setCorrectnessOracleSlug(e.target.value)}
+                  title="Scope to submissions scored by one CORRECTNESS oracle (the verdict source, separate from the performance oracle above)">
+            <option value="">All correctness oracles</option>
+            {correctnessOracles.map(o => (
+              <option key={o.slug} value={o.slug}>{o.name}</option>
+            ))}
+          </select>
+        )}
+        <select value={language} onChange={e => setLanguage(e.target.value)}
+                title={view === "efficiency"
+                  ? "All languages pools the duels of every language. One language ranks only inside it; an entrant needs 3 solved problems there to get a rank."
+                  : undefined}>
           <option value="">All languages</option>
           {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
-        <select value={level} onChange={e => setLevel(e.target.value)}>
-          <option value="">All difficulties</option>
-          <option>Easy</option><option>Medium</option><option>Hard</option>
+        <select value={agent} onChange={e => setAgent(e.target.value)}
+                title="Workflow that produced the solutions: a plain prompt (direct) or one agent">
+          <option value="">All workflows</option>
+          {agents.map(a => <option key={a.slug} value={a.slug}>{a.name}</option>)}
         </select>
-        <select value={k} onChange={e => setK(e.target.value)}
-                title="Filter by sample budget. Submissions with the same k compare directly.">
-          <option value="">Any k</option>
-          {Array.from(new Set(rows.map(r => r.n_samples_per_problem))).sort((a, b) => a - b).map(kv => (
-            <option key={kv} value={kv}>k = {kv}</option>
+        <select value={agentKind} onChange={e => setAgentKind(e.target.value)}
+                title="Kind of workflow: direct (a plain prompt), agentic, or custom">
+          <option value="">Any kind</option>
+          {Array.from(new Set(agents.map(a => a.kind))).sort().map(kd => (
+            <option key={kd} value={kd}>{kd}</option>
           ))}
         </select>
-        <button
-          className="secondary"
-          onClick={() => setShowAdvanced(s => !s)}
-          aria-expanded={showAdvanced}
-        >
-          {showAdvanced ? "Hide" : "More"} filters{anyAdvanced ? " ●" : ""}
-        </button>
+        <select value={rounds} onChange={e => setRounds(e.target.value)}
+                title="Single round: one answer per problem. Multi-round: the model refines its answer with feedback; the last round counts.">
+          <option value="">Any rounds</option>
+          <option value="single">Single round</option>
+          <option value="multi">Multi-round</option>
+        </select>
+        <select value={promptId} onChange={e => setPromptId(e.target.value)}
+                title="Restrict to submissions made with one registered prompt template">
+          <option value="">Any prompt</option>
+          {prompts.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+        </select>
+        {view === "submissions" && (
+          <>
+            <select value={level} onChange={e => setLevel(e.target.value)}>
+              <option value="">All difficulties</option>
+              <option>Easy</option><option>Medium</option><option>Hard</option>
+            </select>
+            <select value={k} onChange={e => setK(e.target.value)}
+                    title="Filter by sample budget. Submissions with the same k compare directly.">
+              <option value="">Any k</option>
+              {Array.from(new Set(rows.map(r => r.n_samples_per_problem))).sort((a, b) => a - b).map(kv => (
+                <option key={kv} value={kv}>k = {kv}</option>
+              ))}
+            </select>
+            <button
+              className="secondary"
+              onClick={() => setShowAdvanced(s => !s)}
+              aria-expanded={showAdvanced}
+            >
+              {showAdvanced ? "Hide" : "More"} filters{anyAdvanced ? " ●" : ""}
+            </button>
+          </>
+        )}
       </div>
 
-      {showAdvanced && (
+      {view === "efficiency" && (
+        <EfficiencyBoard competition={competitionSlug} harness={harnessSlug} language={language}
+                         agent={agent} agentKind={agentKind} rounds={rounds} promptId={promptId}
+                         query={q} />
+      )}
+
+      {view === "submissions" && showAdvanced && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="row" style={{ flexWrap: "wrap", gap: 24 }}>
             <RangeInput
@@ -361,9 +447,9 @@ export default function Rankings() {
         </div>
       )}
 
-      {err && <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>}
+      {view === "submissions" && err && <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>}
 
-      {rows.length === 0 ? (
+      {view !== "submissions" ? null : rows.length === 0 ? (
         <div className="empty">No judged submissions yet. Submit a batch from the <Link to="/submit">Submit</Link> page (auth required).</div>
       ) : total === 0 ? (
         <div className="empty">No rows match the current filters.</div>
@@ -377,6 +463,7 @@ export default function Rankings() {
                 <Th label="Subm." tip="Submitter: organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Lang" tip="Programming language used for every solution in the batch. Submissions are language-specific: one batch is always one language." sortKey="language" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template that produced these solutions (clickable). 'ad-hoc' = inline prompt text, not from the registry. Submissions using different prompts are different experimental cells." />
+                <Th label="Workflow" tip="Workflow that produced the solutions: a plain prompt (direct) or an agent. Filter with the workflow selectors above." />
                 <Th label="Harness" tip="Perf oracle that produced the runtime / memory / percentile numbers on this row. Resolved per submission (submission override → competition default). All legacy rows resolve to `leetcode` via the startup backfill; new harnesses (in-house runner, HumanEval unittest, …) appear once you plug them in on /harnesses." />
                 <Th label="Correct" tip="Correctness oracle that produced the Accepted / Wrong Answer / Runtime Error / TLE verdict on this row. Decoupled from the perf oracle to the left, so a submission can be judged for correctness by one source and measured for performance by another. Every legacy row resolves to `leetcode`." />
                 <Th label="k" tip="Sample budget per problem (n_samples_per_problem). The submitter commits to providing exactly k samples per problem at submission creation. k=1 is the classic single-shot setup; k>1 lets you report pass@k." sortKey="n_samples_per_problem" activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -420,6 +507,13 @@ export default function Rankings() {
                     <td><Link to={`/submitters/${r.submitter_slug}`}>{r.submitter}</Link></td>
                     <td><LanguageLink name={r.language} /></td>
                     <td><PromptName id={r.prompt_id} name={r.prompt_name} /></td>
+                    <td>
+                      {!r.agent_slug || r.agent_slug === "direct"
+                        ? <span className="muted">direct</span>
+                        : r.agent_kind === "reference"
+                          ? <ReferenceBadge version={r.model_version} />
+                          : <span title={r.agent_slug}>{r.agent_name ?? r.agent_slug}</span>}
+                    </td>
                     <td>
                       {r.harness_slug
                         ? <Link to={`/harnesses/${r.harness_slug}`}
@@ -580,25 +674,13 @@ function inRange(v: number | null, min: number, max: number): boolean {
   return v >= min && v <= max;
 }
 
-/* Display formatters for the four new $/token columns. Null → em-dash
- * so the legacy submissions that didn't capture cost/tokens don't render
- * as "$0" (which would be misleading — 0 means free, dash means unknown).
- *
- * Tokens are formatted with a thousands separator and a "k" suffix above
- * 10k to keep the column narrow on a busy table. Dollar amounts use a
- * 4-decimal format below $0.01 (most LLM calls land here) and 2-decimal
- * above so the column reads naturally regardless of order of magnitude. */
+/* Display formatter for the token columns. Null → dash so the legacy
+ * submissions that didn't capture tokens don't render as "0" (0 means none,
+ * dash means unknown). Tokens get a thousands separator and a "k" suffix
+ * above 10k to keep the column narrow on a busy table. Dollar amounts use
+ * formatDollar from lib/format. */
 function formatTokenCount(v: number | null | undefined): string {
   if (v == null) return "–";
   if (v >= 10_000) return (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
   return v.toLocaleString(undefined, { maximumFractionDigits: 1 });
-}
-
-function formatDollar(v: number | null | undefined): string {
-  if (v == null) return "–";
-  if (v === 0) return "$0";
-  if (v < 0.01)  return `$${v.toFixed(4)}`;
-  if (v < 1)     return `$${v.toFixed(3)}`;
-  if (v < 1000)  return `$${v.toFixed(2)}`;
-  return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
