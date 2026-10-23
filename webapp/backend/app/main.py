@@ -72,7 +72,7 @@ from .schemas import (
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
     HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachineIn, MachinePublic,
-    MemoryRemeasureIn,
+    MemoryRemeasureIn, TimingRemeasureIn,
     CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
     CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
@@ -7490,6 +7490,168 @@ def admin_replace_attempt_memory(
         session.flush()
         for sub in subs_touched.values():
             _rollup_submission_memory(session, sub)
+        if body.dry_run:
+            session.rollback()
+        else:
+            session.commit()
+            for lang in sorted({s.language for s in subs_touched.values()}):
+                _recompute_human_coefficients(session, lang)
+    return {"dry_run": body.dry_run, "updated": updated, "skipped": skipped,
+            "submissions": sorted(subs_touched), "changes": changes}
+
+
+def _rollup_submission_perf(session: Session, sub: Submission) -> None:
+    """Recompute a submission's avg/best latency, energy, iterations, and peak
+    memory from its attempts, with the per-problem best-attempt rule of
+    dispatch_submission's rollup. A latency change can change which attempt of
+    a problem is the best one, so memory is recomputed as well."""
+    by_problem: dict[int, list[Attempt]] = {}
+    for a in session.exec(select(Attempt).where(Attempt.submission_id == sub.id)).all():
+        by_problem.setdefault(a.problem_id, []).append(a)
+    vals: dict[str, list[float]] = {k: [] for k in (
+        "avg_runtime_ms", "best_runtime_ms", "avg_runtime_energy_j",
+        "best_runtime_energy_j", "avg_iterations", "avg_memory_mb", "best_memory_mb")}
+    for atts in by_problem.values():
+        accepted = [a for a in atts if a.final_status == "Accepted"]
+        if not accepted:
+            continue
+        best = max(accepted, key=lambda a: (
+            (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
+            -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
+        ))
+        for k, v in vals.items():
+            if getattr(best, k) is not None:
+                v.append(getattr(best, k))
+    for k, v in vals.items():
+        setattr(sub, k, sum(v) / len(v) if v else None)
+    session.add(sub)
+
+
+# Run columns that a latency and energy re-measure replaces, and raw-response
+# keys of the new run that belong to memory and therefore never overwrite the
+# stored memory measurement.
+_TIMING_RUN_COLUMNS = ("runtime_ms", "runtime_energy_j", "iterations",
+                       "time_us_per_op", "energy_j_per_op")
+_MEMORY_RAW_KEYS = {"peak_rss_kb", "memory_method", "memory_remeasured_at",
+                    "memory_previous_mb", "peak_rss_kb_previous"}
+
+
+@app.post("/api/admin/attempts/timing", status_code=status.HTTP_200_OK)
+def admin_replace_attempt_timing(
+    body: TimingRemeasureIn,
+    _: User = Depends(current_admin),
+):
+    """Replace the latency and energy measurements of accepted attempts with
+    new runs, e.g. after a harness fix (the C++ optimization barrier). For each
+    attempt, in one transaction:
+
+      * new run i replaces the latency, energy, iterations, and per-op values
+        of the i-th accepted run, and the timing keys of its raw_response; an
+        accepted run beyond the new runs (e.g. a duplicate dispatch) loses its
+        timing values, so the aggregates come from the new runs only;
+      * the memory of every run stays as it is, including the memory keys of
+        the raw response (the new runs' memory keys are ignored);
+      * the attempt's latency, energy, and iteration aggregates are
+        recomputed from its runs (run counts and memory stay), then the
+        submission's latency, energy, and memory aggregates, and the
+        human-relative coefficients of its language.
+
+    An item that names a title_slug, language, or submission_id that does not
+    match the attempt is skipped, so a renumbered database cannot receive
+    another attempt's values. Only accepted attempts measured on a local
+    harness qualify. `dry_run` reports the changes and writes nothing."""
+    now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    updated, skipped, changes = 0, [], []
+    subs_touched: dict[int, Submission] = {}
+    with Session(engine) as session:
+        harness_kind = {h.id: h.kind for h in session.exec(select(Harness)).all()}
+        for item in body.items:
+            a = session.get(Attempt, item.attempt_id)
+            if a is None:
+                skipped.append({"attempt_id": item.attempt_id, "reason": "no such attempt"})
+                continue
+            sub = session.get(Submission, a.submission_id)
+            prob = session.get(Problem, a.problem_id)
+            expected = {"submission_id": (item.submission_id, a.submission_id),
+                        "language": (item.language, sub.language if sub else None),
+                        "title_slug": (item.title_slug, prob.title_slug if prob else None)}
+            wrong = [f"{k} {want!r} != {have!r}" for k, (want, have) in expected.items()
+                     if want is not None and want != have]
+            if wrong:
+                skipped.append({"attempt_id": a.id, "reason": "mismatch: " + ", ".join(wrong)})
+                continue
+            if a.final_status != "Accepted":
+                skipped.append({"attempt_id": a.id, "reason": f"not accepted ({a.final_status})"})
+                continue
+            runs = session.exec(
+                select(Run).where(Run.attempt_id == a.id).order_by(Run.run_index, Run.id)
+            ).all()
+            if any(harness_kind.get(r.harness_id) == "leetcode" for r in runs):
+                skipped.append({"attempt_id": a.id, "reason": "measured by the LeetCode judge"})
+                continue
+            accepted = [r for r in runs if r.status_msg == "Accepted"]
+            if len(item.runs) > len(accepted):
+                skipped.append({"attempt_id": a.id, "reason":
+                                f"{len(item.runs)} new runs for {len(accepted)} accepted runs"})
+                continue
+            old = (a.avg_runtime_ms, a.avg_runtime_energy_j)
+            for r, new in zip(accepted, item.runs + [None] * len(accepted)):
+                raw = dict(r.raw_response or {})
+                if body.keep_previous:
+                    raw["timing_previous"] = {k: getattr(r, k) for k in _TIMING_RUN_COLUMNS}
+                old_cases = raw.get("per_case") if isinstance(raw.get("per_case"), list) else []
+                if new is None:
+                    # An accepted run without a new reading (e.g. a duplicate
+                    # dispatch) keeps no old timing value.
+                    for k in _TIMING_RUN_COLUMNS:
+                        setattr(r, k, None)
+                    for k in ("time_us_per_op", "energy_j_per_op", "iterations"):
+                        raw.pop(k, None)
+                    raw["per_case"] = [{"peak_rss_kb_case": oc["peak_rss_kb_case"]}
+                                       for oc in old_cases
+                                       if isinstance(oc, dict) and "peak_rss_kb_case" in oc]
+                    raw["timing_remeasured_at"] = now
+                    r.raw_response = raw
+                    session.add(r)
+                    continue
+                for k in _TIMING_RUN_COLUMNS:
+                    setattr(r, k, getattr(new, k))
+                for k, v in (new.raw_response or {}).items():
+                    if k in _MEMORY_RAW_KEYS:
+                        continue
+                    if k == "per_case" and isinstance(v, list):
+                        # keep each case's stored memory peak, take its new timing
+                        v = [{**{ck: cv for ck, cv in c.items() if ck != "peak_rss_kb_case"},
+                              **({"peak_rss_kb_case": oc["peak_rss_kb_case"]}
+                                 if isinstance(oc, dict) and "peak_rss_kb_case" in oc else {})}
+                             if isinstance(c, dict) else c
+                             for c, oc in zip(v, old_cases + [None] * len(v))]
+                    raw[k] = v
+                raw["timing_method"] = item.method
+                raw["timing_remeasured_at"] = now
+                r.raw_response = raw              # reassign: JSON columns don't track in-place edits
+                session.add(r)
+            # Only the timing aggregates change; run counts and memory stay.
+            rt = [r.runtime_ms for r in accepted if r.runtime_ms is not None]
+            en = [r.runtime_energy_j for r in accepted if r.runtime_energy_j is not None]
+            its = [r.iterations for r in accepted if r.iterations is not None]
+            a.avg_runtime_ms = sum(rt) / len(rt) if rt else None
+            a.best_runtime_ms = min(rt) if rt else None
+            a.avg_runtime_energy_j = sum(en) / len(en) if en else None
+            a.best_runtime_energy_j = min(en) if en else None
+            a.avg_iterations = sum(its) / len(its) if its else None
+            session.add(a)
+            updated += 1
+            if len(changes) < 50:
+                changes.append({"attempt_id": a.id,
+                                "old_avg_runtime_ms": old[0], "new_avg_runtime_ms": a.avg_runtime_ms,
+                                "old_avg_runtime_energy_j": old[1],
+                                "new_avg_runtime_energy_j": a.avg_runtime_energy_j})
+            if sub is not None:
+                subs_touched[sub.id] = sub
+        session.flush()
+        for sub in subs_touched.values():
+            _rollup_submission_perf(session, sub)
         if body.dry_run:
             session.rollback()
         else:

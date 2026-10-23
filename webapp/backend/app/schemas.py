@@ -1656,3 +1656,42 @@ class MemoryRemeasureIn(BaseModel):
         default=False,
         description="Also keep each run's old value in raw_response.memory_previous_mb "
                     "(hidden from the site) for audit and rollback. Default: drop it.")
+
+
+class TimingRemeasureRun(BaseModel):
+    """One new run of a latency and energy re-measure (a run dict of the
+    runner's /measure response)."""
+    runtime_ms: float
+    runtime_energy_j: float | None = None
+    iterations: int | None = None
+    time_us_per_op: float | None = None
+    energy_j_per_op: float | None = None
+    raw_response: dict | None = Field(
+        default=None,
+        description="The runner's raw response of the run. Its timing keys replace the "
+                    "old ones; its memory keys are ignored, so the stored memory stays.")
+
+
+class TimingRemeasureItem(BaseModel):
+    attempt_id: int
+    runs: list[TimingRemeasureRun] = Field(
+        min_length=1,
+        description="New runs, one per accepted run of the attempt, in run order.")
+    method: str | None = Field(
+        default=None, description="What changed in the measurement (e.g. the harness commit).")
+    title_slug: str | None = Field(
+        default=None, description="Expected problem of the attempt; a mismatch skips it.")
+    language: str | None = Field(
+        default=None, description="Expected language of the attempt; a mismatch skips it.")
+    submission_id: int | None = Field(
+        default=None, description="Expected submission of the attempt; a mismatch skips it.")
+
+
+class TimingRemeasureIn(BaseModel):
+    items: list[TimingRemeasureItem] = Field(min_length=1, max_length=500)
+    dry_run: bool = Field(
+        default=False, description="Report what would change without writing anything.")
+    keep_previous: bool = Field(
+        default=False,
+        description="Also keep each run's old values in raw_response.timing_previous "
+                    "(hidden from the site) for audit and rollback. Default: drop them.")
