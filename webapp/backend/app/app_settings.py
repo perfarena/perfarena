@@ -75,7 +75,7 @@ REGISTRY: list[dict[str, Any]] = [
              "replica this often. A replica out of band is quarantined. 0 = off."},
     # Efficiency rankings (ranking.py): the method of the paper.
     {"key": "ranking.bootstrap_samples", "label": "Ranking bootstrap samples", "type": "int",
-     "env": "ARENA_RANKING_BOOTSTRAP", "default": 1000, "group": "Rankings",
+     "env": "ARENA_RANKING_BOOTSTRAP", "default": 10000, "group": "Rankings",
      "min": 0, "max": 20000,
      "help": "Bootstrap samples behind the tied leaders and the Pareto levels. "
              "More samples give steadier significance at a higher first-load cost "
@@ -84,15 +84,18 @@ REGISTRY: list[dict[str, Any]] = [
      "env": "ARENA_RANKING_TIE_LATENCY", "default": 1.84, "group": "Rankings",
      "min": 0, "max": 50,
      "help": "Two latencies closer than this tie (half a win each). Default: the "
-             "noise of a difference of two 7-run means on LeetCode."},
+             "noise of a difference of two 7-run means on LeetCode. A competition can "
+             "set its own margins (Competition.ranking_tie_pct)."},
     {"key": "ranking.tie_energy_pct", "label": "Energy tie margin (%)", "type": "float",
      "env": "ARENA_RANKING_TIE_ENERGY", "default": 1.84, "group": "Rankings",
      "min": 0, "max": 50,
      "help": "Two energy readings closer than this tie."},
     {"key": "ranking.tie_memory_pct", "label": "Memory tie margin (%)", "type": "float",
-     "env": "ARENA_RANKING_TIE_MEMORY", "default": 7.35, "group": "Rankings",
+     "env": "ARENA_RANKING_TIE_MEMORY", "default": 9.83, "group": "Rankings",
      "min": 0, "max": 50,
-     "help": "Two peak-memory readings closer than this tie (one reading per solution)."},
+     "help": "Two peak-memory readings closer than this tie (one reading per solution). "
+             "Default: sqrt(2) x the largest 95th percentile of the single-reading "
+             "deviation in the memory pilot (6.95%, C#)."},
     {"key": "ranking.min_cells_per_language", "label": "Min solved problems per language",
      "type": "int", "env": "ARENA_RANKING_MIN_CELLS", "default": 3, "group": "Rankings",
      "min": 1, "max": 100,

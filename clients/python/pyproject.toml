@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perfarena"
+version = "0.1.0"
+description = "Python SDK, CLI, and MCP server for the PerfArena benchmark platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.7",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.3"]
+sign = ["cryptography>=42"]
+tokens = ["tiktoken>=0.7"]
+dev = ["pytest>=8", "mcp>=2.3", "cryptography>=42"]
+docs = ["sphinx>=8", "furo", "myst-parser>=4", "sphinx-copybutton",
+        "autodoc_pydantic>=2.2", "mcp>=2.3"]
+
+[project.scripts]
+perfarena = "perfarena.cli:main"
+perfarena-mcp = "perfarena.mcp_server:main"
+
+# Third-party LLM providers register here (see perfarena.llm.base).
+[project.entry-points."perfarena.providers"]
+
+[tool.setuptools.packages.find]
+include = ["perfarena*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-q"

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -948,6 +948,7 @@ class CompetitionPublic(BaseModel):
     # add. Distinct from harnesses_with_data (which reflects what
     # actually landed) — this is the FORWARD-LOOKING allow-list.
     compatible_harness_slugs: list[str] = []
+    ranking_tie_pct: dict[str, float] | None = None
 
 
 class CompetitionDetail(CompetitionPublic):
@@ -976,6 +977,21 @@ class CompetitionIn(BaseModel):
     # rejected up-front so a typo surfaces at the admin form rather
     # than at first-submit time.
     compatible_harness_slugs: list[str] = Field(default_factory=list)
+    # Per-competition tie margins of the efficiency rankings (percent per
+    # metric: latency, energy, memory); a metric left out uses the global
+    # setting. Leaving the field out of an update keeps the stored margins.
+    ranking_tie_pct: dict[str, float] | None = None
+
+    @field_validator("ranking_tie_pct")
+    @classmethod
+    def _tie_pct_ok(cls, v):
+        if v is not None:
+            bad = {k for k in v if k not in ("latency", "energy", "memory")}
+            if bad:
+                raise ValueError(f"unknown metric(s) {sorted(bad)}")
+            if any(not 0 <= x <= 50 for x in v.values()):
+                raise ValueError("tie margins must lie between 0 and 50 percent")
+        return v
 
 
 class CompetitionProblemsIn(BaseModel):

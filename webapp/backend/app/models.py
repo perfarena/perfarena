@@ -654,6 +654,12 @@ class Competition(SQLModel, table=True):
     compatible_harness_slugs: list[str] | None = Field(
         default_factory=list, sa_column=Column(JSON),
     )
+    # Tie margins of the efficiency rankings for this competition, in percent
+    # per metric ({"latency": 3.68, "energy": 3.68}). A metric it names
+    # overrides the global ranking.tie_*_pct setting. Whole-program runs
+    # (CLBG) vary more than per-invocation ones (LeetCode), so their margins
+    # are wider. None = the global settings.
+    ranking_tie_pct: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class Harness(SQLModel, table=True):

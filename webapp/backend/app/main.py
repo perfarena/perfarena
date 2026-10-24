@@ -2637,6 +2637,8 @@ def edit_competition(
     compat = _validate_compat_slugs(session, payload.compatible_harness_slugs)
     data = payload.model_dump()
     data["compatible_harness_slugs"] = compat
+    if "ranking_tie_pct" not in payload.model_fields_set:
+        data.pop("ranking_tie_pct")              # left out: keep the stored margins
     for k, v in data.items():
         setattr(c, k, v)
     session.add(c); session.commit(); session.refresh(c)
@@ -2651,7 +2653,7 @@ def edit_competition(
         kind=c.kind, status=c.status, created_at=c.created_at,
         n_problems=len(member_pids), n_submissions=n_subs, n_models=n_models,
         harnesses_with_data=_competition_harnesses_with_data(session, c),
-        compatible_harness_slugs=compat,
+        compatible_harness_slugs=compat, ranking_tie_pct=c.ranking_tie_pct,
     )
 
 

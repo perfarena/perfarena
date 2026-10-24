@@ -75,7 +75,8 @@ def _golden(lang: str, slug: str) -> Attempt:
         comp = s.exec(select(Competition).where(Competition.slug == COMP)).one()
         sub = s.exec(select(Submission).where(Submission.competition_id == comp.id,
                                               Submission.model_name == "golden-baseline",
-                                              Submission.language == lang)).one()
+                                              Submission.language == lang,
+                                              Submission.deleted_at.is_(None))).one()
         pid = s.exec(select(Problem).where(Problem.title_slug == slug)).one().id
         return s.exec(select(Attempt).where(Attempt.submission_id == sub.id,
                                             Attempt.problem_id == pid)).first()
@@ -175,3 +176,29 @@ def test_startup_backfill_does_not_register_the_golden_baseline():
     with Session(engine) as s:
         assert s.exec(select(RegisteredModel).where(
             RegisteredModel.name == "golden-baseline")).first() is None
+
+
+def test_excluded_solutions_never_set_a_golden_value(client):
+    with Session(engine) as s:
+        comp = s.exec(select(Competition).where(Competition.slug == COMP)).one()
+        for sub in s.exec(select(Submission).where(Submission.competition_id == comp.id,
+                                                   Submission.model_name == "golden-baseline")):
+            sub.deleted_at = datetime.utcnow()
+            s.add(sub)
+        s.commit()
+    pool = ["lat-llm", "en-llm", "mem-llm"]
+    r = client.post("/api/admin/golden-baseline", headers=ADMIN, json={
+        "competition": COMP, "models": pool,
+        "exclude": [{"model": "lat-llm", "language": "python3", "problem": "nonexistent"}]})
+    assert r.status_code == 400 and "nonexistent" in r.text
+
+    r = client.post("/api/admin/golden-baseline", headers=ADMIN, json={
+        "competition": COMP, "models": pool,
+        "exclude": [{"model": "lat-llm", "language": "python3", "problem": "add-digits"}]})
+    assert r.status_code == 201, r.text
+    # the latency of the excluded solution (2.0) gives way to the next best (en-llm, 4.0)
+    a = _golden("python3", "add-digits")
+    assert a.avg_runtime_ms == 4.0
+    assert a.trace["golden_baseline"]["sources"]["latency"]["model"] == "en-llm"
+    # the same LLM still sets the latency of its other cells
+    assert _golden("cpp", "add-digits").avg_runtime_ms == 2.0

@@ -217,6 +217,7 @@ _ADDITIVE_COLUMNS = [
     # _seed_default_correctness_oracle so pre-abstraction data keeps its
     # implied provenance intact.
     ("competition", "correctness_oracle_id", "INTEGER"),
+    ("competition", "ranking_tie_pct", "JSON"),
     ("submission", "correctness_oracle_id", "INTEGER"),
     ("run", "correctness_oracle_id", "INTEGER"),
     # Agent (producer) FK — the agentic harness / workflow that drove the

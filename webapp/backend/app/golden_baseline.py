@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 
 from . import ranking as rk
 from .models import (
-    Agent, Attempt, Competition, Harness, Run, Submission,
+    Agent, Attempt, Competition, Harness, Problem, Run, Submission,
     SubmissionStatus,
 )
 
@@ -53,13 +53,17 @@ def _mean(xs: list[float]) -> float | None:
 
 def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
           models: list[str] | None = None, languages: list[str] | None = None,
-          harness: str | None = None, cost_of=None) -> dict:
+          harness: str | None = None, cost_of=None,
+          exclude: list[tuple[str, str, str]] | None = None) -> dict:
     """Create the golden-baseline submissions of one competition from the
     direct, single-round submissions created on or before `frozen_on`.
     `models` limits the pool (default: every entrant that is not partial) and
-    `languages` the languages (default: every language of the pool). Raises
-    ValueError when a golden baseline already exists or a requested model or
-    language has no submission in the pool."""
+    `languages` the languages (default: every language of the pool).
+    `exclude` lists (model, language, problem slug) solutions that stay
+    accepted but never set a golden value, such as a solution that skips the
+    work of the benchmark. Raises ValueError when a golden baseline already
+    exists, a requested model or language has no submission in the pool, or
+    an exclusion matches no solution of the pool."""
     from .ranking_api import load            # avoid an import cycle
     comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
     if comp is None:
@@ -89,6 +93,19 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
     langs = [lang for lang in d["languages"]
              if lang in pool_langs and (languages is None or lang in languages)]
 
+    slugs: dict[int, str] = {}
+
+    def slug(pid: int) -> str:
+        if pid not in slugs:
+            slugs[pid] = session.get(Problem, pid).title_slug
+        return slugs[pid]
+    excluded = {tuple(x) for x in exclude or []}
+    found = {(entrants[k].model_name, lang, slug(pid))
+             for (lang, pid), by_key in d["finals"].items() for k in by_key if k in pool}
+    missing = sorted(excluded - found)
+    if missing:
+        raise ValueError(f"no solution of the pool for the exclusions {missing}")
+
     harness_row = session.exec(select(Harness).where(Harness.slug == d["harness"])).first()
     agent = _agent(session, frozen_on, user_id)
     version = f"frozen {frozen_on.isoformat()}"
@@ -114,7 +131,8 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
                              "and metric, the best correct solution of the campaign LLMs. "
                              "Copied from stored results, not generated or measured."),
             model_params={"reference": AGENT_SLUG, "frozen_on": frozen_on.isoformat(),
-                          "pool": pool_models},
+                          "pool": pool_models,
+                          "excluded": sorted(list(x) for x in excluded if x[1] == lang)},
             status=SubmissionStatus.judged, competition_id=comp.id,
             n_samples_per_problem=1, n_rounds=1, agent_id=agent.id,
             harness_id=harness_row.id if harness_row else None,
@@ -133,7 +151,8 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
             winner = {}
             for m, attr in rk.METRICS.items():
                 vals = [(getattr(a, attr), k) for k, (a, _s) in c.items()
-                        if getattr(a, attr) is not None and getattr(a, attr) > 0]
+                        if getattr(a, attr) is not None and getattr(a, attr) > 0
+                        and (entrants[k].model_name, lang, slug(pid)) not in excluded]
                 winner[m] = min(vals)[1] if vals else None
             src = winner["latency"] or winner["energy"] or winner["memory"] or min(c)
             sa, ss = c[src]

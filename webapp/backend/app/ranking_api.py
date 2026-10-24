@@ -34,12 +34,20 @@ router = APIRouter()
 REFERENCE_KIND = "reference"
 
 
-def ranking_settings() -> rk.Settings:
+def ranking_settings(session: Session | None = None,
+                     competition: str | None = None) -> rk.Settings:
+    """The global ranking settings, with the tie margins of `competition`
+    (Competition.ranking_tie_pct) in place of the global ones it names."""
+    tie_pct = {"latency": app_settings.get_float("ranking.tie_latency_pct", 1.84),
+               "energy": app_settings.get_float("ranking.tie_energy_pct", 1.84),
+               "memory": app_settings.get_float("ranking.tie_memory_pct", 9.83)}
+    if session is not None and competition:
+        comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
+        if comp is not None and comp.ranking_tie_pct:
+            tie_pct.update({m: float(v) for m, v in comp.ranking_tie_pct.items() if m in tie_pct})
     return rk.Settings(
-        tie_pct={"latency": app_settings.get_float("ranking.tie_latency_pct", 1.84),
-                 "energy": app_settings.get_float("ranking.tie_energy_pct", 1.84),
-                 "memory": app_settings.get_float("ranking.tie_memory_pct", 7.35)},
-        bootstrap=app_settings.get_int("ranking.bootstrap_samples", 1000),
+        tie_pct=tie_pct,
+        bootstrap=app_settings.get_int("ranking.bootstrap_samples", 10000),
         min_cells=app_settings.get_int("ranking.min_cells_per_language", 3),
         min_problem_clusters=app_settings.get_int("ranking.min_problem_clusters", 30),
     )
@@ -189,7 +197,7 @@ def _cost_function(session: Session):
 def efficiency_rankings(session: Session, competition: str, *, harness=None, agent=None,
                         agent_kind=None, rounds=None, prompt_id=None, language=None,
                         bootstrap: bool = True) -> dict:
-    settings = ranking_settings()
+    settings = ranking_settings(session, competition)
     if not bootstrap:
         settings.bootstrap = 0
     key = ("rank", competition, harness, agent, agent_kind, rounds, prompt_id, language,
@@ -279,7 +287,7 @@ def get_head_to_head(
 ):
     """Two entrants on the cells that both solved: the geometric-mean ratio of
     a's values to b's, and the shares of cells that a wins, ties, and loses."""
-    settings = ranking_settings()
+    settings = ranking_settings(session, competition)
     key = ("h2h", competition, a, b, harness, language, tuple(sorted(settings.tie_pct.items())),
            data_version(session))
 
@@ -307,7 +315,7 @@ def get_head_to_head(
 def per_language_point_ranks(session: Session, competition: str) -> dict:
     """Per-language point estimates (no bootstrap) for the home-page bump
     charts: language -> metric -> best-first [(label, win_prob)]."""
-    settings = ranking_settings()
+    settings = ranking_settings(session, competition)
     key = ("bump", competition, settings.min_cells, tuple(sorted(settings.tie_pct.items())),
            data_version(session))
 
@@ -332,12 +340,20 @@ def per_language_point_ranks(session: Session, competition: str) -> dict:
     return rk.CACHE.get_or_compute(key, compute)
 
 
+class GoldenExclusion(BaseModel):
+    """An accepted solution that never sets a golden value."""
+    model: str
+    language: str
+    problem: str                             # title slug
+
+
 class GoldenBaselineIn(BaseModel):
     competition: str
     frozen_on: date = date(2026, 10, 10)     # end of the paper's campaign
     models: list[str] | None = None          # default: every non-partial entrant
     languages: list[str] | None = None       # default: every language of the pool
     harness: str | None = None               # default: the competition's main harness
+    exclude: list[GoldenExclusion] | None = None
 
 
 @router.post("/api/admin/golden-baseline", status_code=201)
@@ -350,6 +366,8 @@ def post_golden_baseline(body: GoldenBaselineIn, admin: User = Depends(current_a
     try:
         return golden_baseline.build(session, body.competition, frozen_on=body.frozen_on,
                                      user_id=admin.id, models=body.models,
-                                     languages=body.languages, harness=body.harness, cost_of=_cost_function(session))
+                                     languages=body.languages, harness=body.harness, cost_of=_cost_function(session),
+                                     exclude=[(x.model, x.language, x.problem)
+                                              for x in body.exclude or []])
     except ValueError as e:
         raise HTTPException(409 if "already has" in str(e) else 400, str(e))
