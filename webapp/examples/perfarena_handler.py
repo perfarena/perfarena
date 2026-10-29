@@ -987,6 +987,97 @@ _HARNESS_BUILD_INPUTS = {"cpp": ("harness_cpp.py",),
                          "typescript": ("harness_ts.js",)}
 
 
+# ---- toolchain record: what a run's numbers depend on besides the solution ----
+# Every measured run reports a hash of each harness source file and the version
+# of each tool that its language uses. This is a record only: it is not part of
+# the measurement profile, so a change never splits a ranking or forces a
+# re-measure; an analysis can still tell which runs share a harness and tools.
+# LeetCode harness sources in selection/, beyond run_harness.sh (a Python cell
+# carries its own test_suite.py).
+_HARNESS_SOURCES = {**_HARNESS_BUILD_INPUTS, "javascript": ("harness.js",),
+                    "php": ("harness.php",), "ruby": ("harness.rb",)}
+# argv that prints each tool's version (first line kept).
+_TOOL_VERSION_ARGV: dict[str, list[str]] = {
+    "python3": ["python3", "--version"], "node": ["node", "--version"],
+    "tsc": ["tsc", "--version"], "php": ["php", "--version"],
+    "ruby": ["ruby", "--version"], "g++": ["g++", "--version"],
+    "gcc": ["gcc", "--version"], "java": ["java", "-version"],
+    "javac": ["javac", "-version"], "kotlinc": ["kotlinc", "-version"],
+    "scala": ["scala", "-version"], "dotnet": ["dotnet", "--version"],
+    "go": ["go", "version"], "rustc": ["rustc", "--version"],
+    "swift": ["swift", "--version"], "dart": ["dart", "--version"],
+    "elixir": ["elixir", "-e", "IO.puts(\"Elixir \" <> System.version())"],
+    "erl": ["erl", "-noshell", "-eval",
+            "io:format(\"OTP ~s~n\", [erlang:system_info(otp_release)]), halt()."],
+    "racket": ["racket", "--version"],
+}
+# Harness language -> the tools that build and run its programs.
+_LANG_TOOLS: dict[str, tuple[str, ...]] = {
+    "python3": ("python3",), "javascript": ("node",), "typescript": ("node", "tsc"),
+    "php": ("php",), "ruby": ("ruby",), "cpp": ("g++",), "c": ("gcc",),
+    "java": ("java", "javac"), "kotlin": ("java", "kotlinc"), "scala": ("java", "scala"),
+    "csharp": ("dotnet",), "golang": ("go",), "rust": ("rustc",), "swift": ("swift",),
+    "dart": ("dart",), "elixir": ("elixir",), "erlang": ("erl",), "racket": ("racket",),
+}
+_VERSION_CACHE: dict[tuple, str | None] = {}
+
+
+def _tool_version(tool: str, env: "dict[str, str]") -> "str | None":
+    """First output line of the tool's version command, or None when the tool
+    is missing. Cached per binary, size and mtime, and for at most an hour, so
+    an upgrade of the binary shows up on the next run."""
+    argv = _TOOL_VERSION_ARGV[tool]
+    exe = shutil.which(argv[0], path=env.get("PATH"))
+    if exe is None:
+        return None
+    real = os.path.realpath(exe)
+    try:
+        st = os.stat(real)
+    except OSError:
+        return None
+    key = (tool, real, st.st_size, st.st_mtime_ns, int(time.time() // 3600))
+    if key not in _VERSION_CACHE:
+        try:
+            r = subprocess.run([exe, *argv[1:]], capture_output=True, text=True,
+                               timeout=60, env=env)
+            lines = [ln.strip() for ln in (r.stdout + "\n" + r.stderr).splitlines() if ln.strip()]
+            _VERSION_CACHE[key] = lines[0][:200] if lines else None
+        except (OSError, subprocess.SubprocessError):
+            _VERSION_CACHE[key] = None
+    return _VERSION_CACHE[key]
+
+
+def _file_hash(f: Path) -> "str | None":
+    try:
+        return hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return None
+
+
+def _toolchain(cell: Path, title_slug: str, language: str) -> "dict[str, Any]":
+    """The harness file hashes and tool versions of one measurement."""
+    root, sel = _root(), _selection_dir()
+    harness_lang = _HARNESS_LANG.get(language, language)
+    if _is_clbg_cell(cell, title_slug):
+        files = [root / "perfarena.mk", root / "perfarena" / "runners" / "codecarbon_runner.py",
+                 cell / "Makefile"]
+    else:
+        files = [sel / "run_harness.sh"] + [sel / f for f in _HARNESS_SOURCES.get(harness_lang, ())]
+        if harness_lang == "python3":
+            files.append(cell / "test_suite.py")
+    names = {f: (str(f.relative_to(root)) if f.is_relative_to(root) else f.name) for f in files}
+    names[Path(__file__)] = Path(__file__).name
+    env = _harness_env("run")
+    tools = {t: _tool_version(t, env) for t in _LANG_TOOLS.get(harness_lang, ())}
+    if _energy_tool_name() == "codecarbon":
+        try:
+            from importlib.metadata import version
+            tools["codecarbon"] = version("codecarbon")
+        except Exception:  # noqa: BLE001
+            tools["codecarbon"] = None
+    return {"harness": {n: _file_hash(f) for f, n in names.items()}, "tools": tools}
+
+
 def _build_key(files: "list[Path]") -> str:
     h = hashlib.sha256(os.environ.get("PERFARENA_COMPILE_FLAGS", "").encode())
     for f in files:
@@ -2255,6 +2346,25 @@ def _measure_clbg_samples(
 
 
 def measure_once(
+    title_slug: str, language: str, code: str,
+    metrics: Any = None, repeats: int = 1, do_compile: bool = False,
+    meta: "dict[str, Any] | None" = None,
+) -> "list[dict[str, Any]]":
+    """_measure_once, with the toolchain record (see _toolchain) on every run.
+    A failure to build the record never fails the measurement."""
+    runs = _measure_once(title_slug, language, code, metrics=metrics, repeats=repeats,
+                         do_compile=do_compile, meta=meta)
+    try:
+        tc = _toolchain(_cell_dir(title_slug, language), title_slug, language)
+    except Exception as e:  # noqa: BLE001
+        _log(f"toolchain record failed: {e!r}")
+        tc = None
+    for r in runs:
+        r.setdefault("toolchain", tc)
+    return runs
+
+
+def _measure_once(
     title_slug: str, language: str, code: str,
     metrics: Any = None, repeats: int = 1, do_compile: bool = False,
     meta: "dict[str, Any] | None" = None,

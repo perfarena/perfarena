@@ -1445,6 +1445,9 @@ class AttemptRunDetail(BaseModel):
     # None on Accepted runs (the diagnostic isn't useful there), on fake-
     # mode runs, and on synthetic-failure dispatch results.
     leetcode_full_response: dict | None = None
+    # Harness file hashes and tool versions the runner reported for this run
+    # (models.Run.toolchain); None when the runner does not report them.
+    toolchain: dict | None = None
 
 
 class AttemptResult(BaseModel):

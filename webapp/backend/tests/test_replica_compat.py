@@ -28,7 +28,7 @@ NEW_COLUMNS = {
     "machine": {"machine_class_id"},
     "measurementprofile": {"machine_class_id"},
     "submission": {"machine_class_id"},
-    "run": {"replica_id", "machine_id"},
+    "run": {"replica_id", "machine_id", "toolchain"},
     "attempt": {"dispatch_state", "claimed_by", "lease_until", "not_before",
                 "dispatch_tries", "harness_error"},
 }

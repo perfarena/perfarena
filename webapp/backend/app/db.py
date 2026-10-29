@@ -256,6 +256,8 @@ _ADDITIVE_COLUMNS = [
     # Measurement failure of a solution that the correctness oracle accepted
     # (see models.Attempt.harness_error). NULL on every legacy row.
     ("attempt", "harness_error", "VARCHAR"),
+    # Harness file hashes and tool versions of a run (models.Run.toolchain).
+    ("run", "toolchain", "JSON"),
 ]
 
 

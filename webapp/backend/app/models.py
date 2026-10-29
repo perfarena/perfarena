@@ -493,6 +493,12 @@ class Run(SQLModel, table=True):
     measurement_profile_id: int | None = Field(
         default=None, foreign_key="measurementprofile.id", index=True,
     )
+    # What the run's numbers depend on besides the solution, as the runner
+    # reports it: a hash of each harness source file and the version of each
+    # compiler and runtime the language uses. Recorded only: it is not part of
+    # the measurement profile, so a change never splits a ranking or forces a
+    # re-measure. NULL on runs from runners that do not report it.
+    toolchain: dict | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Physical provenance under replica pools: the replica endpoint and the
     # machine that produced THIS run, even when the profile pools at the class

@@ -1580,6 +1580,7 @@ def _run_remote_attempt(session: Session, sub: Submission, a: Attempt,
                 # single-endpoint path).
                 replica_id=result.get("_replica_id"),
                 machine_id=result.get("_machine_id"),
+                toolchain=result.get("toolchain"),
             ))
             real_so_far = [r for r in runs_so_far
                            if r.get("status_msg") not in _SYSTEM_FAIL]

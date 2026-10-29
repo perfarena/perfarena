@@ -6639,6 +6639,7 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
                     r.leetcode_full_response
                     if r.status_msg != "Accepted" else None
                 ),
+                toolchain=r.toolchain,
             ) for r in runs],
             inference_trace=a.inference_trace,
             trace=a.trace,

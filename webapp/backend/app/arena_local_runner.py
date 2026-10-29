@@ -285,6 +285,8 @@ def _normalise_run(row: dict) -> dict:
         "energy_tool":               row.get("energy_tool"),
         "machine":                   row.get("machine"),
         "config":                    row.get("config"),
+        # Harness file hashes and tool versions (recorded on the Run only).
+        "toolchain":                 row.get("toolchain"),
         "raw_response":              raw_response,
         "leetcode_full_response":    None,     # arena-local ⇒ never LC
     }
