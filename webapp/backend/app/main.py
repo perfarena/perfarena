@@ -49,7 +49,7 @@ from .models import (
     Attempt, Baseline, BaselineRefreshState, BlogPost,
     Competition, CompetitionProblem, CorrectnessOracle, Harness, Machine, Problem,
     PromptTemplate, RegisteredModel,
-    Run, Snapshot,
+    Run, Snapshot, SolutionReview,
     Submission, SubmissionStatus, TraceLogEntry,
     User, UserRole, UserStatus,
 )
@@ -72,7 +72,7 @@ from .schemas import (
     CompetitionDetail, CompetitionIn, CompetitionProblemsIn, CompetitionPublic,
     CompetitionRef,
     HarnessDetail, HarnessIn, HarnessPublic, HarnessRef, MachineIn, MachinePublic,
-    MemoryRemeasureIn, TimingRemeasureIn,
+    MemoryRemeasureIn, SolutionReviewIn, TimingRemeasureIn,
     CorrectnessOracleDetail, CorrectnessOracleIn, CorrectnessOraclePublic,
     CorrectnessOracleRef,
     CostEstimatorRange, CostEstimatorStats, CostEstimatorSubmission,
@@ -2391,6 +2391,7 @@ def get_competition(
     ),
     session: Session = Depends(get_session),
 ):
+    invalid = integrity.invalid_attempt_ids(session)
     c = session.exec(
         select(Competition).where(Competition.slug == slug)
     ).first()
@@ -2499,10 +2500,19 @@ def get_competition(
         # — same definitions as everywhere else in the SPA.
         pass_at_1 = n_acc / n_comp_problems
         pass_at_k = (n_acc / n_attempted) if n_attempted else 0.0
-        rt = [a.avg_runtime_ms for a in accepted_atts if a.avg_runtime_ms is not None]
-        mem = [a.avg_memory_mb for a in accepted_atts if a.avg_memory_mb is not None]
-        rtp = [a.avg_runtime_percentile for a in accepted_atts if a.avg_runtime_percentile is not None]
-        memp = [a.avg_memory_percentile for a in accepted_atts if a.avg_memory_percentile is not None]
+        # Performance: per problem, the best accepted attempt not labelled
+        # invalid; a problem whose accepted attempts are all invalid gives none.
+        perf_atts = []
+        for a in accepted_atts:
+            if a.id in invalid:
+                alts = [x for s in subs for x in comp_attempts_by_sub.get(s.id, [])
+                        if x.problem_id == a.problem_id and x.final_status == "Accepted"]
+                a = _best_accepted(alts, invalid)
+            perf_atts.append(a)
+        rt = [a.avg_runtime_ms for a in perf_atts if a.avg_runtime_ms is not None]
+        mem = [a.avg_memory_mb for a in perf_atts if a.avg_memory_mb is not None]
+        rtp = [a.avg_runtime_percentile for a in perf_atts if a.avg_runtime_percentile is not None]
+        memp = [a.avg_memory_percentile for a in perf_atts if a.avg_memory_percentile is not None]
         top.append({
             "model_name": name,
             "model_version": ver,
@@ -3213,6 +3223,195 @@ def admin_speed_outliers(
             "count": len(rows), "flagged": rows}
 
 
+@app.get("/api/admin/integrity/harness-errors")
+def admin_harness_errors(
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Solutions that the correctness oracle accepted but the performance harness
+    failed to measure (Attempt.harness_error), newest first. Each counts for
+    pass@k but enters no ranking until a re-measure succeeds, so an admin fixes
+    the harness and re-measures it."""
+    slugs = {c.id: c.slug for c in session.exec(select(Competition)).all()}
+    rows = [dict(r, competition=slugs.get(r["competition_id"]))
+            for r in integrity.harness_errors(session)]
+    return {"count": len(rows), "items": rows}
+
+
+def _refresh_after_verdict(session: Session, attempt: Attempt) -> None:
+    """A verdict changes which solutions give performance values, so recompute
+    the stored performance aggregates of the attempt's submission and the
+    human-relative coefficients of its language. Rankings read the verdicts
+    directly (ranking_api.load)."""
+    sub = session.get(Submission, attempt.submission_id)
+    if sub is None:
+        return
+    _rollup_submission_perf(session, sub)
+    session.commit()
+    _recompute_human_coefficients(session, sub.language)
+
+
+def _review_payload(r: SolutionReview | None, names: dict[int, str]) -> dict | None:
+    if r is None:
+        return None
+    return {"verdict": r.verdict, "note": r.note,
+            "reviewed_at": r.reviewed_at.isoformat(),
+            "reviewed_by": names.get(r.reviewed_by_user_id)}
+
+
+@app.get("/api/admin/integrity/review")
+def admin_review_queue(
+    competition: str | None = None,
+    status: str = Query("pending", pattern="^(pending|invalid|ok|all)$"),
+    factor: float = integrity.DEFAULT_FACTOR,
+    min_peers: int = integrity.DEFAULT_MIN_PEERS,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Solutions to review for validity: the speed outliers (see
+    /api/admin/integrity/speed-outliers), the solutions whose code runs another
+    language (`code_flags`, see integrity.foreign_code), and every solution that
+    already has a verdict, each with its verdict. `competition` (a slug) limits
+    them to one competition, and `status` keeps the unreviewed ones (pending),
+    one verdict, or all. Code flags come first, then by how many times faster
+    than its peers a solution runs."""
+    comp_id = None
+    if competition:
+        comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
+        if comp is None:
+            raise HTTPException(404, f"no competition {competition!r}")
+        comp_id = comp.id
+    slugs = {c.id: c.slug for c in session.exec(select(Competition)).all()}
+    items = {r["attempt_id"]: dict(r, speed_flag=True) for r in integrity.speed_outliers(
+        session, factor=factor, min_peers=min_peers)}
+    code = integrity.code_flags(session, comp_id)
+    reviews = {r.attempt_id: r for r in session.exec(select(SolutionReview)).all()}
+    # A code-flagged solution, and a reviewed one that no flag catches any
+    # more, get a row with its speed against its peers.
+    for aid in (set(code) | set(reviews)) - set(items):
+        a = session.get(Attempt, aid)
+        sub = session.get(Submission, a.submission_id) if a else None
+        if sub is None or sub.deleted_at is not None:
+            continue
+        peers = [r[8] for r in integrity.peer_rows(session, a.problem_id, sub.language,
+                                                   sub.harness_id) if r[3] != aid]
+        _, ratio, med, n_peers = integrity.is_outlier(
+            a.best_runtime_ms, peers + [a.best_runtime_ms], factor, min_peers)
+        items[aid] = {
+            "attempt_id": aid, "submission_id": sub.id,
+            "problem_slug": session.get(Problem, a.problem_id).title_slug,
+            "language": sub.language, "harness_id": sub.harness_id,
+            "competition_id": sub.competition_id, "model_name": sub.model_name,
+            "model_version": sub.model_version, "best_runtime_ms": a.best_runtime_ms,
+            "peer_median_ms": med, "n_peers": n_peers or None,
+            "ratio": round(ratio, 1) if ratio is not None else None, "speed_flag": False}
+    for aid, r in items.items():
+        r["code_flags"] = code.get(aid, [])
+        r["flagged"] = r["speed_flag"] or bool(r["code_flags"])
+    names = {u.id: u.display_name for u in session.exec(select(User)).all()}
+    rows = [dict(r, competition=slugs.get(r["competition_id"]),
+                 review=_review_payload(reviews.get(aid), names))
+            for aid, r in items.items()
+            if comp_id is None or r["competition_id"] == comp_id]
+    counts = {"pending": sum(1 for r in rows if r["review"] is None),
+              "invalid": sum(1 for r in rows if (r["review"] or {}).get("verdict") == "invalid"),
+              "ok": sum(1 for r in rows if (r["review"] or {}).get("verdict") == "ok")}
+    if status == "pending":
+        rows = [r for r in rows if r["review"] is None]
+    elif status != "all":
+        rows = [r for r in rows if (r["review"] or {}).get("verdict") == status]
+    rows.sort(key=lambda r: (not r["code_flags"], not r["flagged"], r["ratio"] is None,
+                             -(r["ratio"] or 0), r["attempt_id"]))
+    return {"competition": competition, "status": status, "factor": factor,
+            "min_peers": min_peers, "counts": counts, "items": rows}
+
+
+@app.get("/api/admin/integrity/review/{attempt_id}")
+def admin_review_detail(
+    attempt_id: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """One solution to review: its code, the statement of its problem, how much
+    faster than its peers it runs, its verdict, and a typical solution of the
+    same peer group (the one closest to the peer median) to compare with."""
+    a = session.get(Attempt, attempt_id)
+    sub = session.get(Submission, a.submission_id) if a else None
+    if sub is None:
+        raise HTTPException(404, "attempt not found")
+    prob = session.get(Problem, a.problem_id)
+    comp = session.get(Competition, sub.competition_id) if sub.competition_id else None
+    peers = [r for r in integrity.peer_rows(session, a.problem_id, sub.language, sub.harness_id)
+             if r[3] != a.id]
+    flagged, ratio, med, n_peers = integrity.is_outlier(
+        a.best_runtime_ms, [r[8] for r in peers] + [a.best_runtime_ms])
+    typical = None
+    if peers and med is not None:
+        t = min(peers, key=lambda r: (abs(r[8] - med), r[3]))
+        ta = session.get(Attempt, t[3])
+        typical = {"attempt_id": ta.id, "submission_id": t[4], "model_name": t[5],
+                   "best_runtime_ms": t[8], "code": ta.code}
+    names = {u.id: u.display_name for u in session.exec(select(User)).all()}
+    return {
+        "attempt_id": a.id, "submission_id": sub.id, "final_status": a.final_status,
+        "language": sub.language, "model_name": sub.model_name,
+        "model_version": sub.model_version, "competition": comp.slug if comp else None,
+        "problem": {"slug": prob.title_slug, "title": prob.title, "level": prob.level,
+                    "content": prob.content},
+        "code": a.code, "best_runtime_ms": a.best_runtime_ms,
+        "peer_median_ms": med, "ratio": ratio, "n_peers": n_peers, "speed_flag": flagged,
+        "code_flags": integrity.foreign_code(a.code, sub.language),
+        "review": _review_payload(session.get(SolutionReview, a.id), names),
+        "typical": typical,
+    }
+
+
+@app.put("/api/admin/integrity/review/{attempt_id}")
+def admin_set_review(
+    attempt_id: int,
+    body: SolutionReviewIn,
+    user: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Store a verdict on one accepted solution: `invalid` or `ok`, with an
+    optional note. A second verdict replaces the first. An invalid solution
+    still counts for pass@k, but it leaves every performance ranking and
+    comparison and sets no golden-baseline value (a golden baseline built
+    earlier keeps its values until it is rebuilt)."""
+    a = session.get(Attempt, attempt_id)
+    if a is None:
+        raise HTTPException(404, "attempt not found")
+    if a.final_status != "Accepted":
+        raise HTTPException(400, f"only an accepted solution gets a verdict ({a.final_status})")
+    r = session.get(SolutionReview, attempt_id) or SolutionReview(
+        attempt_id=attempt_id, verdict=body.verdict)
+    r.verdict, r.note = body.verdict, (body.note or "").strip() or None
+    r.reviewed_at, r.reviewed_by_user_id = datetime.utcnow(), user.id
+    session.add(r)
+    session.commit()
+    session.refresh(r)
+    _refresh_after_verdict(session, a)
+    return {"attempt_id": attempt_id,
+            "review": _review_payload(r, {user.id: user.display_name})}
+
+
+@app.delete("/api/admin/integrity/review/{attempt_id}", status_code=status.HTTP_204_NO_CONTENT)
+def admin_clear_review(
+    attempt_id: int,
+    _: User = Depends(current_admin),
+    session: Session = Depends(get_session),
+):
+    """Remove the verdict of one solution, so it is unreviewed again."""
+    r = session.get(SolutionReview, attempt_id)
+    if r is None:
+        raise HTTPException(404, "no verdict for this attempt")
+    session.delete(r)
+    session.commit()
+    a = session.get(Attempt, attempt_id)
+    if a is not None:
+        _refresh_after_verdict(session, a)
+
+
 @app.get("/api/admin/settings")
 def admin_get_settings(_: User = Depends(current_admin)):
     """Runtime-editable settings: registry + current effective value + source."""
@@ -3632,6 +3831,37 @@ def efficiency_ranks(competition: str, session: Session = Depends(get_session)):
     return {"competition": competition, **per_language_point_ranks(session, competition)}
 
 
+# Performance fields of an attempt. A solution labelled invalid (SolutionReview)
+# still counts as solved, but gives none of them in a ranking or comparison.
+_PERF_FIELDS = frozenset({
+    "avg_runtime_ms", "best_runtime_ms", "avg_memory_mb", "best_memory_mb",
+    "avg_runtime_percentile", "best_runtime_percentile", "avg_memory_percentile",
+    "best_memory_percentile", "avg_runtime_energy_j", "best_runtime_energy_j",
+    "avg_runtime_energy_percentile", "best_runtime_energy_percentile", "avg_iterations",
+    "avg_time_us_per_op", "avg_energy_j_per_op"})
+
+
+class _NoPerf:
+    """Read-only stand-in for an accepted attempt labelled invalid: the same
+    attempt, with every performance field None."""
+    def __init__(self, attempt: Attempt):
+        self._attempt = attempt
+
+    def __getattr__(self, name):
+        return None if name in _PERF_FIELDS else getattr(self._attempt, name)
+
+
+def _best_accepted(accepted: list[Attempt], invalid: set[int]):
+    """The best of a problem's accepted attempts (highest accepted-run share,
+    then lowest average runtime), among those not labelled invalid. When all are
+    labelled invalid, a stand-in that counts as solved without performance."""
+    def key(a):
+        return ((a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
+                -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18))
+    valid = [a for a in accepted if a.id not in invalid]
+    return max(valid, key=key) if valid else _NoPerf(max(accepted, key=key))
+
+
 @app.get("/api/compare", response_model=CompareResponse)
 def compare_models(
     models: list[str] = Query(..., min_length=2,
@@ -3648,6 +3878,7 @@ def compare_models(
     submissions (optionally filtered by language, a problem subset, and/or a
     competition's problem set) into one summary row + a per-problem matrix
     (where every requested problem shows what each model achieved)."""
+    invalid = integrity.invalid_attempt_ids(session)
     wanted_slugs: set[str] | None = None
     if problems:
         wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
@@ -3783,10 +4014,7 @@ def compare_models(
                 cell["n_attempted"] += 1
             accepted = [a for a in atts if a.final_status == "Accepted"]
             if accepted:
-                best = max(accepted, key=lambda a: (
-                    (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
-                    -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
-                ))
+                best = _best_accepted(accepted, invalid)
                 n_accepted += 1
                 if bucket is not None:
                     bucket["n_accepted"] += 1
@@ -3978,6 +4206,7 @@ def compare_submissions(
     and PerProblemMatrix renderers. Labels for the per-row "model" field
     are synthesised as `#<id> <model_name> · <language>` so the operator
     can tell two submissions from the same model apart."""
+    invalid = integrity.invalid_attempt_ids(session)
     wanted_slugs: set[str] | None = None
     if problems:
         wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
@@ -4071,10 +4300,7 @@ def compare_submissions(
                 cell["n_attempted"] += 1
             accepted = [a for a in atts if a.final_status == "Accepted"]
             if accepted:
-                best = max(accepted, key=lambda a: (
-                    (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
-                    -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
-                ))
+                best = _best_accepted(accepted, invalid)
                 n_accepted += 1
                 if bucket is not None:
                     bucket["n_accepted"] += 1
@@ -4241,6 +4467,7 @@ def compare_prompts(
     prompt id plus a per-metric winner banner — so you can read off whether
     e.g. an `explain-then-code` prompt buys correctness OR runtime over the
     plain `standard-code-only` template, holding the model fixed."""
+    invalid = integrity.invalid_attempt_ids(session)
     wanted_slugs: set[str] | None = None
     if problems:
         wanted_slugs = {s.strip() for s in problems.split(",") if s.strip()}
@@ -4316,10 +4543,7 @@ def compare_prompts(
         for problem_id, atts in by_pid.items():
             accepted = [a for a in atts if a.final_status == "Accepted"]
             if accepted:
-                best = max(accepted, key=lambda a: (
-                    (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
-                    -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
-                ))
+                best = _best_accepted(accepted, invalid)
                 n_accepted += 1
             else:
                 continue            # only successful attempts contribute to perf aggregates
@@ -5562,6 +5786,7 @@ def problem_detail(slug: str, session: Session = Depends(get_session)):
     n_accepted = sum(1 for a in attempts
                      if a.id in runs_by_attempt and a.final_status == "Accepted")
 
+    invalid = integrity.invalid_attempt_ids(session)
     rows: list[tuple[Attempt, list[Run], Submission]] = []
     for a in attempts:
         runs = runs_by_attempt.get(a.id)
@@ -5579,7 +5804,8 @@ def problem_detail(slug: str, session: Session = Depends(get_session)):
         # best instead of by a single arbitrary run's number means a model
         # whose code can hit a top-bucket runtime — even if other runs
         # were noisier — ranks ahead of one whose runs were all middling.
-        accepted_first = 0 if a.final_status == "Accepted" else 1
+        # A solution labelled invalid sorts after the valid accepted ones.
+        accepted_first = (0 if a.id not in invalid else 1) if a.final_status == "Accepted" else 2
         return (
             accepted_first,
             -(a.best_runtime_percentile or 0),
@@ -6325,6 +6551,9 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
     # one measurement basis. Computed once for the whole response.
     from . import integrity
     _speed_baselines = integrity.speed_baselines(session)
+    _verdicts = dict(session.exec(
+        select(SolutionReview.attempt_id, SolutionReview.verdict).where(
+            SolutionReview.attempt_id.in_([a.id for a in attempts]))).all())
     out: list[AttemptResult] = []
     for a in attempts:
         p = session.get(Problem, a.problem_id)
@@ -6388,6 +6617,8 @@ def submission_attempts(submission_id: int, session: Session = Depends(get_sessi
             best_runtime_energy_j=a.best_runtime_energy_j,
             speed_outlier=_so,
             speed_ratio=(round(_sr, 1) if _sr is not None else None),
+            review_verdict=_verdicts.get(a.id),
+            harness_error=a.harness_error,
             submitted_at=a.logged_at,
             runs=[AttemptRunDetail(
                 run_index=r.run_index,
@@ -7383,8 +7614,10 @@ def _rollup_submission_memory(session: Session, sub: Submission) -> None:
     for a in session.exec(select(Attempt).where(Attempt.submission_id == sub.id)).all():
         by_problem.setdefault(a.problem_id, []).append(a)
     avg_mem, best_mem = [], []
+    invalid = integrity.invalid_attempt_ids(session)
     for atts in by_problem.values():
-        accepted = [a for a in atts if a.final_status == "Accepted"]
+        accepted = [a for a in atts if a.final_status == "Accepted"
+                    and a.id not in invalid]                  # labelled invalid: no performance
         if not accepted:
             continue
         best = max(accepted, key=lambda a: (
@@ -7513,8 +7746,10 @@ def _rollup_submission_perf(session: Session, sub: Submission) -> None:
     vals: dict[str, list[float]] = {k: [] for k in (
         "avg_runtime_ms", "best_runtime_ms", "avg_runtime_energy_j",
         "best_runtime_energy_j", "avg_iterations", "avg_memory_mb", "best_memory_mb")}
+    invalid = integrity.invalid_attempt_ids(session)
     for atts in by_problem.values():
-        accepted = [a for a in atts if a.final_status == "Accepted"]
+        accepted = [a for a in atts if a.final_status == "Accepted"
+                    and a.id not in invalid]                  # labelled invalid: no performance
         if not accepted:
             continue
         best = max(accepted, key=lambda a: (

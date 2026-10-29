@@ -253,6 +253,9 @@ _ADDITIVE_COLUMNS = [
     ("attempt", "lease_until", "DATETIME"),
     ("attempt", "not_before", "DATETIME"),
     ("attempt", "dispatch_tries", "INTEGER"),
+    # Measurement failure of a solution that the correctness oracle accepted
+    # (see models.Attempt.harness_error). NULL on every legacy row.
+    ("attempt", "harness_error", "VARCHAR"),
 ]
 
 

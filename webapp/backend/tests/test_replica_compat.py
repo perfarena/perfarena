@@ -30,7 +30,7 @@ NEW_COLUMNS = {
     "submission": {"machine_class_id"},
     "run": {"replica_id", "machine_id"},
     "attempt": {"dispatch_state", "claimed_by", "lease_until", "not_before",
-                "dispatch_tries"},
+                "dispatch_tries", "harness_error"},
 }
 
 pytestmark = pytest.mark.skipif(not SRC, reason="set ARENA_COMPAT_DB to run")

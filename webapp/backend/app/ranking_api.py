@@ -23,9 +23,10 @@ from . import app_settings
 from . import ranking as rk
 from .auth import current_admin
 from .db import get_session
+from . import integrity
 from .models import (
-    Agent, Attempt, Competition, CompetitionProblem, Harness, Run, Submission,
-    SubmissionStatus, User,
+    Agent, Attempt, Competition, CompetitionProblem, Harness, Run, SolutionReview,
+    Submission, SubmissionStatus, User,
 )
 
 router = APIRouter()
@@ -54,12 +55,15 @@ def ranking_settings(session: Session | None = None,
 
 
 def data_version(session: Session) -> tuple:
-    """Changes whenever a result, an attempt, or a submission changes."""
+    """Changes whenever a result, an attempt, a submission, or a verdict on a
+    solution changes."""
     return (session.exec(select(func.max(Run.id))).one(),
             session.exec(select(func.max(Attempt.id))).one(),
             session.exec(select(func.count(Attempt.id)).where(Attempt.final_status.is_not(None))).one(),
             session.exec(select(func.max(Submission.id))).one(),
-            session.exec(select(func.count(Submission.id)).where(Submission.deleted_at.is_not(None))).one())
+            session.exec(select(func.count(Submission.id)).where(Submission.deleted_at.is_not(None))).one(),
+            session.exec(select(func.count(SolutionReview.attempt_id))).one(),
+            session.exec(select(func.max(SolutionReview.reviewed_at))).one())
 
 
 def load(session: Session, competition: str, *, harness: str | None = None,
@@ -68,12 +72,15 @@ def load(session: Session, competition: str, *, harness: str | None = None,
          cost_of=None, created_before: datetime | None = None) -> dict:
     """Entrants and cells of one competition under the filters. `rounds` is
     "single" (one round) or "multi" (refinement); None keeps both.
-    `created_before` keeps only submissions created up to that moment."""
+    `created_before` keeps only submissions created up to that moment. A
+    solution labelled invalid counts as solved (pass@1) but enters no cell, so
+    it has no duel and sets no golden-baseline value."""
     comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
     if comp is None:
         raise HTTPException(404, "competition not found")
     problem_ids = {cp.problem_id for cp in session.exec(
         select(CompetitionProblem).where(CompetitionProblem.competition_id == comp.id)).all()}
+    invalid = integrity.invalid_attempt_ids(session)
     q = (select(Submission).where(Submission.competition_id == comp.id,
                                   Submission.status == SubmissionStatus.judged,
                                   Submission.deleted_at.is_(None)))
@@ -142,6 +149,7 @@ def load(session: Session, competition: str, *, harness: str | None = None,
 
     cells: dict[str, dict] = {m: defaultdict(dict) for m in rk.METRICS}
     finals_by_cell: dict = defaultdict(dict)       # (lang, pid) -> key -> (attempt, sub)
+    invalid_by_cell: dict = defaultdict(dict)      # the same for solutions labelled invalid
     languages = sorted({lang for _, lang in chosen})
     for (key, lang), s in chosen.items():
         e = entrants[key]
@@ -162,6 +170,9 @@ def load(session: Session, competition: str, *, harness: str | None = None,
             if a.final_status != "Accepted":
                 continue
             e.n_solved += 1
+            if a.id in invalid:
+                invalid_by_cell[(lang, pid)][key] = (a, src)
+                continue
             finals_by_cell[(lang, pid)][key] = (a, src)
             for m, attr in rk.METRICS.items():
                 v = getattr(a, attr)
@@ -181,7 +192,8 @@ def load(session: Session, competition: str, *, harness: str | None = None,
     entrants = {k: e for k, e in entrants.items() if e.submission_ids}
     return dict(competition=comp, harness=harness, entrants=entrants,
                 cells={m: dict(c) for m, c in cells.items()}, languages=languages,
-                n_problems=len(problem_ids), finals=dict(finals_by_cell))
+                n_problems=len(problem_ids), finals=dict(finals_by_cell),
+                invalid_finals=dict(invalid_by_cell))
 
 
 def _cost_function(session: Session):

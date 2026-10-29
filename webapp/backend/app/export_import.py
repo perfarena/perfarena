@@ -38,7 +38,7 @@ from .db import engine
 from .models import (
     Attempt, Baseline, BlogPost, Competition, CompetitionProblem,
     CorrectnessOracle, Harness, Machine, MachineClass, MeasurementProfile, Problem,
-    PromptTemplate, RegisteredModel, Run, Submission, User,
+    PromptTemplate, RegisteredModel, Run, SolutionReview, Submission, User,
 )
 from . import leetcode_accounts as _lc_accounts
 
@@ -73,6 +73,8 @@ EXPORTABLE: list[tuple[str, type]] = [
     ("submissions",          Submission),
     ("attempts",             Attempt),
     ("runs",                 Run),
+    # Admin verdicts on solutions, keyed by attempt: after attempts.
+    ("solution_reviews",     SolutionReview),
 ]
 TABLE_BY_NAME = {name: model for name, model in EXPORTABLE}
 
@@ -677,6 +679,29 @@ def import_bundle(session: Session, bundle: dict) -> dict:
             report["runs"]["inserted"] += 1
         except Exception:                                    # noqa: BLE001
             report["runs"]["errored"] += 1
+    session.commit()
+
+    # 4a) Solution reviews — one per attempt. A verdict whose attempt did not
+    # come in is dropped; a local verdict on the same attempt wins.
+    for row in incoming.get("solution_reviews") or []:
+        try:
+            payload = _coerce_for_table(SolutionReview, row)
+            aid = payload.get("attempt_id")
+            new_aid = id_maps["attempts"].get(int(aid)) if aid is not None else None
+            if new_aid is None:
+                report["solution_reviews"]["errored"] += 1
+                continue
+            if session.get(SolutionReview, new_aid) is not None:
+                report["solution_reviews"]["skipped"] += 1
+                continue
+            payload["attempt_id"] = new_aid
+            uid = payload.get("reviewed_by_user_id")
+            if uid is not None:
+                payload["reviewed_by_user_id"] = id_maps["users"].get(int(uid))
+            session.add(SolutionReview(**payload))
+            report["solution_reviews"]["inserted"] += 1
+        except Exception:                                    # noqa: BLE001
+            report["solution_reviews"]["errored"] += 1
     session.commit()
 
     # 4b) LeetCode accounts — file-backed, merge by name.

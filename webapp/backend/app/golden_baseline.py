@@ -100,8 +100,11 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
             slugs[pid] = session.get(Problem, pid).title_slug
         return slugs[pid]
     excluded = {tuple(x) for x in exclude or []}
+    # A solution labelled invalid (SolutionReview) never sets a golden value
+    # either: load() leaves it out of the finals. It still matches an exclusion.
     found = {(entrants[k].model_name, lang, slug(pid))
-             for (lang, pid), by_key in d["finals"].items() for k in by_key if k in pool}
+             for f in (d["finals"], d["invalid_finals"])
+             for (lang, pid), by_key in f.items() for k in by_key if k in pool}
     missing = sorted(excluded - found)
     if missing:
         raise ValueError(f"no solution of the pool for the exclusions {missing}")

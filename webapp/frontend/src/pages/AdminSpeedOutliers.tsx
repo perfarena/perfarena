@@ -47,6 +47,7 @@ export default function AdminSpeedOutliers() {
           form instead of actually allocating) — its runtime and energy are then
           meaningless even though the output passed. This is a signal to review,
           not proof: a genuinely clever optimization can land here too.
+          Label them on the <Link to="/admin/review">Review</Link> page.
         </p>
       </div>
 

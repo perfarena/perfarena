@@ -66,6 +66,42 @@ export interface SpeedOutlierRow {
 export interface SpeedOutliersResponse {
   factor: number; min_peers: number; count: number; flagged: SpeedOutlierRow[];
 }
+export interface HarnessErrorRow {
+  attempt_id: number; submission_id: number; competition: string | null;
+  problem_slug: string; language: string; model_name: string;
+  harness_error: string; logged_at: string | null;
+}
+export type ReviewVerdict = "invalid" | "ok";
+export type ReviewStatus = "pending" | ReviewVerdict | "all";
+export interface SolutionReview {
+  verdict: ReviewVerdict; note: string | null; reviewed_at: string;
+  reviewed_by: string | null;
+}
+export interface ReviewQueueRow {
+  attempt_id: number; submission_id: number; problem_slug: string;
+  language: string; model_name: string; model_version: string | null;
+  competition: string | null; best_runtime_ms: number | null;
+  peer_median_ms: number | null; ratio: number | null; n_peers: number | null;
+  /** speed_flag: a speed outlier; code_flags: why its code runs another language. */
+  flagged: boolean; speed_flag: boolean; code_flags: string[];
+  review: SolutionReview | null;
+}
+export interface ReviewQueueResponse {
+  competition: string | null; status: ReviewStatus; factor: number; min_peers: number;
+  counts: { pending: number; invalid: number; ok: number };
+  items: ReviewQueueRow[];
+}
+export interface ReviewDetail {
+  attempt_id: number; submission_id: number; final_status: string;
+  language: string; model_name: string; model_version: string | null;
+  competition: string | null;
+  problem: { slug: string; title: string; level: string; content: string };
+  code: string; best_runtime_ms: number | null; peer_median_ms: number | null;
+  ratio: number | null; n_peers: number; speed_flag: boolean; code_flags: string[];
+  review: SolutionReview | null;
+  typical: { attempt_id: number; submission_id: number; model_name: string;
+             best_runtime_ms: number; code: string } | null;
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -503,6 +539,26 @@ export const api = {
     return request<SpeedOutliersResponse>(
       `/api/admin/integrity/speed-outliers${qs.toString() ? "?" + qs.toString() : ""}`);
   },
+  /** Solutions that the correctness oracle accepted but the harness failed to
+   * measure. They count for pass@k but enter no ranking until re-measured. */
+  adminHarnessErrors: () =>
+    request<{ count: number; items: HarnessErrorRow[] }>(
+      `/api/admin/integrity/harness-errors`),
+  /** Suspicious solutions to label invalid or ok (the speed outliers plus
+   * every solution that already has a verdict). */
+  adminReviewQueue: (competition: string | null, status: ReviewStatus) => {
+    const qs = new URLSearchParams({ status });
+    if (competition) qs.set("competition", competition);
+    return request<ReviewQueueResponse>(`/api/admin/integrity/review?${qs.toString()}`);
+  },
+  adminReviewDetail: (attemptId: number) =>
+    request<ReviewDetail>(`/api/admin/integrity/review/${attemptId}`),
+  adminSetReview: (attemptId: number, verdict: ReviewVerdict, note?: string) =>
+    request<{ attempt_id: number; review: SolutionReview }>(
+      `/api/admin/integrity/review/${attemptId}`,
+      { method: "PUT", body: JSON.stringify({ verdict, note: note || null }) }),
+  adminClearReview: (attemptId: number) =>
+    request<null>(`/api/admin/integrity/review/${attemptId}`, { method: "DELETE" }),
   /** Builds the download URL with auth fold-in so the admin can just click.
    * `includeCredentials` only has effect when `leetcode_accounts` is in the
    * tables list — when true, the bundle ships raw session cookies; when

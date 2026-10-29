@@ -1510,6 +1510,13 @@ class AttemptResult(BaseModel):
     # many times faster than the peer median it was. See app.integrity.
     speed_outlier: bool = False
     speed_ratio: float | None = None
+    # An admin's verdict on the solution (invalid | ok), or None if not
+    # reviewed. An invalid solution counts for pass@k but enters no
+    # performance ranking and sets no golden-baseline value.
+    review_verdict: str | None = None
+    # The correctness oracle accepted the solution, but the harness failed to
+    # measure it (models.Attempt.harness_error). Same consequences as invalid.
+    harness_error: str | None = None
     submitted_at: datetime | None
     runs: list[AttemptRunDetail]
     # Same shape submission_detail returns on its traces[] — so the
@@ -1653,6 +1660,11 @@ class LeetCodeAccountsResponse(BaseModel):
     # safe (they just don't pace by it).
     min_gap_s: float = 0.0
     accounts: list[LeetCodeAccountStatus]
+
+
+class SolutionReviewIn(BaseModel):
+    verdict: str = Field(pattern="^(invalid|ok)$", description="invalid | ok")
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class MemoryRemeasureItem(BaseModel):

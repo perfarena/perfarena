@@ -319,6 +319,13 @@ class Attempt(SQLModel, table=True):
     # retry signal. Polling endpoints surface it so the sweep client can
     # tell the user WHY rather than hanging on a useless poll loop.
     dispatch_warning: str | None = None
+    # The correctness oracle accepted the solution, but the performance harness
+    # failed to measure it (e.g. a harness bug or a library missing on the
+    # runner). Holds the harness's verdict and note. The attempt keeps
+    # final_status "Accepted", so it counts for pass@k, but it has no
+    # performance value and enters no ranking (integrity.invalid_attempt_ids)
+    # until a re-measure succeeds. Admins see these on the Admin page.
+    harness_error: str | None = None
     # $ cost of the single LLM call that produced THIS sample. 0 for local /
     # Ollama models; for paid APIs the client computes it from token pricing.
     # Snapshot value — captured at submit time using the rates configured on
@@ -834,3 +841,19 @@ class AppSetting(SQLModel, table=True):
     value: str = Field(description="stringified value; cast per the registry")
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     updated_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class SolutionReview(SQLModel, table=True):
+    """An admin's verdict on one accepted solution: may it enter the rankings?
+    `invalid` marks a solution that may not; for now, that is only a solution
+    that runs code in another language to solve its problem (e.g. C compiled and
+    called through ctypes). `ok` marks a reviewed solution that stands, which for
+    now includes one that skips work or uses another algorithm. One row per attempt,
+    and no row means not reviewed. An invalid solution still counts for pass@k,
+    but it enters no performance ranking or comparison and sets no
+    golden-baseline value (see integrity.invalid_attempt_ids)."""
+    attempt_id: int = Field(primary_key=True, foreign_key="attempt.id")
+    verdict: str = Field(index=True, description="invalid | ok")
+    note: str | None = None
+    reviewed_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_by_user_id: int | None = Field(default=None, foreign_key="user.id")

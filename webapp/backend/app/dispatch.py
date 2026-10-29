@@ -36,6 +36,7 @@ from sqlmodel import Session, select
 
 from . import leetcode_dist
 from . import app_settings
+from . import integrity
 from .db import engine
 from . import replicas
 from .models import (
@@ -1288,11 +1289,30 @@ def _aggregate_attempt(a: Attempt, runs: list[dict], *, partial: bool = False) -
         # Majority rule: a correct solution is Accepted on (almost) every run; a
         # flaky/borderline one is not. Metrics are computed over accepted runs only.
         is_accepted = len(accepted) >= math.ceil(len(runs) / 2) if runs else False
+        non = [s for s in statuses if s != "Accepted"] or statuses
         if is_accepted:
             a.final_status = "Accepted"
+            a.harness_error = None
+        elif runs and all(r.get("oracle_accepted") for r in runs):
+            # The correctness oracle accepted the solution, but the harness
+            # failed to measure it. Keep the oracle's verdict, so pass@k counts
+            # the solution, and record the failure. The attempt then gives no
+            # performance value and enters no ranking.
+            a.final_status = "Accepted"
+            verdict = Counter(non).most_common(1)[0][0]
+            raw = next((r.get("raw_response") for r in runs if r.get("status_msg") == verdict
+                        and isinstance(r.get("raw_response"), dict)), None) or {}
+            # The first line of the harness's error log, else its note; the run
+            # detail view shows the full log.
+            note = (str(raw.get("error_log") or "").strip().splitlines() or [raw.get("note")])[0]
+            a.harness_error = (f"{verdict}: {note}" if note else verdict)[:300]
+            accepted = []
+            print(f"[dispatch] attempt {a.id}: HARNESS ERROR — the correctness "
+                  f"oracle accepted it, but the measurement failed "
+                  f"({a.harness_error})", file=sys.stderr)
         else:
-            non = [s for s in statuses if s != "Accepted"] or statuses
             a.final_status = Counter(non).most_common(1)[0][0] if non else "Unknown"
+            a.harness_error = None
 
     rt = [r["runtime_ms"] for r in accepted if r.get("runtime_ms") is not None]
     mem = [r["memory_mb"] for r in accepted if r.get("memory_mb") is not None]
@@ -1592,6 +1612,11 @@ def _run_remote_attempt(session: Session, sub: Submission, a: Attempt,
         meta=_submission_meta(sub, attempt=a,
                               submission_id=sub.id, attempt_id=a.id),
     )
+    if gate_verdict is not None:
+        # The correctness oracle accepted the solution, so a failed measurement
+        # is a harness error, not a verdict on the solution (_aggregate_attempt).
+        for r in runs:
+            r["oracle_accepted"] = True
     return runs, dispatch_warn
 
 
@@ -1645,6 +1670,7 @@ def _finalize_submission(session: Session, sub: Submission,
     #               problem, averaged across all supported problems.
     k = max(1, sub.n_samples_per_problem or 1)
     p1_sum = pfull_sum = 0.0
+    invalid = integrity.invalid_attempt_ids(session)
     total_attempts = 0       # samples actually submitted across all problems
     total_accepted = 0       # accepted samples across all problems
     for pid, atts in by_problem.items():
@@ -1658,11 +1684,15 @@ def _finalize_submission(session: Session, sub: Submission,
         accepted_atts = [a for a in atts if a.final_status == "Accepted"]
         if not accepted_atts:
             continue
-        best = max(accepted_atts, key=lambda a: (
+        solved += 1
+        # A solution labelled invalid counts as solved but gives no performance value.
+        valid_atts = [a for a in accepted_atts if a.id not in invalid]
+        if not valid_atts:
+            continue
+        best = max(valid_atts, key=lambda a: (
             (a.n_accepted_runs / a.n_runs) if a.n_runs else 0.0,
             -(a.avg_runtime_ms if a.avg_runtime_ms is not None else 1e18),
         ))
-        solved += 1
         if best.avg_runtime_ms is not None:    avg_rt.append(best.avg_runtime_ms)
         if best.best_runtime_ms is not None:   best_rt.append(best.best_runtime_ms)
         if best.avg_memory_mb is not None:     avg_mem.append(best.avg_memory_mb)
@@ -2424,6 +2454,7 @@ def _recompute_human_coefficients(session: Session, language: str) -> None:
     ).all()
     if not subs:
         return
+    invalid = integrity.invalid_attempt_ids(session)
     baselines = {
         b.problem_id: b
         for b in session.exec(
@@ -2439,7 +2470,8 @@ def _recompute_human_coefficients(session: Session, language: str) -> None:
             by_problem.setdefault(a.problem_id, []).append(a)
         t_h_avg, t_h_exp, m_h_avg, m_h_exp = [], [], [], []
         for pid, atts in by_problem.items():
-            accepted_atts = [a for a in atts if a.final_status == "Accepted"]
+            accepted_atts = [a for a in atts if a.final_status == "Accepted"
+                             and a.id not in invalid]          # labelled invalid: no performance
             if not accepted_atts:
                 continue
             best = max(accepted_atts, key=lambda a: (
