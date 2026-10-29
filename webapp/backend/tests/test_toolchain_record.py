@@ -29,6 +29,7 @@ def _tree(tmp_path: Path, monkeypatch) -> Path:
     (root / "perfarena.mk").write_text("# mk\n")
     (root / "selection" / "run_harness.sh").write_text("#!/bin/sh\n")
     (root / "selection" / "harness.js").write_text("// v1\n")
+    (root / "selection" / "harness_node_common.js").write_text("// loop\n")
     cell = root / "JavaScript" / "leetcode" / "two-sum"
     cell.mkdir(parents=True)
     bin_dir = tmp_path / "bin"
@@ -47,7 +48,7 @@ def test_record_has_harness_hashes_and_tool_versions(tmp_path, monkeypatch):
     cell = _tree(tmp_path, monkeypatch)
     tc = h._toolchain(cell, "two-sum", "javascript")
     assert set(tc["harness"]) == {"selection/run_harness.sh", "selection/harness.js",
-                                  "perfarena_handler.py"}
+                                  "selection/harness_node_common.js", "perfarena_handler.py"}
     assert tc["tools"]["node"] == "v20.20.2"
     # A changed harness file changes only its own hash.
     before = tc["harness"]

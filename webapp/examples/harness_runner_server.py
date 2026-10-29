@@ -804,6 +804,9 @@ def _normalise(row: dict) -> dict:
             # and stamps energy_tool / machine on the Submission.
             "iterations", "energy_j_per_op", "time_us_per_op",
             "energy_tool", "machine", "config",
+            # harness file hashes and tool versions (perfarena_handler._toolchain),
+            # recorded on the Run only
+            "toolchain",
             # `error_log` — human-readable one-shot summary of a compile /
             # validate / runtime failure. Handlers populate this on any
             # non-Accepted result; the arena backend surfaces it to the

@@ -982,9 +982,14 @@ _MAKE_BUILD_INPUTS = ("Makefile", "*.csproj", "test_suite.cpp", "TestSuite.java"
                       "test_suite.ts", "test_suite.py", "test_suite.js",
                       "test_suite.php", "problem.json")
 _HARNESS_BUILD_INPUTS = {"cpp": ("harness_cpp.py",),
+                         "c": ("harness_c.py", "harness_cpp.py"),
+                         "scala": ("harness_scala.py", "harness_cpp.py"),
+                         "elixir": ("harness.exs", "elixir_hns.exs"),
+                         "erlang": ("perf_harness.erl", "node.hrl"),
                          "java": ("Harness.java", "TreeNode.java", "ListNode.java"),
+                         "kotlin": ("Harness.java", "TreeNode.java", "ListNode.java"),
                          "csharp": ("Harness.cs",),
-                         "typescript": ("harness_ts.js",)}
+                         "typescript": ("harness_ts.js", "harness_node_common.js")}
 
 
 # ---- toolchain record: what a run's numbers depend on besides the solution ----
@@ -994,7 +999,8 @@ _HARNESS_BUILD_INPUTS = {"cpp": ("harness_cpp.py",),
 # re-measure; an analysis can still tell which runs share a harness and tools.
 # LeetCode harness sources in selection/, beyond run_harness.sh (a Python cell
 # carries its own test_suite.py).
-_HARNESS_SOURCES = {**_HARNESS_BUILD_INPUTS, "javascript": ("harness.js",),
+_HARNESS_SOURCES = {**_HARNESS_BUILD_INPUTS,
+                    "javascript": ("harness.js", "harness_node_common.js"),
                     "php": ("harness.php",), "ruby": ("harness.rb",)}
 # argv that prints each tool's version (first line kept).
 _TOOL_VERSION_ARGV: dict[str, list[str]] = {
