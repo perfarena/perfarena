@@ -1,0 +1,67 @@
+{
+ "Energy-Languages/selection/Harness.java": {
+  "bicho_before_md5": "5fd5935c6b0f994219d3b4a138369e49",
+  "md5": "63c08ab04ddd4de09db3d485a16c4a3b",
+  "sha16": "d8e027da1d9cbb56"
+ },
+ "Energy-Languages/selection/elixir_hns.exs": {
+  "bicho_before_md5": "7de6cd408c1284764aff8d603c4579e6",
+  "md5": "cbbadb9c74368450cecbe34cb361beeb",
+  "sha16": "f5a7b8dd0a836ded"
+ },
+ "Energy-Languages/selection/harness.exs": {
+  "bicho_before_md5": "8ae170be32f3e795ebefbd66c9f470cd",
+  "md5": "9436046cac32b413bba138635ca106de",
+  "sha16": "bc9bcc8a6d0ad282"
+ },
+ "Energy-Languages/selection/harness.js": {
+  "bicho_before_md5": "143bf82355e796f6ae625543b692ed4a",
+  "md5": "25f54edf1d1724a327261dde43e6c668",
+  "sha16": "720270a9d4428600"
+ },
+ "Energy-Languages/selection/harness_c.py": {
+  "bicho_before_md5": "4197f77e00ef5c22ac92d3a99f0241a2",
+  "md5": "639a5022bb4a824455ada43e31637d72",
+  "sha16": "44a25f5cfa81867b"
+ },
+ "Energy-Languages/selection/harness_cpp.py": {
+  "bicho_before_md5": "e8d98cfd39765e022402cb9ca807a4c8",
+  "md5": "af13a71c7645fada0a44f25c356e169f",
+  "sha16": "f0f2ac3cc18e7495"
+ },
+ "Energy-Languages/selection/harness_node_common.js": {
+  "bicho_before_md5": "absent",
+  "md5": "12e79b72166485ac5a331fb49c04beb1",
+  "sha16": "6c59ea52152f5c0e"
+ },
+ "Energy-Languages/selection/harness_scala.py": {
+  "bicho_before_md5": "5173816b34d0b48ba979e29279517452",
+  "md5": "aa1948f97f3d669c4a9d303dab160e5f",
+  "sha16": "a8d150af7e29beb5"
+ },
+ "Energy-Languages/selection/harness_ts.js": {
+  "bicho_before_md5": "7fc5dac38cf810203d401dc4c59f981b",
+  "md5": "b0f1d91134fc832ad658fc0f5160fa5d",
+  "sha16": "fd9bbab59da88e10"
+ },
+ "Energy-Languages/selection/perf_harness.erl": {
+  "bicho_before_md5": "aad45328fe02444ca0a3289b92e19fd0",
+  "md5": "fb7bba343369d25306639f68f864126a",
+  "sha16": "dfe67607e29ffead"
+ },
+ "Energy-Languages/selection/run_harness.sh": {
+  "bicho_before_md5": "4a8177dec0a526157f35d428cc2f216b",
+  "md5": "0f9dd4cc6a99fe97adaf3e46d4204fbe",
+  "sha16": "3b70fc14c663ea8b"
+ },
+ "webapp/examples/harness_runner_server.py": {
+  "bicho_before_md5": "4b6fd266ba14e2401604925d950aa150",
+  "md5": "d189825aefdadbbabfb5b69ba95085f9",
+  "sha16": "bacd8a99764ad8b3"
+ },
+ "webapp/examples/perfarena_handler.py": {
+  "bicho_before_md5": "18f8776978a16eb33fc57dfe54924ac8",
+  "md5": "7f3187eadaab6c9c89de744389870c3a",
+  "sha16": "08bf1c047e0bddd0"
+ }
+}
