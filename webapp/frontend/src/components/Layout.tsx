@@ -139,7 +139,7 @@ export default function Layout() {
               {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
             </>
           )}
-          {" "}<a href="https://github.com/sanadlab/perfarena-leetcode" target="_blank" rel="noreferrer">source</a>
+          {" "}<a href="https://github.com/perfarena/perfarena" target="_blank" rel="noreferrer">source</a>
         </div>
         {/* Consolidated from the former per-page footers on Home / About. */}
         <div>
