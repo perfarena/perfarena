@@ -8,6 +8,10 @@ already holds. Nothing is generated, dispatched, or measured again.
 
 A golden cell takes each metric from the LLM that is best in that metric,
 so one cell can combine the latency of one LLM with the memory of another.
+The values are the ones that the rankings compare (ranking_api.load), as in
+the paper: the mean latency, the package energy (CodeCarbon's total minus its
+10 W RAM estimate), and the first memory reading. So a golden attempt stores
+package energy, not a CodeCarbon total, and holds one energy value per cell.
 Its code, tokens, generation time, and cost are those of the latency winner.
 The rankings list the golden baseline as a reference row and keep it out of
 the Bradley-Terry fit (ranking_api.REFERENCE_KIND).
@@ -149,14 +153,14 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
             "avg_runtime_ms", "best_runtime_ms", "avg_memory_mb", "best_memory_mb",
             "avg_runtime_energy_j", "best_runtime_energy_j")}
         for pid, c in sorted(cells.items()):
-            # The winner of a metric has the lowest value; a tie goes to the
-            # first entrant key, so a rebuild picks the same solutions.
-            winner = {}
-            for m, attr in rk.METRICS.items():
-                vals = [(getattr(a, attr), k) for k, (a, _s) in c.items()
-                        if getattr(a, attr) is not None and getattr(a, attr) > 0
+            # The winner of a metric has the lowest ranked value; a tie goes to
+            # the first entrant key, so a rebuild picks the same solutions.
+            winner, best = {}, {}
+            for m in rk.METRICS:
+                ranked = d["cells"][m].get((lang, pid), {})
+                vals = [(ranked[k], k) for k in c if k in ranked
                         and (entrants[k].model_name, lang, slug(pid)) not in excluded]
-                winner[m] = min(vals)[1] if vals else None
+                winner[m], best[m] = (min(vals)[1], min(vals)[0]) if vals else (None, None)
             src = winner["latency"] or winner["energy"] or winner["memory"] or min(c)
             sa, ss = c[src]
 
@@ -181,9 +185,8 @@ def build(session: Session, competition: str, *, frozen_on: date, user_id: int,
                 round_index=0, n_runs=1, n_accepted_runs=1, final_status="Accepted",
                 avg_runtime_ms=take("latency", "avg_runtime_ms"),
                 best_runtime_ms=take("latency", "best_runtime_ms"),
-                avg_runtime_energy_j=take("energy", "avg_runtime_energy_j"),
-                best_runtime_energy_j=take("energy", "best_runtime_energy_j"),
-                avg_memory_mb=take("memory", "avg_memory_mb"),
+                avg_runtime_energy_j=best["energy"], best_runtime_energy_j=best["energy"],
+                avg_memory_mb=best["memory"],
                 best_memory_mb=take("memory", "best_memory_mb"),
                 avg_iterations=sa.avg_iterations,
                 response_tokens=sa.response_tokens, prompt_tokens=sa.prompt_tokens,

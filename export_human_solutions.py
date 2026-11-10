@@ -2,7 +2,7 @@
 problem's solutions into <out>/<slug>/<lang>/solution-<nr>.<ext>.
 
 Usage:
-    python sample_solutions.py [--top 30] [--out sampled_solutions]
+    python export_human_solutions.py [--top 30] [--out human_solutions]
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--solutions", default="data/solutions.parquet")
     ap.add_argument("--top", type=int, default=30, help="problems per difficulty level")
-    ap.add_argument("--out", default="sampled_solutions")
+    ap.add_argument("--out", default="human_solutions")
     args = ap.parse_args()
 
     solutions = pd.read_parquet(args.solutions)

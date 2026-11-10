@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import math
 import threading
+import zlib
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -32,7 +33,18 @@ import numpy as np
 
 METRICS = {"latency": "avg_runtime_ms", "energy": "avg_runtime_energy_j",
            "memory": "avg_memory_mb"}
+# The names of the metrics in the paper's analysis (figs/scripts/bt_analysis.py).
+# They key its random streams, so they key the streams here too.
+PAPER_METRIC = {"latency": "runtime_ms", "energy": "runtime_energy_j", "memory": "memory_mb"}
 ALPHA = 0.05
+
+
+def stream(seed: int, *key) -> np.random.Generator:
+    """The random generator of one named analysis (bt_analysis.stream). With
+    the same name and the same units in the same order, the bootstrap draws
+    the paper's samples."""
+    return np.random.default_rng(np.random.SeedSequence(
+        [seed] + [zlib.crc32(str(k).encode()) for k in key]))
 
 
 @dataclass
@@ -237,8 +249,11 @@ def restrict(duels, keys: list[str], sub: list[str]):
 
 
 def analyse_metric(cells: dict, keys: list[str], margin_pct, settings: Settings,
-                   n_problems: int, per_language_min: bool, rng: np.random.Generator) -> dict:
-    """Ratings, win probabilities, and tied leaders of one metric."""
+                   n_problems: int, per_language_min: bool,
+                   rng_of: Callable[[str], np.random.Generator]) -> dict:
+    """Ratings, win probabilities, and tied leaders of one metric. `rng_of`
+    gives the random generator of the bootstrap for its unit ("problems" or
+    "cells")."""
     duels = duel_matrices(cells, keys, margin_pct)
     sub = rated_keys(duels, keys, settings.min_cells) if per_language_min else \
         rated_keys(duels, keys, 1)
@@ -255,7 +270,7 @@ def analyse_metric(cells: dict, keys: list[str], margin_pct, settings: Settings,
         units, unit = list(groups.values()), "problems"
     else:
         units, unit = [W for _, _, W in duels], "cells"
-    beats, n_sig = significance(sub, point, units, settings.bootstrap, rng)
+    beats, n_sig = significance(sub, point, units, settings.bootstrap, rng_of(unit))
     ratings = {k: float(point[i]) for i, k in enumerate(sub)}
     leaders = [k for k in sub if not any(k in beats[o] for o in sub)]
     return dict(rated=sub, ratings=ratings, win_prob=avg_win_prob(ratings),
@@ -299,14 +314,23 @@ def head_to_head(cells: dict, a: str, b: str, margin_pct) -> dict:
 
 
 def rank(cells_by_metric: dict[str, dict], keys: list[str], settings: Settings,
-         n_problems: int, single_language: bool) -> dict:
+         n_problems: int, single_language: bool, competition: str = "",
+         language: str | None = None) -> dict:
     """The full analysis: one result per metric, plus the Pareto levels over
-    the metrics that hold data (LeetCode measures no energy)."""
+    the metrics that hold data (LeetCode measures no energy). The bootstrap
+    of each metric draws from the paper's stream: (competition, metric,
+    "boot", unit) for all languages, and (competition, metric, "lang",
+    language) for one language."""
     out = {}
     for m, cells in cells_by_metric.items():
-        rng = np.random.default_rng(np.random.SeedSequence([settings.seed, len(m), ord(m[0])]))
+        name = PAPER_METRIC.get(m, m)
+
+        def rng_of(unit: str, name: str = name) -> np.random.Generator:
+            if single_language and language:
+                return stream(settings.seed, competition, name, "lang", language)
+            return stream(settings.seed, competition, name, "boot", unit)
         out[m] = analyse_metric(cells, keys, settings.tie_pct[m], settings, n_problems,
-                                single_language, rng)
+                                single_language, rng_of)
     measured = [m for m in cells_by_metric if out[m]["rated"]]
     rated_all = [k for k in keys if measured and all(k in out[m]["rated"] for m in measured)]
     out["pareto"] = pareto(rated_all, {m: out[m]["beats"] for m in measured})

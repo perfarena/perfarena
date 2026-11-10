@@ -342,3 +342,41 @@ def test_memory_is_the_first_accepted_reading():
         assert first_memory_readings(s, [a.id]) == {a.id: 11.0}
         d = load(s, "memory-test")
     assert d["cells"]["memory"][("java", pid)]["mem-llm|direct|r1"] == 11.0
+
+
+def _paper_stream_state(*key):
+    # bt_analysis.stream of the paper: SeedSequence([SEED] + crc32 of each name)
+    import zlib
+    return np.random.default_rng(np.random.SeedSequence(
+        [0] + [zlib.crc32(str(k).encode()) for k in key])).bit_generator.state
+
+
+def test_bootstrap_draws_the_paper_random_stream(monkeypatch):
+    seen = {}
+    real = rk.significance
+
+    def spy(keys, point, units, n_boot, rng):
+        seen.setdefault(len(seen), rng.bit_generator.state)
+        return real(keys, point, units, n_boot, rng)
+    monkeypatch.setattr(rk, "significance", spy)
+    cells = {("py", i): {"a": 10.0, "b": 12.0 if i % 3 else 9.0} for i in range(12)}
+    s = rk.Settings(tie_pct={"latency": 1.0, "energy": 1.0, "memory": 1.0}, bootstrap=50,
+                    min_problem_clusters=10)
+    rk.rank({"latency": cells, "energy": cells, "memory": {}}, ["a", "b"], s, n_problems=12,
+            single_language=False, competition="leetcode-99-perf")
+    assert seen[0] == _paper_stream_state("leetcode-99-perf", "runtime_ms", "boot", "problems")
+    assert seen[1] == _paper_stream_state("leetcode-99-perf", "runtime_energy_j", "boot", "problems")
+    seen.clear()
+    rk.rank({"latency": cells, "energy": {}, "memory": {}}, ["a", "b"], s, n_problems=12,
+            single_language=True, competition="clbg-10", language="py")
+    assert seen[0] == _paper_stream_state("clbg-10", "runtime_ms", "lang", "py")
+
+
+def test_cells_follow_the_paper_order():
+    # Languages, then problem slugs: the order of the paper's units.
+    from app.ranking_api import load
+    with Session(engine) as s:
+        d = load(s, COMP)
+        slug = {p.id: p.title_slug for p in s.exec(select(Problem)).all()}
+    keys = [(lang, slug[pid]) for lang, pid in d["cells"]["latency"]]
+    assert len(keys) > 2 and keys == sorted(keys)

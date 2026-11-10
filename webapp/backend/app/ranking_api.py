@@ -29,7 +29,7 @@ from .auth import current_admin
 from .db import get_session
 from . import integrity
 from .models import (
-    Agent, Attempt, Competition, CompetitionProblem, Harness, Run, SolutionReview,
+    Agent, Attempt, Competition, CompetitionProblem, Harness, Problem, Run, SolutionReview,
     Submission, SubmissionStatus, User,
 )
 
@@ -224,7 +224,8 @@ def load(session: Session, competition: str, *, harness: str | None = None,
             finals_by_cell[(lang, pid)][key] = (a, src)
             for m, attr in rk.METRICS.items():
                 v = getattr(a, attr)
-                if m == "energy":
+                # A golden baseline already stores package energy (golden_baseline.py).
+                if m == "energy" and e.agent_kind != REFERENCE_KIND:
                     v = package_energy(v, a.avg_runtime_ms, src.energy_tool,
                                        comp.kind != "leetcode")
                 elif m == "memory":
@@ -243,8 +244,15 @@ def load(session: Session, competition: str, *, harness: str | None = None,
                     e.cost_usd += c
                     e.n_costed += 1
     entrants = {k: e for k, e in entrants.items() if e.submission_ids}
+    # The cells in the paper's order (languages, then problem slugs), so the
+    # bootstrap resamples the same units in the same order (rk.rank).
+    slug = {p.id: p.title_slug for p in session.exec(
+        select(Problem).where(Problem.id.in_(list(problem_ids)))).all()}
+
+    def ordered(c: dict) -> dict:
+        return {lp: c[lp] for lp in sorted(c, key=lambda lp: (lp[0], slug.get(lp[1], "")))}
     return dict(competition=comp, harness=harness, entrants=entrants,
-                cells={m: dict(c) for m, c in cells.items()}, languages=languages,
+                cells={m: ordered(c) for m, c in cells.items()}, languages=languages,
                 n_problems=len(problem_ids), finals=dict(finals_by_cell),
                 invalid_finals=dict(invalid_by_cell))
 
@@ -289,7 +297,8 @@ def compute_efficiency_rankings(session: Session, competition: str, *, harness=N
     partial = {k for k, e in d["entrants"].items()
                if e.n_attempted * 3 < e.n_cells} - reference
     keys = sorted(k for k in d["entrants"] if k not in partial | reference)
-    res = rk.rank(d["cells"], keys, settings, d["n_problems"], single_language=bool(language))
+    res = rk.rank(d["cells"], keys, settings, d["n_problems"], single_language=bool(language),
+                  competition=competition, language=language)
     rows = []
     for k in sorted(d["entrants"]):
         e = d["entrants"][k]

@@ -205,3 +205,51 @@ def test_excluded_solutions_never_set_a_golden_value(client):
     assert a.trace["golden_baseline"]["sources"]["latency"]["model"] == "en-llm"
     # the same LLM still sets the latency of its other cells
     assert _golden("cpp", "add-digits").avg_runtime_ms == 2.0
+
+
+def test_golden_values_are_the_paper_values(client):
+    # pkg-llm wins energy by package energy (3.0 J - 10 W x 0.2 s = 1.0 J) but
+    # not by total (tot-llm: 2.0 J total, 1.4 J package). tot-llm wins memory by
+    # its first reading (11 MB), although pkg-llm has the lower mean (10 MB).
+    with Session(engine) as s:
+        harness = s.exec(select(Harness).where(Harness.slug == "leetcode")).one()
+        comp = Competition(slug="golden-paper", name="Golden paper values",
+                           harness_id=harness.id, compatible_harness_slugs=["leetcode"])
+        s.add(comp); s.commit(); s.refresh(comp)
+        cid = comp.id
+        pid = s.exec(select(Problem).where(Problem.title_slug == "two-sum")).one().id
+        s.add(CompetitionProblem(competition_id=cid, problem_id=pid))
+        user = s.exec(select(User)).first()
+        for model, ms, joules, mems in [("pkg-llm", 200.0, 3.0, (12.0, 8.0)),
+                                        ("tot-llm", 60.0, 2.0, (11.0, 11.0))]:
+            sub = Submission(user_id=user.id, model_name=model, model_version="v1",
+                             language="python3", prompt_template="p", model_params={},
+                             status=SubmissionStatus.judged, competition_id=cid,
+                             harness_id=harness.id, energy_tool="codecarbon", created_at=BEFORE)
+            s.add(sub); s.commit(); s.refresh(sub)
+            a = Attempt(submission_id=sub.id, problem_id=pid, code=model, inference_trace="t",
+                        round_index=0, n_runs=2, final_status="Accepted", avg_runtime_ms=ms,
+                        avg_runtime_energy_j=joules, avg_memory_mb=sum(mems) / 2,
+                        best_memory_mb=min(mems), logged_at=BEFORE)
+            s.add(a); s.commit(); s.refresh(a)
+            for i, mem in enumerate(mems, 1):
+                s.add(Run(attempt_id=a.id, run_index=i, status_msg="Accepted", memory_mb=mem))
+            s.commit()
+    r = client.post("/api/admin/golden-baseline",
+                    json={"competition": "golden-paper", "models": ["pkg-llm", "tot-llm"]},
+                    headers=ADMIN)
+    assert r.status_code == 201, r.text
+    with Session(engine) as s:
+        sub = s.exec(select(Submission).where(Submission.model_name == "golden-baseline",
+                                              Submission.competition_id == cid)).one()
+        g = s.exec(select(Attempt).where(Attempt.submission_id == sub.id)).one()
+    assert g.avg_runtime_ms == 60.0
+    assert g.avg_runtime_energy_j == pytest.approx(1.0)
+    assert g.avg_memory_mb == 11.0
+    assert g.trace["golden_baseline"]["sources"]["energy"]["model"] == "pkg-llm"
+    # the head-to-head ratios to the golden baseline use the same values
+    for model, energy, memory in [("pkg-llm", 1.0, 12 / 11), ("tot-llm", 1.4, 1.0)]:
+        h = client.get("/api/head-to-head", params={"competition": "golden-paper", "a": model,
+                                                    "b": "golden-baseline"}).json()["metrics"]
+        assert h["energy"]["ratio"] == pytest.approx(energy)
+        assert h["memory"]["ratio"] == pytest.approx(memory)
