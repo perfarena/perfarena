@@ -139,7 +139,7 @@ export default function LanguageDetail() {
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
-                <Th label="#" tip="Row position under the current sort. Click any sortable header to re-sort; click again to flip the direction." />
+                <Th label="#" tip="Row position in the current sort order. Click a sortable header to sort by that column. Click it again to reverse the order." />
                 <Th label="Model" tip="Model name and version. Click the name to open the model's aggregate page." sortKey="model_name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Submitter" tip="Submitter: organization or individual who submitted the batch. Click to open all of their submissions." sortKey="submitter" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="Prompt" tip="Registered prompt template used. Click to compare prompts." />
@@ -149,9 +149,9 @@ export default function LanguageDetail() {
                 <Th label="Peak mem" tip="Mean peak (max resident) memory across accepted problems. Lower is better." sortKey="avg_memory_mb" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 {SHOW_RELATIVE_METRICS && <Th label="Runtime %ile" tip="Mean per-problem LeetCode runtime percentile across accepted attempts. Higher is better." sortKey="avg_runtime_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
                 {SHOW_RELATIVE_METRICS && <Th label="Memory %ile" tip="Mean per-problem LeetCode memory percentile across accepted attempts. Higher is better." sortKey="avg_memory_percentile" activeKey={sortKey} dir={sortDir} onSort={onSort} />}
-                <Th label="Cost" tip="Total $ across all attempts in this submission. Recomputed live from the model's current $/1M-token rates when set on /models." sortKey="total_cost_usd" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Gen time" tip="Total generation wall-clock summed across attempts." sortKey="total_generation_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-                <Th label="Gen energy" tip="Total generation energy (Joules). Only present when the submit client measured it (NVML / RAPL / provider telemetry)." sortKey="total_generation_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Cost" tip="Total $ across all attempts in this submission. When the model has $/1M-token rates on /models, the platform recomputes the cost live from those current rates." sortKey="total_cost_usd" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Gen time" tip="Total generation wall-clock time, summed across attempts." sortKey="total_generation_ms" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+                <Th label="Gen energy" tip="Total generation energy (joules). Present only when the submit client measured it (with NVML, RAPL, or provider telemetry)." sortKey="total_generation_energy_j" activeKey={sortKey} dir={sortDir} onSort={onSort} />
                 <Th label="" />
               </tr></thead>
               <tbody>
@@ -175,7 +175,7 @@ export default function LanguageDetail() {
                     <td className="metric">{m.total_cost_usd == null ? "–" : `$${m.total_cost_usd.toFixed(4)}`}</td>
                     <td className="metric">{formatDuration(m.total_generation_ms)}</td>
                     <td className="metric">{formatEnergy(m.total_generation_energy_j)}</td>
-                    <td><Link to={`/submissions/${m.submission_id}`}>details →</Link></td>
+                    <td><Link to={`/submissions/${m.submission_id}`}>Details →</Link></td>
                   </tr>
                 ))}
               </tbody>

@@ -66,7 +66,7 @@ export default function Home() {
       <section className="hero" style={{ paddingBottom: 0 }}>
         {/* Hero logo. Same /logo.png the header + favicon use; degrades to
             the wordmark below if the file isn't present. */}
-        <img src="/logo.png" alt=""
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt=""
              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
              style={{ height: 96, width: 96, display: "block", marginBottom: 12 }} />
         <h1 style={{ fontSize: "2.4rem", lineHeight: 1.1 }}>
@@ -75,14 +75,15 @@ export default function Home() {
         <p style={{ maxWidth: 760, fontSize: "1.1rem", lineHeight: 1.5 }}>
           PerfArena runs open, replicable competitions that rank language
           models by how well the code they generate performs. Each
-          competition brings its own problem set and its own oracles: a
-          correctness oracle decides whether a solution is right, a
-          performance oracle measures how it runs. The seed{" "}
-          {primary?.n_problems ?? 99}-problem LeetCode set sits alongside any
-          new set the team adds, and each set keeps its own leaderboard. We
-          run every registered model ourselves, from prompt to solution to
-          analysis, so every result is verified and reproducible, with its
-          full provenance anchored in an append-only hash chain.
+          competition has its own problem set and its own oracles. A
+          correctness oracle decides whether a solution is correct. A
+          performance oracle measures how the solution runs. The team can add
+          new problem sets next to the seed{" "}
+          {primary?.n_problems ?? 99}-problem LeetCode set, and each set has
+          its own leaderboard. We run every registered model ourselves, from
+          the prompt to the solution to the analysis. Thus, every result is
+          verified and reproducible. An append-only hash chain records the
+          full provenance of each result.
         </p>
         <div className="row" style={{ marginTop: 16, gap: 12, flexWrap: "wrap" }}>
           <Link to="/competitions"><button>Browse competitions</button></Link>
@@ -95,7 +96,7 @@ export default function Home() {
       <section className="col" style={{ gap: 12 }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <h2 style={{ margin: 0 }}>Competitions</h2>
-          <Link to="/competitions" className="muted">all competitions →</Link>
+          <Link to="/competitions" className="muted">All competitions →</Link>
         </div>
         {comps.length === 0 ? (
           <div className="empty">No competitions yet.</div>
@@ -140,8 +141,9 @@ export default function Home() {
         ) : (
           <>
             <div className="muted" style={{ fontSize: "0.85rem", marginBottom: 8 }}>
-              Rank by language (1 = best), from each model's win probability on the
-              problems that both models solved. Hover a point for its value.
+              Rank by language (1 = best). Each rank comes from the model's win
+              probability on the problems that both models in a pair solved.
+              Hover over a point to see its value.
             </div>
             {/* Inner tabs: one chart per metric. The chosen metric stays when
                 the competition changes, and a model keeps one color in all charts. */}
@@ -175,15 +177,15 @@ export default function Home() {
           </Point>
           <Point title="Transparent end to end">
             We host the platform and run every step ourselves, from generating
-            the code to executing and measuring it. Every result keeps its full
-            record, so anyone can check how it was produced.
+            the code to executing and measuring it. We keep the full record of
+            every result, so anyone can check how we produced it.
           </Point>
           <Point title="Built to extend">
-            New <Link to="/competitions">competitions</Link>,{" "}
+            We can add new <Link to="/competitions">competitions</Link>,{" "}
             <Link to="/models">models</Link>,{" "}
-            <Link to="/prompts">prompt templates</Link>, and AI agent workflows
-            can be added. The platform is not tied to one problem set or one way
-            of writing code.
+            <Link to="/prompts">prompt templates</Link>, and AI agent workflows.
+            The platform is not tied to one problem set or one way of generating
+            code.
           </Point>
         </div>
       </section>
@@ -191,11 +193,11 @@ export default function Home() {
       <section>
         <h2>Ground rules</h2>
         <ul className="muted" style={{ lineHeight: 1.7 }}>
-          <li>Every submission belongs to one competition, and each leaderboard is computed from that competition's own problem set.</li>
-          <li>Each model runs on one of the published <Link to="/prompts">prompt templates</Link>, and the exact prompt is part of every submission's record.</li>
-          <li>Model identity is captured with a provider-agnostic digest (Ollama sha256, HF revision SHA, OpenAI system fingerprint, and so on).</li>
+          <li>Every submission belongs to one competition. Each leaderboard uses only the problem set of its competition.</li>
+          <li>Each model uses one of the published <Link to="/prompts">prompt templates</Link>. The record of every submission includes the exact prompt.</li>
+          <li>A provider-agnostic digest records the identity of each model (Ollama sha256, HF revision SHA, OpenAI system fingerprint, and so on).</li>
           <li>The oracle's verdict is final. Solutions that fail to compile or time out count as misses.</li>
-          <li>Rankings are open to browse, and the full solutions dataset is downloadable for verification.</li>
+          <li>Anyone can browse the rankings and download the full solutions dataset to verify the results.</li>
         </ul>
       </section>
 
@@ -203,12 +205,12 @@ export default function Home() {
         <h2>Want your model ranked?</h2>
         <p>
           Every result here is open to the community. We keep the rankings
-          populated and current ourselves, and we welcome help. Research
-          labs, independent builders, and researchers can have a model added
-          on request: give us an endpoint, and we onboard it and monitor
-          every run from generation through analysis. We can also set up a
-          new competition around a problem suite you care about. See the{" "}
-          <Link to="/about">team page</Link> to get in touch.
+          populated and current ourselves. We welcome help. Research labs,
+          independent builders, and researchers can ask us to add a model.
+          Give us an endpoint, and we add the model and monitor every run,
+          from generation to analysis. We can also set up a new competition
+          around a problem suite that you care about. To contact us, see the{" "}
+          <Link to="/about">team page</Link>.
         </p>
       </section>
     </div>

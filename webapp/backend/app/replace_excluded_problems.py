@@ -11,7 +11,7 @@ Selection criterion (matches the original 99):
   * Runtime-distribution thresholds: p50_ms >= 10 AND spread_ms >= 10 AND
     n_buckets >= 20 (matches `rank_problems_by_runtime.py` defaults).
   * 2 Hards by p50_ms desc → shared between lc99-perf AND lc99-hard-perf
-    (matches `seed_hard_competition.py`).
+    (matches `seed_leetcode_hard_competition.py`).
   * 2 Hards by spread_ms desc (non-overlapping with the shared 2) →
     lc99-perf-only.
   * 2 Mediums by spread_ms desc → lc99-perf-only.

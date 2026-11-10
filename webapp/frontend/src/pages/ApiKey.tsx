@@ -17,7 +17,7 @@ export default function ApiKey() {
   useEffect(() => { setK(getApiKey()); }, []);
 
   async function regenerate() {
-    if (!confirm("Issue a NEW key and revoke the current one? Any script using the old key will stop working.")) return;
+    if (!confirm("Issue a new key and revoke the current one? Any script that uses the old key will stop working.")) return;
     setBusy("regen"); setErr("");
     try {
       const r = await api.regenerateApiKey();
@@ -28,7 +28,7 @@ export default function ApiKey() {
   }
 
   async function discard() {
-    if (!confirm("Discard your API key entirely? You'll be logged out; sign back in to get a new one.")) return;
+    if (!confirm("Discard your API key entirely? You will be signed out. Sign in again to get a new one.")) return;
     setBusy("discard"); setErr("");
     try {
       await api.discardApiKey();
@@ -51,9 +51,9 @@ export default function ApiKey() {
         <h1>API key</h1>
         <p>
           A personal access token for programmatic use of the PerfArena API.
-          Send it as <code>Authorization: Bearer &lt;key&gt;</code>. You don't
-          need it for the web UI. The browser uses it under the hood after you
-          sign in.
+          Send it as <code>Authorization: Bearer &lt;key&gt;</code>. You do not
+          need it for the web UI. After you sign in, the browser uses it
+          automatically.
         </p>
       </div>
 
@@ -83,9 +83,9 @@ export default function ApiKey() {
       <div className="card col">
         <h2 style={{ margin: 0 }}>What these buttons do</h2>
         <ul>
-          <li><b>Copy</b> copies the key to your clipboard. The key never leaves the server in plaintext otherwise.</li>
-          <li><b>Regenerate</b> issues a new key and revokes the previous one. Scripts using the old key start getting 401s. The new key is wired into this browser automatically.</li>
-          <li><b>Discard</b> clears the key entirely. You'll be logged out. Next time you sign in, you get a fresh key automatically.</li>
+          <li><b>Copy</b> copies the key to your clipboard. Otherwise, the key never leaves the server in plaintext.</li>
+          <li><b>Regenerate</b> issues a new key and revokes the previous one. Scripts that use the old key start to get 401 errors. This browser switches to the new key automatically.</li>
+          <li><b>Discard</b> clears the key entirely. You will be signed out. The next time you sign in, you get a new key automatically.</li>
         </ul>
       </div>
     </div>

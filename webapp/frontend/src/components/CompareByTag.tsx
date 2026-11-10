@@ -105,7 +105,7 @@ export default function CompareByTag({
         <h2 style={{ margin: 0 }}>Performance by problem category</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
           one radar chart per metric · each spoke is a LeetCode tag ·
-          polygon colour = model · spoke length is normalised per chart
+          polygon color = model · spoke length is normalized per chart,
           so a model that dominates one chart's "worst case" still reads
           as dominant relative to its peers
         </span>
@@ -229,7 +229,7 @@ function RadarChart({
         <span className="muted" style={{ fontSize: "0.75rem" }}>
           ({spec.higherIsBetter
             ? "larger polygon = better"
-            : "larger polygon = better (radius is inverted from " + spec.unit + ")"})
+            : "larger polygon = better, radius inverted from " + spec.unit})
         </span>
       </div>
       <svg width={W} height={H}

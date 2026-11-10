@@ -124,13 +124,13 @@ export default function CorrectnessVsPerformance() {
   return (
     <div className="col" style={{ gap: 24 }}>
       <div className="hero" style={{ paddingBottom: 0 }}>
-        <h1>Correctness vs Performance</h1>
+        <h1>Correctness vs performance</h1>
         <p style={{ maxWidth: 760 }}>
-          Correctness (pass@1 / pass@k) and performance (LeetCode runtime &amp;
-          memory percentile) side by side, across every supported language.
-          The recurring finding in the literature is that the two are largely
-          decoupled: a model can be more correct without being faster. Check
-          that yourself on PerfArena's real LeetCode data.
+          This page shows correctness (pass@1, pass@k) and performance
+          (LeetCode runtime and memory percentile) side by side for every
+          supported language. The literature often finds that the two are
+          largely decoupled: a model can be more correct without being faster.
+          Check that yourself on PerfArena's real LeetCode data.
         </p>
       </div>
 
@@ -138,9 +138,10 @@ export default function CorrectnessVsPerformance() {
       <section className="col" style={{ gap: 8 }}>
         <h2 style={{ margin: 0 }}>Model filter</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Scope the per-language table, the correlation, and the scatter to
-          specific models. Empty = all models ({allModels.length} in scope,
-          {" "}{data.n_points.toLocaleString()} judged submissions total).
+          Limit the per-language table, the correlation, and the scatter to
+          specific models. With no model selected, the page uses all models
+          ({allModels.length} in scope,
+          {" "}{data.n_points.toLocaleString()} judged submissions in total).
           {selectedModels.size > 0 && (
             <> Active: <b>{selectedModels.size}</b> model{selectedModels.size === 1 ? "" : "s"}
             {", "}{filteredPoints.length.toLocaleString()} submissions in scope. </>
@@ -152,11 +153,11 @@ export default function CorrectnessVsPerformance() {
                  onChange={e => setModelQuery(e.target.value)}
                  style={{ minWidth: 220 }} />
           {modelQuery && (
-            <button className="secondary" onClick={() => setModelQuery("")}>clear search</button>
+            <button className="secondary" onClick={() => setModelQuery("")}>Clear search</button>
           )}
           {selectedModels.size > 0 && (
             <button className="secondary" onClick={clearModels}>
-              clear filter (use all models)
+              Clear filter (use all models)
             </button>
           )}
           <span className="muted" style={{ fontSize: "0.85rem" }}>
@@ -193,10 +194,11 @@ export default function CorrectnessVsPerformance() {
           )}
         </h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          Means over judged submissions in each language (filtered to the
-          selected models when a filter is active). <b>corr(pass@1, rt%ile)</b>
+          Each value is a mean over the judged submissions in one language
+          (only the selected models when a filter is active). <b>corr(pass@1, rt%ile)</b>
           {" "}is the within-language Pearson correlation between correctness
-          and runtime percentile. Near 0 means they don't move together.
+          and runtime percentile. A value near 0 means that the two do not move
+          together.
         </p>
         <div className="card tbl-scroll" style={{ padding: 0 }}>
           <table className="tbl">
@@ -258,7 +260,7 @@ export default function CorrectnessVsPerformance() {
           </div>
         </div>
         <p className="muted" style={{ marginTop: 0 }}>
-          Each dot is one judged submission, coloured by language ({filteredPoints.length.toLocaleString()} points).
+          Each dot is one judged submission, colored by language ({filteredPoints.length.toLocaleString()} points).
           {corr != null && (
             <> Pearson r = <b>{corr.toFixed(3)}</b>{" "}
               ({Math.abs(corr) < 0.2 ? "essentially decoupled"
@@ -277,7 +279,7 @@ export default function CorrectnessVsPerformance() {
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
         See <Link to="/rankings">Rankings</Link> for the full leaderboard and{" "}
-        <Link to="/compare">Compare</Link> for head-to-head model diffs.
+        <Link to="/compare">Compare</Link> for head-to-head model comparisons.
         {disc && null}
       </p>
     </div>

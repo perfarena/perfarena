@@ -11,7 +11,7 @@
 .env.*
 *.secrets
 data/leetcode_accounts.json
-sampled_solutions/
+human_solutions/
 
 # Python caches
 __pycache__
@@ -44,4 +44,3 @@ train-00000-of-00001.parquet
 # Build artifact directories that come from local runs
 docs/
 README.md
-claude.session

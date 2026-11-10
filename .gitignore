@@ -7,3 +7,12 @@ venv/
 data/leetcode_accounts.json
 data/leetcode_accounts.json.tmp
 logs/
+# Build output (the Dockerfile and publish_pages.sh build the frontend)
+node_modules/
+webapp/frontend/dist/
+*.tsbuildinfo
+.DS_Store
+# Outputs of leetbot.py and matrix_sweep.py runs
+data/runs.jsonl
+data/sweep_log.json
+data/sweep_cache/

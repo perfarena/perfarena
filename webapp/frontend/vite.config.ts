@@ -3,12 +3,20 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import pkg from "./package.json";
 
+// VITE_STATIC=1 builds the read-only snapshot for GitHub Pages (see
+// src/lib/staticMode.ts). VITE_BASE is the path the site is served under there
+// (e.g. /perfarena-leetcode/); the live site is served at /.
+const STATIC = process.env.VITE_STATIC === "1";
+
 export default defineConfig({
+  base: process.env.VITE_BASE || "/",
   // Embed the build's version so the footer can show it and flag a stale deploy.
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   plugins: [
     react(),
-    VitePWA({
+    // The snapshot has no service worker: a cached app shell would keep showing
+    // an old snapshot after an update.
+    !STATIC && VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
       manifest: {

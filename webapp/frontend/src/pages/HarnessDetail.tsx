@@ -33,12 +33,12 @@ export default function HarnessDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label="competitions" value={String(d.n_competitions)}
-              tip={d.competitions.map(c => c.slug).join(", ") || "no competitions bound to this harness yet"} />
+              tip={d.competitions.map(c => c.slug).join(", ") || "No competitions are bound to this harness yet."} />
         <Stat label="submissions" value={String(d.n_submissions)} />
         <Stat label="runs"        value={String(d.n_runs)}
-              tip="Total Run rows tagged with this harness. Counts every dispatched attempt, including repeated k-samples." />
+              tip="The total number of runs tagged with this harness. The count includes every dispatched attempt and each repeated k-sample." />
         <Stat label="languages"   value={String(d.languages.length)}
-              tip={d.languages.join(", ") || "no submissions on this harness yet"} />
+              tip={d.languages.join(", ") || "No submissions on this harness yet."} />
       </div>
 
       {/* Workflow — the description is where the operator explains HOW this
@@ -91,10 +91,10 @@ export default function HarnessDetailPage() {
               <th title="Best pass@1 this model achieved on any submission scored by this harness.">pass@1</th>
               <th title="Best pass@k across this model's submissions on this harness.">pass@k</th>
               <th title="Average runtime across accepted attempts scored by this harness.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Peak on both oracles, never per function call.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts scored by this harness. Both oracles report the peak, never a value per function call.">Peak mem</th>
               {SHOW_RELATIVE_METRICS && <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>}
               {SHOW_RELATIVE_METRICS && <th title="Average memory percentile across accepted attempts.">Memory %ile</th>}
-              <th title="Total submissions this model has on this harness.">subs</th>
+              <th title="Total submissions this model has on this harness.">Subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (

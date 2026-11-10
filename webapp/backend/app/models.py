@@ -57,7 +57,7 @@ class Problem(SQLModel, table=True):
     # to it avoids "class/method not found" judge errors. Populated by
     # `python -m app.fetch_code_snippets`; nullable until that script runs.
     code_snippets: dict | None = Field(default=None, sa_column=Column(JSON))
-    # Anti-contamination variants (see app/rewrite_competition.py). When
+    # Anti-contamination variants (see app/seed_rewritten_competition.py). When
     # `original_problem_id` is set this Problem is a rephrased copy of
     # another — dispatch redirects to the original's title_slug AND
     # rewrites the LLM's code by substituting `function_name` (what the
@@ -863,3 +863,19 @@ class SolutionReview(SQLModel, table=True):
     note: str | None = None
     reviewed_at: datetime = Field(default_factory=datetime.utcnow)
     reviewed_by_user_id: int | None = Field(default=None, foreign_key="user.id")
+
+
+class RankingResult(SQLModel, table=True):
+    """A stored efficiency ranking (ranking_api.efficiency_rankings) of one
+    competition under one set of filters, so a page gets it at once. A
+    background thread recomputes it after the data or the ranking settings
+    change (see app.ranking_store)."""
+    key: str = Field(primary_key=True, description="canonical JSON of the competition and filters")
+    competition: str = Field(index=True)
+    params: dict = Field(sa_column=Column(JSON))
+    data_version: str = Field(description="ranking_api.data_version when the ranking was computed")
+    settings: str = Field(description="ranking settings of the stored ranking")
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+    requested_at: datetime = Field(default_factory=datetime.utcnow,
+                                   description="last page request, updated at most once per hour")
+    payload: dict = Field(sa_column=Column(JSON))

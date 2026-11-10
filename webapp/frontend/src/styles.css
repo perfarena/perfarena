@@ -103,6 +103,13 @@ main {
   flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto;
 }
 
+/* Static snapshot (GitHub Pages build) only. */
+.snapshot-banner {
+  padding: 8px 24px; text-align: center; font-size: 0.9em;
+  background: var(--accent-soft); border-bottom: 1px solid var(--border);
+  color: var(--fg);
+}
+
 footer {
   padding: 16px 24px; text-align: center; color: var(--fg-dim);
   border-top: 1px solid var(--border);

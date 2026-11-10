@@ -12,14 +12,14 @@ export default function PromptName({
 }: { id: number | null; name: string | null; compact?: boolean }) {
   if (!id || !name) {
     return (
-      <span className="muted" title="ad-hoc inline prompt (not from the registry)"
+      <span className="muted" title="Ad-hoc inline prompt (not from the registry)"
             style={{ fontSize: compact ? "0.8rem" : undefined }}>
         ad-hoc
       </span>
     );
   }
   return (
-    <Link to={`/prompts/${id}`} title={`registered prompt: ${name}`}
+    <Link to={`/prompts/${id}`} title={`Registered prompt: ${name}`}
           style={{ fontSize: compact ? "0.85rem" : undefined }}>
       <code>{name}</code>
     </Link>

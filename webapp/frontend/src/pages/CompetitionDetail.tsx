@@ -68,7 +68,7 @@ export default function CompetitionDetailPage() {
               active={harnessTab === h}
               onClick={() => setHarnessTab(h)}
               label={h}
-              hint={`Show only submissions measured by the ${h} harness. Same competition, different measurement backend.`}
+              hint={`Show only submissions measured by the ${h} harness. The competition is the same. Only the measurement backend is different.`}
             />
           ))}
         </div>
@@ -84,14 +84,14 @@ export default function CompetitionDetailPage() {
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Version</th>
-              <th title="pass@1 across this competition's problems only: n_accepted / n_problems_in_competition. Independent of any other competition this model also competed in.">pass@1</th>
-              <th title="pass@k across this competition's problems: n_accepted / n_attempted. Differs from pass@1 when the model didn't attempt every problem in the set.">pass@k</th>
+              <th title="pass@1 on the problems of this competition only: n_accepted / n_problems_in_competition. Other competitions of this model do not change it.">pass@1</th>
+              <th title="pass@k on the problems of this competition: n_accepted / n_attempted. It is different from pass@1 when the model did not attempt every problem in the set.">pass@k</th>
               <th title="Problems solved out of total in this competition.">Solved</th>
               <th title="Average LeetCode-reported runtime across the model's accepted attempts on this competition's problems only.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts. Peak on both oracles, never per function call.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts. Both oracles report the peak, never a per-function-call value.">Peak mem</th>
               {SHOW_RELATIVE_METRICS && <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>}
               {SHOW_RELATIVE_METRICS && <th title="Average memory percentile across accepted attempts.">Memory %ile</th>}
-              <th title="Total submissions this model has against this competition.">subs</th>
+              <th title="Total submissions of this model to this competition.">Subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (

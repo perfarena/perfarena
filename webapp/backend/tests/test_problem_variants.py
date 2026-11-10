@@ -3,14 +3,14 @@
 distinct in the catalog so a model can't pattern-match its way to a
 memorised solution.
 
-See app/rewrite_competition.py for the CSV round-trip that produces
+See app/seed_rewritten_competition.py for the CSV round-trip that produces
 variants in bulk."""
 from sqlmodel import Session, select
 
 from app.db import engine
 from app.dispatch import _resolve_dispatch_target
 from app.models import Problem
-from app.rewrite_competition import extract_function_name, substitute_function_name
+from app.seed_rewritten_competition import extract_function_name, substitute_function_name
 
 
 # ---------- function-name extraction (pure helper) -------------------------

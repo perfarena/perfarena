@@ -55,7 +55,7 @@ export default function MyByLanguage() {
         <h1>My work, by language</h1>
         <p>One row per problem with the best status across all your
           {" "}submissions in the selected language. Click a problem to open
-          {" "}it; click <i>details</i> to open the submission that contributed
+          {" "}it. Click <i>details</i> to open the submission that has
           {" "}the best attempt.</p>
       </div>
 
@@ -98,7 +98,7 @@ export default function MyByLanguage() {
               <th>Problem</th><th>Level</th><th>Status</th>
               <th title="How many of your attempts on this problem (across all your submissions in this language)">Tries</th>
               <th title="Best accepted attempt's avg runtime, or a placeholder if no accepted attempt">Best avg runtime</th>
-              <th title="Best accepted attempt's peak (max resident) memory. Peak on both oracles, never per function call">Peak mem</th>
+              <th title="Peak (max resident) memory of the best accepted attempt. Both oracles report the peak, never a per-function-call value.">Peak mem</th>
               <th>From</th>
             </tr></thead>
             <tbody>
@@ -141,7 +141,7 @@ export default function MyByLanguage() {
               <th>When</th><th>Model</th>
               <th title="Registered prompt template used; 'ad-hoc' for inline prompts.">Prompt</th>
               <th>Status</th><th>k</th>
-              <th>pass@1</th><th>solved</th><th>attempts</th><th></th>
+              <th>pass@1</th><th>Solved</th><th>Attempts</th><th></th>
             </tr></thead>
             <tbody>
               {cur.submissions.map(s => (

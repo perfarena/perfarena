@@ -1,7 +1,7 @@
 # Deploying the replica-pool version
 
 This version adds replica pools, machine classes, calibration, and the
-claim-based dispatch queue (see `docs/parallel-oracle-replicas-plan.md`). The
+claim-based dispatch queue. The
 upgrade itself needs no new configuration. With the defaults, every oracle
 keeps its single endpoint and dispatch runs exactly as before. Sections 3 to 5
 are optional: they turn the new features on.

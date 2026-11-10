@@ -79,7 +79,7 @@ function DiffBox(
   return (
     <div className="col" style={{ gap: 4 }}>
       <div className="muted" style={{ fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: 0.5 }}>
-        Expected vs produced{caseLabel ? ` — ${caseLabel}` : ""}
+        Expected vs produced{caseLabel ? `: ${caseLabel}` : ""}
       </div>
       <div className="row" style={{ gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
         {col("Expected", expected, exp)}
@@ -117,7 +117,7 @@ export function ErrorPanel({ log }: { log: RunErrorLog }) {
       : ([
           ["Failing test case (input)", log.last_testcase],
           ["Expected output", log.expected_output],
-          ["Your output", log.code_output],
+          ["Produced output", log.code_output],
         ] as Array<[string, string | null | undefined]>)),
     ["Stdout", log.std_output],
     ["Dispatch note", log.note],

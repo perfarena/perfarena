@@ -51,9 +51,10 @@ export default function Languages() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>Languages</h1>
         <p>
-          Every language the platform tracks, with paradigm, TIOBE rank, and its
-          models ranked by the metric you choose. Click any card for the full
-          per-language leaderboard.
+          This page lists every language that the platform tracks. Each card
+          shows the paradigm, the TIOBE rank, and the models of that language,
+          ranked by the metric that you choose. Click a card to see the full
+          leaderboard for that language.
         </p>
       </div>
 
@@ -69,7 +70,7 @@ export default function Languages() {
         <label className="row" style={{ gap: 6, fontSize: "0.9rem" }}>
           <input type="checkbox" checked={hideEmpty}
                  onChange={e => setHideEmpty(e.target.checked)} />
-          hide languages with no submissions
+          Hide languages with no submissions
         </label>
       </div>
 
@@ -87,12 +88,12 @@ export default function Languages() {
       )}
 
       <p className="muted" style={{ fontSize: "0.8rem", maxWidth: "82ch" }}>
-        Each card ranks a language's models by the selected metric. Bars are
-        longer-is-better; fill opacity encodes pass@1. ◆ marks the top model
-        with pass@1&nbsp;≥&nbsp;0.90. Runtime and energy are per operation; peak
-        memory includes the language runtime floor, so compare it only within a
-        language. Energy is recorded only on the instrumented runner, so models
-        run elsewhere show “—”.
+        Each card ranks the models of a language by the selected metric. A
+        longer bar is better. The fill opacity shows pass@1. ◆ marks the top
+        model with pass@1&nbsp;≥&nbsp;0.90. Runtime and energy are per
+        operation. Peak memory includes the memory floor of the language
+        runtime, so compare it only within one language. Only the instrumented
+        runner records energy, so models that ran elsewhere show “—”.
       </p>
     </div>
   );

@@ -69,7 +69,7 @@ export default function LeetcodeAccounts() {
   };
 
   const remove = async (n: string) => {
-    if (!confirm(`Remove account '${n}' from the pool? This can't be undone (you'll need the cookie to re-add it).`)) return;
+    if (!confirm(`Remove account '${n}' from the pool? This cannot be undone. You need the cookie to add it again.`)) return;
     setErr(""); setBusy(true);
     try {
       await api.removeLeetcodeAccount(n);
@@ -92,10 +92,10 @@ export default function LeetcodeAccounts() {
       <div className="hero">
         <h1>LeetCode accounts</h1>
         <p>
-          The credential pool that dispatch uses to submit solutions to LeetCode. Each
-          account rotates after a 429 (24h cooldown by default). If the pool runs dry,
-          new dispatches synthesize "Auth failed" runs until at least one account is
-          available again.
+          Dispatch uses this credential pool to submit solutions to LeetCode. After a
+          429, dispatch takes the account out of rotation (24h cooldown by default). If
+          no account is available, new dispatches create "Auth failed" runs until at
+          least one account is available again.
         </p>
       </div>
 
@@ -117,7 +117,7 @@ export default function LeetcodeAccounts() {
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button onClick={refresh} disabled={busy} className="secondary">Refresh</button>
             <button onClick={probe} disabled={busy} className="secondary"
-                    title="Probes LC's userStatus once per account. Takes ~5s per account.">
+                    title="Probes LC's userStatus once per account. This takes ~5s per account.">
               Probe LC {lastProbedAt && <span className="muted" style={{ fontSize: "0.8em" }}>(last {lastProbedAt})</span>}
             </button>
             {pool.exhausted > 0 && (
@@ -137,13 +137,13 @@ export default function LeetcodeAccounts() {
             <th>Name</th>
             <th>State</th>
             <th>Exhausted until</th>
-            <th title="Populated by the Probe button.">LC sign-in</th>
+            <th title="The Probe button fills this column.">LC sign-in</th>
             <th></th>
           </tr></thead>
           <tbody>
             {pool && pool.accounts.length === 0 && (
               <tr><td colSpan={5} className="empty" style={{ padding: 16 }}>
-                Pool is empty. Add an account using the form below.
+                The pool is empty. Add an account with the form below.
               </td></tr>
             )}
             {pool?.accounts.map(a => (
@@ -159,7 +159,7 @@ export default function LeetcodeAccounts() {
       <div className="card" style={{ padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>Add or refresh an account</h3>
         <p className="muted" style={{ lineHeight: 1.5, fontSize: "0.9rem" }}>
-          In a browser logged into leetcode.com, open DevTools →{" "}
+          In a browser signed in to leetcode.com, open DevTools →{" "}
           <b>Application</b> → <b>Cookies</b> → <code>https://leetcode.com</code>.
           Copy the value of <code>LEETCODE_SESSION</code> into the Session field
           and the value of <code>csrftoken</code> into the CSRF field. Reusing an
@@ -189,7 +189,7 @@ export default function LeetcodeAccounts() {
                         fontSize: "0.8rem",
                       }} />
             <div className="muted" style={{ fontSize: "0.75rem", marginTop: 2 }}>
-              Long JWT (~600–900 chars, two dots). Don't include the
+              Long JWT (~600 to 900 characters, two dots). Do not include the
               "<code>LEETCODE_SESSION=</code>" prefix.
             </div>
           </label>
@@ -207,7 +207,7 @@ export default function LeetcodeAccounts() {
                      fontSize: "0.85rem",
                    }} />
             <div className="muted" style={{ fontSize: "0.75rem", marginTop: 2 }}>
-              ~32–64 hex characters. Don't include the
+              ~32 to 64 hex characters. Do not include the
               "<code>csrftoken=</code>" prefix.
             </div>
           </label>
@@ -221,8 +221,8 @@ export default function LeetcodeAccounts() {
       </div>
 
       <div className="muted" style={{ fontSize: "0.85rem", marginTop: 12, lineHeight: 1.5 }}>
-        <b>Tip.</b> Multiple accounts give the dispatcher room to rotate around 429s.
-        With one account, every 429 kills the sweep until the cooldown rolls over.
+        <b>Tip.</b> With several accounts, the dispatcher can rotate to another account
+        after a 429. With one account, every 429 stops the sweep until the cooldown ends.
       </div>
     </div>
   );

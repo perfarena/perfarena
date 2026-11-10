@@ -273,3 +273,72 @@ def test_snapshot_keeps_the_efficiency_ranking():
         report = build_report(s)
     comp = next(c for c in report["efficiency"] if c["competition"] == COMP)
     assert comp["entrants"] and "latency" in comp["entrants"][0]["metrics"]
+
+
+def test_package_energy_subtracts_the_codecarbon_ram_estimate():
+    from app.ranking_api import package_energy
+    # LeetCode, per call: 25 uJ in 1 us, minus 10 W x 1 us
+    assert package_energy(25e-6, 1e-3, "codecarbon", False) == pytest.approx(15e-6)
+    # whole-program run: 30 J in 2 s, minus 10 W x 2 s
+    assert package_energy(30.0, 2000.0, "codecarbon", True) == pytest.approx(10.0)
+    # a whole-program window under 50 ms has no valid energy
+    assert package_energy(1.0, 40.0, "codecarbon", True) is None
+    # other energy tools and missing values pass through
+    assert package_energy(5.0, 100.0, "powermetrics", True) == 5.0
+    assert package_energy(None, 100.0, "codecarbon", False) is None
+
+
+def test_tie_margin_per_language():
+    # 3% apart: a tie in Java (5% margin), a win in TypeScript (1%), and a tie
+    # in C, which the dict does not name and its "*" entry (4%) covers.
+    cells = {("java", 1): {"a": 100.0, "b": 103.0},
+             ("typescript", 1): {"a": 100.0, "b": 103.0},
+             ("c", 1): {"a": 100.0, "b": 103.0}}
+    margin = {"java": 5.0, "typescript": 1.0, "*": 4.0}
+    W = sum(d[2] for d in rk.duel_matrices(cells, ["a", "b"], margin_pct=margin))
+    assert W[0, 1] == 2.0 and W[1, 0] == 1.0
+    h = rk.head_to_head(cells, "a", "b", margin_pct=margin)
+    assert h["a_wins"] == pytest.approx(1 / 3) and h["ties"] == pytest.approx(2 / 3)
+
+
+def test_competition_margin_per_language_overrides_the_global_one(client):
+    from app.ranking_api import ranking_settings
+    with Session(engine) as s:
+        comp = Competition(slug="margin-test", name="Margin test",
+                           ranking_tie_pct={"latency": 1.7, "memory": {"java": 8.1, "php": 1.0}})
+        s.add(comp); s.commit()
+        st = ranking_settings(s, "margin-test")
+    assert st.tie_pct["latency"] == 1.7
+    assert st.tie_pct["memory"] == {"*": 9.83, "java": 8.1, "php": 1.0}
+    bad = {"slug": "margin-bad", "name": "Margin bad", "ranking_tie_pct": {"memory": {"java": 80}}}
+    assert client.post("/api/admin/competitions", json=bad, headers=ADMIN).status_code == 422
+
+
+def test_memory_is_the_first_accepted_reading():
+    # A re-measured attempt holds three readings; the paper ranks its first one.
+    from app.models import Run
+    from app.ranking_api import first_memory_readings, load
+    with Session(engine) as s:
+        harness = s.exec(select(Harness).where(Harness.slug == "leetcode")).one()
+        comp = Competition(slug="memory-test", name="Memory test", harness_id=harness.id,
+                           compatible_harness_slugs=["leetcode"])
+        s.add(comp); s.commit(); s.refresh(comp)
+        pid = s.exec(select(Problem).where(Problem.title_slug == SLUGS[0])).one().id
+        s.add(CompetitionProblem(competition_id=comp.id, problem_id=pid))
+        user = s.exec(select(User)).first()
+        row = Submission(user_id=user.id, model_name="mem-llm", model_version="v1",
+                         language="java", prompt_template="p", model_params={},
+                         status=SubmissionStatus.judged, competition_id=comp.id,
+                         harness_id=harness.id)
+        s.add(row); s.commit(); s.refresh(row)
+        a = Attempt(submission_id=row.id, problem_id=pid, code="x", inference_trace="t",
+                    round_index=0, n_runs=4, final_status="Accepted", avg_runtime_ms=5.0,
+                    avg_memory_mb=12.0)
+        s.add(a); s.commit(); s.refresh(a)
+        for idx, status, mem in [(1, "Runtime Error", 7.0), (2, "Accepted", 11.0),
+                                 (3, "Accepted", 13.0), (4, "Accepted", None)]:
+            s.add(Run(attempt_id=a.id, run_index=idx, status_msg=status, memory_mb=mem))
+        s.commit()
+        assert first_memory_readings(s, [a.id]) == {a.id: 11.0}
+        d = load(s, "memory-test")
+    assert d["cells"]["memory"][("java", pid)]["mem-llm|direct|r1"] == 11.0

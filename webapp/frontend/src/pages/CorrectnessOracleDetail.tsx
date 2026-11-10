@@ -35,12 +35,12 @@ export default function CorrectnessOracleDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label="competitions" value={String(d.n_competitions)}
-              tip={d.competitions.map(c => c.slug).join(", ") || "no competitions bound to this correctness oracle yet"} />
+              tip={d.competitions.map(c => c.slug).join(", ") || "No competitions are bound to this correctness oracle yet."} />
         <Stat label="submissions" value={String(d.n_submissions)} />
         <Stat label="runs"        value={String(d.n_runs)}
-              tip="Total Run rows tagged with this correctness oracle. Counts every dispatched attempt, including repeated k-samples." />
+              tip="The total number of runs tagged with this correctness oracle. The count includes every dispatched attempt and each repeated k-sample." />
         <Stat label="languages"   value={String(d.languages.length)}
-              tip={d.languages.join(", ") || "no submissions on this correctness oracle yet"} />
+              tip={d.languages.join(", ") || "No submissions on this correctness oracle yet."} />
       </div>
 
       {/* Workflow — the description is where the operator explains HOW this
@@ -93,10 +93,10 @@ export default function CorrectnessOracleDetailPage() {
               <th title="Best pass@1 this model achieved on any submission scored by this correctness oracle.">pass@1</th>
               <th title="Best pass@k across this model's submissions on this correctness oracle.">pass@k</th>
               <th title="Average runtime across accepted attempts scored by this correctness oracle.">Avg runtime</th>
-              <th title="Average peak (max resident) memory across accepted attempts scored by this correctness oracle. Peak on both oracles, never per function call.">Peak mem</th>
+              <th title="Average peak (max resident) memory across accepted attempts scored by this correctness oracle. Both oracles report the peak, never a value per function call.">Peak mem</th>
               {SHOW_RELATIVE_METRICS && <th title="Average runtime percentile across accepted attempts.">Runtime %ile</th>}
               {SHOW_RELATIVE_METRICS && <th title="Average memory percentile across accepted attempts.">Memory %ile</th>}
-              <th title="Total submissions this model has on this correctness oracle.">subs</th>
+              <th title="Total submissions this model has on this correctness oracle.">Subs</th>
             </tr></thead>
             <tbody>
               {d.top_models.map((m, i) => (

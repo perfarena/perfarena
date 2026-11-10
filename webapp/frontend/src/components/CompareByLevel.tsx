@@ -114,8 +114,8 @@ export default function CompareByLevel({
       <div className="row" style={{ alignItems: "baseline", flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ margin: 0 }}>Performance by difficulty</h2>
         <span className="muted" style={{ fontSize: "0.85rem" }}>
-          one grouped chart per metric · bar colour = model · higher bar =
-          larger raw value (the metric label says which direction is better)
+          one grouped chart per metric · bar color = model · higher bar =
+          larger raw value (the label of each metric says which direction is better)
         </span>
       </div>
 

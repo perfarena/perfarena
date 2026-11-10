@@ -43,7 +43,7 @@ function StatusBadge({ a }: { a: AttemptResultPayload }) {
   // so users can tell them apart from real LC verdicts.
   const isPrefailed = !!a.prefailed_reason;
   const title = isPrefailed
-    ? `client-flagged as malformed (${a.prefailed_reason}): recorded as failed without LeetCode dispatch; raw response preserved in trace`
+    ? `The client flagged this attempt as malformed (${a.prefailed_reason}). It was recorded as failed without a LeetCode dispatch. The trace keeps the raw response.`
     : undefined;
   return (
     <span className={`badge ${cls}`} title={title}>
@@ -118,7 +118,7 @@ function RawLeetCodeResponse({
           {open ? "Hide" : "Show"} raw LeetCode response
         </button>
         <span className="muted" style={{ fontSize: "0.78rem" }}>
-          Full verbatim payload, including fields the structured log doesn't enumerate.
+          Full verbatim payload, including the fields that the structured log does not list.
         </span>
       </div>
       {open && (
@@ -151,8 +151,8 @@ function RoundChainBadge({
       <span className="badge"
             title={
               isRefinementStart
-                ? "Round 0 = cold-start attempt. Its verdict + error log get folded into the round-1 prompt."
-                : `Round ${roundIdx} was generated after seeing round-${roundIdx - 1}'s LeetCode verdict + error log via {{rounds_history}}.`
+                ? "Round 0 is the cold-start attempt. Its verdict and error log go into the round-1 prompt."
+                : `Round ${roundIdx} was generated after the model saw the LeetCode verdict and error log of round ${roundIdx - 1} through {{rounds_history}}.`
             }
             style={{
               fontSize: "0.72rem", padding: "1px 6px",
@@ -184,8 +184,8 @@ function AttemptRow({
 }) {
   const [open, setOpen] = useState<AttemptPanel>(null);
   async function del() {
-    if (!confirm(`Delete attempt #${a.attempt_id} — ${a.problem_slug} (${a.status})?\n`
-      + `This permanently removes the attempt and its runs; re-submit to re-measure.`)) return;
+    if (!confirm(`Delete attempt #${a.attempt_id} (${a.problem_slug}, ${a.status})?\n`
+      + `This permanently removes the attempt and its runs. To measure it again, resubmit it.`)) return;
     try { await api.deleteAttempt(a.attempt_id); onChanged?.(); }
     catch (e) { alert(`Delete failed: ${(e as Error).message}`); }
   }
@@ -295,7 +295,7 @@ function AttemptRow({
                     <th>Run</th><th>Status</th><th>Runtime</th><th>Peak mem</th>
                     {SHOW_RELATIVE_METRICS && <><th>RT %ile</th><th>Mem %ile</th></>}
                     {a.runs.some(r => r.total_correct != null || r.total_testcases != null) && (
-                      <th title="Reference cases the correctness oracle passed / total, checked ONCE by the /validate gate. The perf measurement runs only the ~5 curated cases, not all of these — so this is a correctness figure, not the number of tests each run executed.">Correctness</th>
+                      <th title="Reference cases that the correctness oracle passed / total. The /validate gate checks them once. The performance measurement runs only the ~5 curated cases, not all of these. This is a correctness figure, not the number of tests that each run executed.">Correctness</th>
                     )}
                     <th></th>
                   </tr></thead>
@@ -393,10 +393,10 @@ export default function AttemptsTable(
           <th title="accepted runs / total dispatch runs">Runs ✓</th>
           <th title="mean over accepted runs">Avg runtime</th>
           <th title="fastest single run">Best runtime</th>
-          {showMemory && <th title="mean peak (max resident) memory over accepted runs, peak on both oracles, never per function call">Peak mem</th>}
+          {showMemory && <th title="Mean peak (max resident) memory over accepted runs. Both oracles report the peak, never a per-function-call value.">Peak mem</th>}
           {showMemory && <th title="leanest single run's peak memory">Best peak mem</th>}
           {showRuntimeEnergy && (
-            <th title="Runtime energy (Joules): execution energy consumed while running this solution. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Avg energy</th>
+            <th title="Runtime energy (Joules): the execution energy that this solution consumed while it ran. Harnesses that instrument execution report it (for example, arena-local). Lower is better.">Avg energy</th>
           )}
           {showRuntimeEnergy && (
             <th title="Best (least) runtime energy across dispatch runs. Same source as Avg energy.">Best energy</th>

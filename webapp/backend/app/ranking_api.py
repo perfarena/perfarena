@@ -5,12 +5,16 @@
     GET /api/head-to-head          two entrants on the cells that both solved
     POST /api/admin/golden-baseline  store the frozen golden baseline as a
                                    reference entrant (golden_baseline.py)
+    POST /api/admin/rankings/refresh  recompute every stored ranking now
 
-Each response is cached per request and data version, because the bootstrap
-behind the tied leaders refits the model a thousand times.
+The efficiency rankings are stored and recomputed in the background
+(ranking_store.py), because the bootstrap behind the tied leaders refits the
+model thousands of times. The other responses are cached per request and data
+version.
 """
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from datetime import date, datetime
 
@@ -34,18 +38,60 @@ router = APIRouter()
 # Agent kind of a reference entrant (the golden baseline): listed, never ranked.
 REFERENCE_KIND = "reference"
 
+# CodeCarbon's total energy adds a RAM estimate that it does not measure: in its
+# default "machine" mode a constant power from the host's RAM size (10 W on the
+# campaign host, 16 GB = 2 DIMMs x 5 W) over the whole tracker window. The
+# ranking uses the RAPL package energy only, as the paper does
+# (figs/scripts/gen_paper_data.py package_energy). CodeCarbon also takes no final
+# reading in a window under 50 ms, so such a whole-program run has no energy.
+CODECARBON_RAM_W = 10.0
+MIN_ENERGY_WINDOW_MS = 50.0
+
+
+def package_energy(energy_j, runtime_ms, energy_tool, whole_program):
+    """Package energy of an attempt from its stored total (per call on LeetCode,
+    per run on a whole-program competition); other energy tools pass through."""
+    if energy_j is None or runtime_ms is None or energy_tool != "codecarbon":
+        return energy_j
+    if whole_program and runtime_ms < MIN_ENERGY_WINDOW_MS:
+        return None
+    e = energy_j - CODECARBON_RAM_W * runtime_ms / 1000.0
+    return e if e > 0 else None
+
+
+def first_memory_readings(session: Session, attempt_ids: list[int]) -> dict[int, float]:
+    """The memory value of each attempt, as in the paper: one reading per
+    solution, the reading of its first accepted run (by run index). An attempt
+    with more readings (a memory re-measure writes reading i to the i-th
+    accepted run) gives its first one. An attempt with no run reading is not in
+    the result, so its stored average stands."""
+    out: dict[int, float] = {}
+    ids = sorted(set(attempt_ids))
+    for i in range(0, len(ids), 900):            # stay under SQLite's variable limit
+        rows = session.exec(select(Run.attempt_id, Run.run_index, Run.id, Run.memory_mb).where(
+            Run.attempt_id.in_(ids[i:i + 900]), Run.status_msg == "Accepted",
+            Run.memory_mb.is_not(None))).all()
+        for aid, _idx, _rid, mem in sorted(rows, key=lambda r: (r[0], r[1] or 0, r[2])):
+            out.setdefault(aid, mem)
+    return out
+
 
 def ranking_settings(session: Session | None = None,
                      competition: str | None = None) -> rk.Settings:
     """The global ranking settings, with the tie margins of `competition`
-    (Competition.ranking_tie_pct) in place of the global ones it names."""
+    (Competition.ranking_tie_pct) in place of the global ones it names. A
+    competition margin is one percentage, or a {language: percent} dict; the
+    global margin then covers the languages that the dict does not name."""
     tie_pct = {"latency": app_settings.get_float("ranking.tie_latency_pct", 1.84),
                "energy": app_settings.get_float("ranking.tie_energy_pct", 1.84),
                "memory": app_settings.get_float("ranking.tie_memory_pct", 9.83)}
     if session is not None and competition:
         comp = session.exec(select(Competition).where(Competition.slug == competition)).first()
         if comp is not None and comp.ranking_tie_pct:
-            tie_pct.update({m: float(v) for m, v in comp.ranking_tie_pct.items() if m in tie_pct})
+            for m, v in comp.ranking_tie_pct.items():
+                if m in tie_pct:
+                    tie_pct[m] = ({"*": tie_pct[m], **{lang: float(x) for lang, x in v.items()}}
+                                  if isinstance(v, dict) else float(v))
     return rk.Settings(
         tie_pct=tie_pct,
         bootstrap=app_settings.get_int("ranking.bootstrap_samples", 10000),
@@ -147,6 +193,8 @@ def load(session: Session, competition: str, *, harness: str | None = None,
                 len({a.problem_id for a in by_sub[cur.id]}), cur.created_at):
             chosen[(key, s.language)] = s
 
+    first_memory = first_memory_readings(
+        session, [a.id for atts in by_sub.values() for a in atts if a.final_status == "Accepted"])
     cells: dict[str, dict] = {m: defaultdict(dict) for m in rk.METRICS}
     finals_by_cell: dict = defaultdict(dict)       # (lang, pid) -> key -> (attempt, sub)
     invalid_by_cell: dict = defaultdict(dict)      # the same for solutions labelled invalid
@@ -176,6 +224,11 @@ def load(session: Session, competition: str, *, harness: str | None = None,
             finals_by_cell[(lang, pid)][key] = (a, src)
             for m, attr in rk.METRICS.items():
                 v = getattr(a, attr)
+                if m == "energy":
+                    v = package_energy(v, a.avg_runtime_ms, src.energy_tool,
+                                       comp.kind != "leetcode")
+                elif m == "memory":
+                    v = first_memory.get(a.id, v)
                 if v is not None and v > 0:
                     cells[m][(lang, pid)][key] = v
         if cost_of is not None:
@@ -208,65 +261,73 @@ def _cost_function(session: Session):
 
 def efficiency_rankings(session: Session, competition: str, *, harness=None, agent=None,
                         agent_kind=None, rounds=None, prompt_id=None, language=None,
-                        bootstrap: bool = True) -> dict:
+                        bootstrap: bool = True, fresh: bool = False) -> dict:
+    """The stored ranking (ranking_store.py), or a new one when none is stored
+    or `fresh` is set. Without the bootstrap, the ranking is computed and not
+    stored."""
+    filters = dict(harness=harness, agent=agent, agent_kind=agent_kind, rounds=rounds,
+                   prompt_id=prompt_id, language=language)
+    if not bootstrap:
+        return compute_efficiency_rankings(session, competition, bootstrap=False, **filters)
+    from . import ranking_store                     # avoid an import cycle
+    return ranking_store.get(session, competition, fresh=fresh, **filters)
+
+
+def compute_efficiency_rankings(session: Session, competition: str, *, harness=None,
+                                agent=None, agent_kind=None, rounds=None, prompt_id=None,
+                                language=None, bootstrap: bool = True) -> dict:
     settings = ranking_settings(session, competition)
     if not bootstrap:
         settings.bootstrap = 0
-    key = ("rank", competition, harness, agent, agent_kind, rounds, prompt_id, language,
-           settings.bootstrap, tuple(sorted(settings.tie_pct.items())), settings.min_cells,
-           settings.min_problem_clusters, data_version(session))
-
-    def compute() -> dict:
-        d = load(session, competition, harness=harness, agent=agent, agent_kind=agent_kind,
-                 rounds=rounds, prompt_id=prompt_id, language=language,
-                 cost_of=_cost_function(session))
-        # A reference (the golden baseline) and a partial run (fewer than a
-        # third of its cells attempted, as MIN_ATTEMPTED_FRACTION on the
-        # submissions leaderboard) are listed but not ranked.
-        reference = {k for k, e in d["entrants"].items() if e.agent_kind == REFERENCE_KIND}
-        partial = {k for k, e in d["entrants"].items()
-                   if e.n_attempted * 3 < e.n_cells} - reference
-        keys = sorted(k for k in d["entrants"] if k not in partial | reference)
-        res = rk.rank(d["cells"], keys, settings, d["n_problems"], single_language=bool(language))
-        rows = []
-        for k in sorted(d["entrants"]):
-            e = d["entrants"][k]
-            metrics = {}
-            for m in rk.METRICS:
-                r = res[m]
-                metrics[m] = dict(rated=k in r["rated"], win_prob=r["win_prob"].get(k),
-                                  rating=r["ratings"].get(k),
-                                  tied_leader=k in r["tied_leaders"] and k in r["rated"])
-            rows.append(dict(
-                key=k, model_name=e.model_name, model_version=e.model_version,
-                workflow=e.workflow, agent_slug=e.agent_slug, agent_name=e.agent_name,
-                agent_kind=e.agent_kind, n_rounds=e.n_rounds, n_samples=e.n_samples,
-                languages=sorted(e.languages), submission_ids=sorted(e.submission_ids),
-                pass_at_1=e.pass_at_1, n_cells=e.n_cells, n_attempted=e.n_attempted,
-                n_solved=e.n_solved, cost_per_attempt_usd=e.cost_per_attempt_usd,
-                partial=k in partial, reference=k in reference,
-                pareto_level=res["pareto"]["level"].get(k),
-                metrics=metrics))
+    d = load(session, competition, harness=harness, agent=agent, agent_kind=agent_kind,
+             rounds=rounds, prompt_id=prompt_id, language=language,
+             cost_of=_cost_function(session))
+    # A reference (the golden baseline) and a partial run (fewer than a
+    # third of its cells attempted, as MIN_ATTEMPTED_FRACTION on the
+    # submissions leaderboard) are listed but not ranked.
+    reference = {k for k, e in d["entrants"].items() if e.agent_kind == REFERENCE_KIND}
+    partial = {k for k, e in d["entrants"].items()
+               if e.n_attempted * 3 < e.n_cells} - reference
+    keys = sorted(k for k in d["entrants"] if k not in partial | reference)
+    res = rk.rank(d["cells"], keys, settings, d["n_problems"], single_language=bool(language))
+    rows = []
+    for k in sorted(d["entrants"]):
+        e = d["entrants"][k]
+        metrics = {}
         for m in rk.METRICS:
-            ordered = sorted((r for r in rows if r["metrics"][m]["rated"]),
-                             key=lambda r: -r["metrics"][m]["win_prob"])
-            for i, r in enumerate(ordered, start=1):
-                r["metrics"][m]["rank"] = i
-        rows.sort(key=lambda r: (not r["reference"], not r["metrics"]["latency"]["rated"],
-                                 -(r["metrics"]["latency"]["win_prob"] or 0)))
-        summary = {m: dict(sig_pairs=res[m]["sig_pairs"], n_pairs=res[m]["n_pairs"],
-                           resampled=res[m]["unit"], tied_leaders=res[m]["tied_leaders"],
-                           n_cells=res[m]["n_duel_cells"], tie_pct=settings.tie_pct[m])
-                   for m in rk.METRICS}
-        return dict(competition=competition, harness=d["harness"], language=language,
-                    filters=dict(agent=agent, agent_kind=agent_kind, rounds=rounds,
-                                 prompt_id=prompt_id),
-                    languages=d["languages"], n_problems=d["n_problems"],
-                    bootstrap=settings.bootstrap, min_cells=settings.min_cells,
-                    computed_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
-                    entrants=rows, metrics=summary, pareto_edges=res["pareto"]["edges"],
-                    pareto_metrics=res["pareto"]["metrics"])
-    return rk.CACHE.get_or_compute(key, compute)
+            r = res[m]
+            metrics[m] = dict(rated=k in r["rated"], win_prob=r["win_prob"].get(k),
+                              rating=r["ratings"].get(k),
+                              tied_leader=k in r["tied_leaders"] and k in r["rated"])
+        rows.append(dict(
+            key=k, model_name=e.model_name, model_version=e.model_version,
+            workflow=e.workflow, agent_slug=e.agent_slug, agent_name=e.agent_name,
+            agent_kind=e.agent_kind, n_rounds=e.n_rounds, n_samples=e.n_samples,
+            languages=sorted(e.languages), submission_ids=sorted(e.submission_ids),
+            pass_at_1=e.pass_at_1, n_cells=e.n_cells, n_attempted=e.n_attempted,
+            n_solved=e.n_solved, cost_per_attempt_usd=e.cost_per_attempt_usd,
+            partial=k in partial, reference=k in reference,
+            pareto_level=res["pareto"]["level"].get(k),
+            metrics=metrics))
+    for m in rk.METRICS:
+        ordered = sorted((r for r in rows if r["metrics"][m]["rated"]),
+                         key=lambda r: -r["metrics"][m]["win_prob"])
+        for i, r in enumerate(ordered, start=1):
+            r["metrics"][m]["rank"] = i
+    rows.sort(key=lambda r: (not r["reference"], not r["metrics"]["latency"]["rated"],
+                             -(r["metrics"]["latency"]["win_prob"] or 0)))
+    summary = {m: dict(sig_pairs=res[m]["sig_pairs"], n_pairs=res[m]["n_pairs"],
+                       resampled=res[m]["unit"], tied_leaders=res[m]["tied_leaders"],
+                       n_cells=res[m]["n_duel_cells"], tie_pct=settings.tie_pct[m])
+               for m in rk.METRICS}
+    return dict(competition=competition, harness=d["harness"], language=language,
+                filters=dict(agent=agent, agent_kind=agent_kind, rounds=rounds,
+                             prompt_id=prompt_id),
+                languages=d["languages"], n_problems=d["n_problems"],
+                bootstrap=settings.bootstrap, min_cells=settings.min_cells,
+                computed_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+                entrants=rows, metrics=summary, pareto_edges=res["pareto"]["edges"],
+                pareto_metrics=res["pareto"]["metrics"])
 
 
 @router.get("/api/efficiency-rankings")
@@ -300,7 +361,7 @@ def get_head_to_head(
     """Two entrants on the cells that both solved: the geometric-mean ratio of
     a's values to b's, and the shares of cells that a wins, ties, and loses."""
     settings = ranking_settings(session, competition)
-    key = ("h2h", competition, a, b, harness, language, tuple(sorted(settings.tie_pct.items())),
+    key = ("h2h", competition, a, b, harness, language, json.dumps(settings.tie_pct, sort_keys=True),
            data_version(session))
 
     def compute() -> dict:
@@ -324,11 +385,19 @@ def get_head_to_head(
     return rk.CACHE.get_or_compute(key, compute)
 
 
+@router.post("/api/admin/rankings/refresh", status_code=202)
+def post_rankings_refresh(admin: User = Depends(current_admin)):
+    """Recompute every stored efficiency ranking now, in the background.
+    `started` is false when a recompute is already running."""
+    from . import ranking_store                     # avoid an import cycle
+    return {"started": ranking_store.refresh_now()}
+
+
 def per_language_point_ranks(session: Session, competition: str) -> dict:
     """Per-language point estimates (no bootstrap) for the home-page bump
     charts: language -> metric -> best-first [(label, win_prob)]."""
     settings = ranking_settings(session, competition)
-    key = ("bump", competition, settings.min_cells, tuple(sorted(settings.tie_pct.items())),
+    key = ("bump", competition, settings.min_cells, json.dumps(settings.tie_pct, sort_keys=True),
            data_version(session))
 
     def compute() -> dict:

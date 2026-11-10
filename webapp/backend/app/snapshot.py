@@ -111,7 +111,7 @@ def efficiency_by_competition(session: Session) -> list[dict]:
     from .ranking_api import efficiency_rankings     # avoid an import cycle
     out = []
     for comp in session.exec(select(Competition).where(Competition.status == "active")).all():
-        r = efficiency_rankings(session, comp.slug)
+        r = efficiency_rankings(session, comp.slug, fresh=True)
         if not r["entrants"]:
             continue
         out.append({

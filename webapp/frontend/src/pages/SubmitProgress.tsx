@@ -40,7 +40,7 @@ export default function SubmitProgress() {
       const attempts: AttemptIn[] = Array.isArray(parsed) ? parsed : parsed.attempts;
       if (!attempts?.length) throw new Error("payload must be an array of attempts (or {attempts: [...]})");
       const out = await api.appendAttempts(Number(id), attempts);
-      setResult(`Appended ${out.appended} attempt(s); dispatch queued.`);
+      setResult(`Appended ${out.appended} attempt(s). Dispatch is queued.`);
       await refresh();
     } catch (e: unknown) {
       setErr(String(e));
@@ -94,7 +94,7 @@ export default function SubmitProgress() {
         <h2 style={{ marginBottom: 4 }}>Append attempts</h2>
         <div className="card col">
           <p className="muted" style={{ marginTop: 0 }}>
-            Paste an array of attempts (or <code>{"{attempts: [...]}"}</code>). Each attempt runs through the correctness oracle (LeetCode) and updates this submission's totals. Inference trace is required (≥ 20 chars).
+            Paste an array of attempts (or <code>{"{attempts: [...]}"}</code>). The correctness oracle (LeetCode) checks each attempt, and the result updates the totals of this submission. Each attempt needs an inference trace (≥ 20 characters).
           </p>
           <textarea rows={12} value={raw} onChange={e => setRaw(e.target.value)} className="code" />
           <div className="row">
@@ -138,7 +138,7 @@ export default function SubmitProgress() {
         <section className="col">
           <h2 style={{ marginBottom: 4 }}>Rejected ({progress.rejected.length})</h2>
           <p className="muted" style={{ marginTop: 0 }}>
-            These problems were attempted but didn't pass LeetCode. Re-submit a corrected solution to overwrite the latest run.
+            These problems have attempts that did not pass LeetCode. Resubmit a corrected solution to overwrite the latest run.
           </p>
           <div className="card" style={{ padding: 12, maxHeight: 240, overflowY: "auto" }}>
             <ul style={{ margin: 0, paddingLeft: 18, columns: 2, columnGap: 24 }}>

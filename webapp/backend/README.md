@@ -15,7 +15,7 @@ ARENA_ADMIN_EMAIL=you@example.com ARENA_ADMIN_NAME='You' python -m app.seed
 uvicorn app.main:app --reload --port 8000
 
 # (optional) populate fake competitors & judged submissions so the leaderboard isn't empty:
-python -m app.populate
+python -m app.seed_fake_submissions
 ```
 
 Visit http://localhost:8000/docs for the auto-generated OpenAPI UI.

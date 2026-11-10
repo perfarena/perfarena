@@ -26,6 +26,7 @@ REPO_ROOT_DATA = Path(__file__).parent.parent.parent.parent / "data"
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -576,6 +577,9 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_methods=["*"], allow_headers=["*"],
 )
+# Compress JSON responses for clients that accept gzip: the submission list and
+# the rankings run to hundreds of kB. Small bodies stay uncompressed.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 from . import ip_ratelimit                                              # noqa: E402
@@ -790,6 +794,8 @@ def _startup() -> None:
         print(f"[startup] in-flight recovery failed: {e!r}",
               file=sys.stderr)
     _start_stale_marker_thread()
+    from . import ranking_store
+    ranking_store.start_refresh_thread()
     # Claim-based scheduler: requeue a previous process's claims and restart
     # workers (no-op while dispatch.scheduler_queue=0). Then the periodic
     # replica recalibration (only touches classes with admitted replicas).
@@ -7640,7 +7646,7 @@ def admin_replace_attempt_memory(
     _: User = Depends(current_admin),
 ):
     """Replace the peak-memory measurements of accepted attempts with new
-    readings (scripts/remeasure_memory.py --push), e.g. after a change of the
+    readings, e.g. after a change of the
     memory method. For each attempt, in one transaction:
 
       * reading i goes to the i-th accepted run (in run order), and every other

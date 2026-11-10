@@ -80,10 +80,11 @@ export default function AdminSettings() {
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "1rem" }}>
       <h1>Variables</h1>
       <p style={{ color: "#6b7280" }}>
-        Runtime dispatch knobs and live harness health. An override takes effect
-        without a restart. Clear a field to revert to the environment/default.
+        Runtime dispatch settings and live harness health. An override takes
+        effect without a restart. Clear a field to go back to the environment
+        value or the default.
       </p>
-      {msg && <p style={{ color: "#16a34a" }}>saved: {msg}</p>}
+      {msg && <p style={{ color: "#16a34a" }}>Saved: {msg}</p>}
       {err && <p style={{ color: "#dc2626" }}>{err}</p>}
 
       <h2 style={{ marginTop: "1.5rem" }}>Dispatch settings</h2>
@@ -127,7 +128,7 @@ export default function AdminSettings() {
                 <button disabled={busy === r.key || (edits[r.key] ?? "") === ""}
                         onClick={() => save(r.key)}>Save</button>{" "}
                 <button disabled={busy === r.key || r.source !== "override"}
-                        title="Revert to env/default"
+                        title="Go back to the environment value or the default"
                         onClick={() => save(r.key, true)}>Reset</button>
               </td>
             </tr>
@@ -139,7 +140,7 @@ export default function AdminSettings() {
         Harness health{" "}
         <button disabled={healthBusy} onClick={loadHealth}
                 style={{ fontSize: "0.8rem" }}>
-          {healthBusy ? "probing…" : "Refresh"}
+          {healthBusy ? "Probing…" : "Refresh"}
         </button>
       </h2>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>

@@ -20,7 +20,7 @@ export default function BlogPostPage() {
   const date = p.published_at ?? p.created_at;
   return (
     <article className="col" style={{ gap: 16, maxWidth: 760 }}>
-      <Link to="/blog" className="muted">← all posts</Link>
+      <Link to="/blog" className="muted">← All posts</Link>
       {p.cover_image_url && (
         <img src={p.cover_image_url} alt=""
              onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}

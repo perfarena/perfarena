@@ -1,6 +1,11 @@
+import { NOT_IN_SNAPSHOT, STATIC, staticFetch } from "./staticMode";
+
 const KEY_STORAGE = "arena.api_key";
 
 export function getApiKey(): string | null {
+  // The static snapshot has no accounts. Its origin (github.io) may also hold
+  // keys that other sites stored, so it never reads one.
+  if (STATIC) return null;
   return localStorage.getItem(KEY_STORAGE);
 }
 
@@ -104,6 +109,12 @@ export interface ReviewDetail {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (STATIC) {
+    if (init.method && init.method !== "GET") throw new Error("The snapshot is read-only.");
+    const res = await staticFetch(path);
+    if (!res.ok) throw new Error(NOT_IN_SNAPSHOT);
+    return res.json() as Promise<T>;
+  }
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   const key = getApiKey();
@@ -165,9 +176,12 @@ export interface EfficiencyEntrant {
   pareto_level: number | null;
   metrics: Record<EfficiencyMetricName, EfficiencyMetricCell>;
 }
+// A tie margin in percent: one for every language, or {language: percent}
+// with a "*" entry for the languages it does not name.
+export type TieMargin = number | Record<string, number>;
 export interface EfficiencyMetricSummary {
   sig_pairs: number; n_pairs: number; resampled: string | null;
-  tied_leaders: string[]; n_cells: number; tie_pct: number;
+  tied_leaders: string[]; n_cells: number; tie_pct: TieMargin;
 }
 export interface EfficiencyRankings {
   competition: string;
@@ -187,7 +201,7 @@ export interface HeadToHeadMetric {
   n_shared: number;
   ratio: number | null;              // geometric mean of a's value / b's value
   a_wins: number | null; ties: number | null; b_wins: number | null;   // shares of shared cells
-  tie_pct: number;
+  tie_pct: TieMargin;
 }
 export interface HeadToHead {
   competition: string; harness: string | null; language: string | null;
@@ -472,7 +486,7 @@ export const api = {
   datasetDownloadUrl: datasetDownloadUrl,
   downloadDataset: async (params: DatasetParams = {}) => {
     const key = getApiKey();
-    if (!key) throw new Error("not authenticated");
+    if (!key) throw new Error("You are not signed in.");
     const res = await fetch(datasetDownloadUrl(params), { headers: { Authorization: `Bearer ${key}` } });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     const blob = await res.blob();
@@ -544,6 +558,10 @@ export const api = {
   adminHarnessErrors: () =>
     request<{ count: number; items: HarnessErrorRow[] }>(
       `/api/admin/integrity/harness-errors`),
+  /** Recompute every stored efficiency ranking now, in the background.
+   * `started` is false when a recompute is already running. */
+  adminRefreshRankings: () =>
+    request<{ started: boolean }>(`/api/admin/rankings/refresh`, { method: "POST" }),
   /** Suspicious solutions to label invalid or ok (the speed outliers plus
    * every solution that already has a verdict). */
   adminReviewQueue: (competition: string | null, status: ReviewStatus) => {

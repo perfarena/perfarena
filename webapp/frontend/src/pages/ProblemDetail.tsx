@@ -51,8 +51,9 @@ export default function ProblemDetailPage() {
         <div className="muted"><code>{p.title_slug}</code> · {p.tags.join(", ")}</div>
         {p.original_function_name && p.function_name && (
           <div className="muted" style={{ fontSize: "0.85rem", marginTop: 4 }}>
-            Function name <code>{p.function_name}</code> is rewritten back to{" "}
-            <code>{p.original_function_name}</code> in submitted code before dispatch to LeetCode.
+            Before dispatch to LeetCode, the platform rewrites the function name{" "}
+            <code>{p.function_name}</code> in the submitted code back to{" "}
+            <code>{p.original_function_name}</code>.
           </div>
         )}
       </div>
@@ -151,11 +152,11 @@ function StarterCode({ snippets }: { snippets: Record<string, string> }) {
         </button>
       </div>
       <p className="muted" style={{ marginTop: 4 }}>
-        The exact class + method shape LeetCode's judge expects. A model that
-        ignores this and renames the method (or drops the <code>Solution</code>
-        wrapper) will fail every test case with "method not found" regardless
-        of how correct its algorithm is. Prompts for this problem should embed
-        the snippet for the target language.
+        This is the exact class and method shape that LeetCode's judge expects.
+        If a model renames the method or drops the <code>Solution</code>
+        wrapper, every test case fails with "method not found", even when the
+        algorithm is correct. Prompts for this problem should include the
+        snippet for the target language.
       </p>
       <div className="row" style={{ gap: 6, flexWrap: "wrap", marginTop: 8, marginBottom: 8 }}>
         {langs.map(l => (
@@ -199,8 +200,8 @@ function BestPerLanguage({ p }: { p: ProblemDetail }) {
             <th>Lang</th><th>Model</th><th>Submitter</th>
             <th>Status</th>
             <th title="LeetCode-reported runtime (ms)">Runtime</th>
-            <th title="Peak (max resident) memory (MB). Peak on both oracles, never per function call">Peak mem</th>
-            {showEnergy && <th title="Runtime energy (Joules). Reported by execution-instrumented harnesses (e.g. arena-local). Lower = less energy consumed executing this solution.">Energy</th>}
+            <th title="Peak (max resident) memory (MB). Both oracles report the peak, never a per-function-call value.">Peak mem</th>
+            {showEnergy && <th title="Runtime energy consumption (joules). Execution-instrumented harnesses (for example, arena-local) report it. Lower means this solution consumed less energy.">Energy</th>}
             {SHOW_RELATIVE_METRICS && <th title="Runtime percentile in that language">RT %ile</th>}
             {SHOW_RELATIVE_METRICS && <th title="Memory percentile in that language">Mem %ile</th>}
             <th title="Accepted / total judged attempts in this language">A/T</th>
@@ -264,23 +265,23 @@ function TopSolutions({ p }: { p: ProblemDetail }) {
       ) : (
         <>
           <div className="muted" style={{ fontSize: "0.82rem", marginBottom: 8, lineHeight: 1.45 }}>
-            Each row reports the <b>best of 5 dispatch repeats</b> for that
-            attempt (headline columns), with the <b>mean across all 5</b> in
-            parentheses for context. LeetCode's per-run runtime is observably
-            noisy (~4 pp percentile spread within a single attempt in our
-            data; see <code>docs/leetcode-percentile-semantics.md</code>).
-            Best-of-N gives the most stable read on what the code can do.
+            Each row shows the <b>best of 5 dispatch repeats</b> for that
+            attempt in the main columns, and the <b>mean across all 5</b> in
+            parentheses. LeetCode's runtime for each run is noisy. In our data,
+            the percentile spread within a single attempt is about 4 pp (see{" "}
+            <code>docs/leetcode-percentile-semantics.md</code>). The best of N
+            repeats gives the most stable measure of what the code can do.
           </div>
           <div className="card tbl-scroll" style={{ padding: 0 }}>
             <table className="tbl">
               <thead><tr>
                 <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
                 <th>Status</th>
-                <th title="Best LeetCode runtime across the 5 dispatch repeats (min ms); the mean is shown in parens. Lower is better.">Runtime (best · avg)</th>
-                <th title="Best peak (max resident) memory across the 5 dispatch repeats (min MB); the mean is shown in parens. Peak on both oracles, never per function call. Lower is better.">Peak mem (best · avg)</th>
-                {showEnergy && <th title="Runtime energy in Joules. Best (least energy) across dispatch repeats, mean in parens. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better.">Energy (best · avg)</th>}
-                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats; the mean is shown in parens. Higher = faster than more of the LeetCode population AT THE TIME OF SUBMISSION (LC's percentile field is itself noisy; see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>}
-                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode memory percentile across the 5 dispatch repeats; mean in parens.">Mem %ile (best · avg)</th>}
+                <th title="Best LeetCode runtime across the 5 dispatch repeats (minimum, in ms). The mean is in parentheses. Lower is better.">Runtime (best · avg)</th>
+                <th title="Best peak (max resident) memory across the 5 dispatch repeats (minimum, in MB). The mean is in parentheses. Both oracles report the peak, never a per-function-call value. Lower is better.">Peak mem (best · avg)</th>
+                {showEnergy && <th title="Runtime energy consumption in joules: the best (least energy) across the dispatch repeats. The mean is in parentheses. Execution-instrumented harnesses (for example, arena-local) report it. Lower is better.">Energy (best · avg)</th>}
+                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode runtime percentile across the 5 dispatch repeats. The mean is in parentheses. A higher value means faster than more of the LeetCode population AT THE TIME OF SUBMISSION. LeetCode's percentile field is also noisy (see docs/leetcode-percentile-semantics.md).">RT %ile (best · avg)</th>}
+                {SHOW_RELATIVE_METRICS && <th title="Highest LeetCode memory percentile across the 5 dispatch repeats. The mean is in parentheses.">Mem %ile (best · avg)</th>}
                 <th></th>
               </tr></thead>
               <tbody>

@@ -48,15 +48,17 @@ export default function Catalog() {
       <div className="hero">
         <h1>Models</h1>
         <p>
-          Every model the platform has seen submit answers. The team runs each
-          registered model itself; builders who want their model ranked give us
-          an endpoint and its specs, and we onboard it. Admin-curated rows
-          carry the full provenance and description; rows auto-stubbed on first
-          submission start as <code>unverified</code> until an admin fills in
-          the details. Open a row for the model's full metadata, or click the
-          name to see its submissions, languages, and rankings. See
+          This page lists every model that has submitted answers to the
+          platform. The team runs each registered model itself. Builders who
+          want their model ranked give us an endpoint and its specs, and we
+          onboard it. Rows that an admin curated have the full provenance and
+          description. When a new model makes its first submission, the
+          platform creates a stub row for it. A stub row starts as
+          {" "}<code>unverified</code> until an admin fills in the details.
+          Click <em>Show details</em> for the full metadata of a model. Click
+          the name to see its submissions, languages, and rankings. See
           {" "}<Link to="/prompts">Prompts</Link> for the prompts we run and
-          {" "}<Link to="/rankings">Rankings</Link> for outcomes.
+          {" "}<Link to="/rankings">Rankings</Link> for the results.
         </p>
       </div>
 
@@ -64,7 +66,7 @@ export default function Catalog() {
         <label className="row" style={{ gap: 6 }}>
           <input type="checkbox" checked={includeRetired}
                  onChange={e => setIncludeRetired(e.target.checked)} />
-          show retired
+          Show retired
         </label>
         {isAdmin && (
           <button onClick={() => { setEditing(null); setShowForm(s => !s); }}>
@@ -76,8 +78,8 @@ export default function Catalog() {
       {isAdmin && unverified > 0 && (
         <div className="card" style={{ borderColor: "var(--medium)", background: "rgba(220,180,80,0.08)", padding: 10, fontSize: "0.9rem" }}>
           <b>{unverified} model{unverified === 1 ? "" : "s"} awaiting curation.</b>{" "}
-          Auto-stubbed from submissions. Click <em>Edit</em> on any to fill in
-          the description, type, family, and provenance.
+          The platform created these rows from submissions. Click <em>Edit</em>
+          on a row to fill in the description, type, family, and provenance.
         </div>
       )}
 
@@ -161,9 +163,9 @@ function ModelCard({
         </button>
         {isAdmin && (
           <>
-            <button className="secondary" onClick={onEdit}>edit</button>
+            <button className="secondary" onClick={onEdit}>Edit</button>
             <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                    onClick={onDelete}>delete</button>
+                    onClick={onDelete}>Delete</button>
           </>
         )}
       </div>
@@ -276,8 +278,9 @@ function ModelForm({
       </h3>
       {existing?.status === "unverified" && (
         <div className="muted" style={{ fontSize: "0.85rem" }}>
-          Auto-stubbed from a submission. Fill in the description, type, family,
-          and provenance. Saving promotes it to <code>active</code>.
+          The platform created this row from a submission. Fill in the
+          description, type, family, and provenance. When you save, the status
+          changes to <code>active</code>.
         </div>
       )}
 
@@ -322,13 +325,13 @@ function ModelForm({
       </div>
 
       <label className="col">
-        <span className="muted">Description (markdown, surfaced on the card header)</span>
+        <span className="muted">Description (Markdown, shown on the card header)</span>
         <textarea rows={2} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
                   placeholder="One-paragraph summary of the model." />
       </label>
       <label className="col">
-        <span className="muted">Provenance (markdown: model card URL, citation, source)</span>
+        <span className="muted">Provenance (Markdown: model card URL, citation, source)</span>
         <textarea rows={3} value={f.provenance ?? ""}
                   onChange={e => setF({ ...f, provenance: e.target.value })}
                   placeholder="https://huggingface.co/…  ·  Paper: …" />
@@ -339,7 +342,7 @@ function ModelForm({
                   placeholder='{"temperature": 0.2}' className="code" />
       </label>
       <label className="col">
-        <span className="muted">Notes (markdown, operator-facing)</span>
+        <span className="muted">Notes (Markdown, for operators)</span>
         <textarea rows={2} value={f.notes ?? ""} onChange={e => setF({ ...f, notes: e.target.value })} />
       </label>
       {/* Per-model pricing. When BOTH are set, the SPA recomputes

@@ -25,7 +25,7 @@ export default function Login() {
     <div className="col" style={{ maxWidth: 480 }}>
       <div className="hero">
         <h1>Sign in</h1>
-        <p>Log in with your email and password.</p>
+        <p>Sign in with your email and password.</p>
       </div>
       <form className="card col" onSubmit={submit}>
         <label className="col" style={{ gap: 4 }}>
@@ -45,7 +45,7 @@ export default function Login() {
       <div className="card col">
         <h2 style={{ margin: 0 }}>No account?</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          <Link to="/register">Request access</Link>. Once approved, you can sign in with the email and password you set.
+          <Link to="/register">Request access</Link>. After the team approves your request, you can sign in with the email and password that you set.
         </p>
       </div>
     </div>

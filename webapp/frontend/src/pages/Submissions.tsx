@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, getApiKey, SubmissionPublic } from "../lib/api";
 import SubmissionsTable from "../components/SubmissionsTable";
 import { SubmitPanel } from "./Submit";
+import { LIVE_URL, STATIC } from "../lib/staticMode";
 
 const PAGE_SIZE = 20;
 
@@ -80,7 +81,7 @@ export default function Submissions() {
         <h1>Submissions</h1>
         <p>
           Every batch submitted by approved competitors.
-          {loggedIn ? " Start or continue your own below." : " Log in to submit your own."}
+          {loggedIn ? " Start or continue your own below." : " Sign in to submit your own."}
         </p>
       </div>
 
@@ -89,7 +90,7 @@ export default function Submissions() {
       <section className="col" style={{ gap: 10 }}>
         <div className="filter-bar">
           <select value={harnessSlug} onChange={e => setHarnessSlug(e.target.value)}
-                  title="Scope to submissions scored by one PERFORMANCE oracle (harness). Deep-linkable via ?harness=slug.">
+                  title="Show only the submissions that one performance oracle (harness) scored. You can deep-link with ?harness=slug.">
             <option value="">All perf oracles</option>
             {harnesses.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
@@ -97,14 +98,14 @@ export default function Submissions() {
           </select>
           <select value={correctnessOracleSlug}
                   onChange={e => setCorrectnessOracleSlug(e.target.value)}
-                  title="Scope to submissions judged by one CORRECTNESS oracle (verdict source). Deep-linkable via ?correctness_oracle=slug.">
+                  title="Show only the submissions that one correctness oracle (verdict source) judged. You can deep-link with ?correctness_oracle=slug.">
             <option value="">All correctness oracles</option>
             {correctnessOracles.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
             ))}
           </select>
           <select value={competitionSlug} onChange={e => setCompetitionSlug(e.target.value)}
-                  title="Scope to submissions targeting one competition. Deep-linkable via ?competition=slug.">
+                  title="Show only the submissions for one competition. You can deep-link with ?competition=slug.">
             <option value="">All competitions</option>
             {competitions.map(([slug, name]) => (
               <option key={slug} value={slug}>{name}</option>
@@ -139,12 +140,19 @@ export default function Submissions() {
       ) : (
         <div className="card col" style={{ gap: 8 }}>
           <h2 style={{ margin: 0 }}>Want to submit your own model?</h2>
-          <p className="muted" style={{ margin: 0 }}>
-            Submissions are open to approved competitors.{" "}
-            <Link to="/register">Request access</Link> or{" "}
-            <Link to="/login">log in</Link> to start a batch. The submit form
-            and API docs appear here once you're signed in.
-          </p>
+          {STATIC ? (
+            <p className="muted" style={{ margin: 0 }}>
+              This snapshot is read-only. Submissions are open to approved
+              competitors on the live arena at <a href={LIVE_URL}>{LIVE_URL.replace("https://", "")}</a>.
+            </p>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Submissions are open to approved competitors.{" "}
+              <Link to="/register">Request access</Link> or{" "}
+              <Link to="/login">sign in</Link> to start a batch. The submit form
+              and API docs appear here after you sign in.
+            </p>
+          )}
         </div>
       )}
     </div>

@@ -96,7 +96,7 @@ class ProblemDetail(ProblemPublic):
     # `app.fetch_code_snippets`; empty dict when not yet fetched.
     code_snippets: dict[str, str] = {}
     # When this Problem is an anti-contamination variant of another (created
-    # by app.rewrite_competition), surface the original so researchers can
+    # by app.seed_rewritten_competition), surface the original so researchers can
     # verify the mapping at a glance. None for canonical problems. The model
     # being evaluated only sees the variant's content/snippets — these
     # fields are metadata for human reviewers in the SPA.
@@ -948,7 +948,7 @@ class CompetitionPublic(BaseModel):
     # add. Distinct from harnesses_with_data (which reflects what
     # actually landed) — this is the FORWARD-LOOKING allow-list.
     compatible_harness_slugs: list[str] = []
-    ranking_tie_pct: dict[str, float] | None = None
+    ranking_tie_pct: dict[str, float | dict[str, float]] | None = None
 
 
 class CompetitionDetail(CompetitionPublic):
@@ -978,9 +978,10 @@ class CompetitionIn(BaseModel):
     # than at first-submit time.
     compatible_harness_slugs: list[str] = Field(default_factory=list)
     # Per-competition tie margins of the efficiency rankings (percent per
-    # metric: latency, energy, memory); a metric left out uses the global
-    # setting. Leaving the field out of an update keeps the stored margins.
-    ranking_tie_pct: dict[str, float] | None = None
+    # metric: latency, energy, memory), each one number or a {language:
+    # percent} dict; a metric or language left out uses the global setting.
+    # Leaving the field out of an update keeps the stored margins.
+    ranking_tie_pct: dict[str, float | dict[str, float]] | None = None
 
     @field_validator("ranking_tie_pct")
     @classmethod
@@ -989,7 +990,8 @@ class CompetitionIn(BaseModel):
             bad = {k for k in v if k not in ("latency", "energy", "memory")}
             if bad:
                 raise ValueError(f"unknown metric(s) {sorted(bad)}")
-            if any(not 0 <= x <= 50 for x in v.values()):
+            flat = [x for m in v.values() for x in (m.values() if isinstance(m, dict) else [m])]
+            if any(not 0 <= x <= 50 for x in flat):
                 raise ValueError("tie margins must lie between 0 and 50 percent")
         return v
 

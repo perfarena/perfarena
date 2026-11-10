@@ -30,7 +30,7 @@ export default function Blog() {
         <h1>Blog</h1>
         <p>
           Updates from the team: methodology notes, model deep-dives, dataset
-          changes, and leaderboard commentary. Click a card for the full post.
+          changes, and leaderboard commentary. Click a card to read the full post.
         </p>
       </div>
 
@@ -145,10 +145,10 @@ function AdminPanel({ onChange }: { onChange: () => void }) {
                   {p.published_at ? new Date(p.published_at).toLocaleDateString() : "—"}
                 </td>
                 <td>
-                  <button className="secondary" onClick={() => { setEditing(p); setShowForm(true); }}>edit</button>
+                  <button className="secondary" onClick={() => { setEditing(p); setShowForm(true); }}>Edit</button>
                   {" "}
                   <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                          onClick={() => onDelete(p.id)}>delete</button>
+                          onClick={() => onDelete(p.id)}>Delete</button>
                 </td>
               </tr>
             ))}
@@ -222,18 +222,18 @@ function PostForm({
                  placeholder="/img/post-cover.png" />
         </label>
         <label className="col" style={{ flex: "1 1 200px" }}>
-          <span className="muted">Author (display)</span>
+          <span className="muted">Author (display name)</span>
           <input value={f.author_name ?? ""} onChange={e => setF({ ...f, author_name: e.target.value })}
                  placeholder="PerfArena team" />
         </label>
       </div>
       <label className="col">
-        <span className="muted">Summary (one-paragraph teaser shown on the card)</span>
+        <span className="muted">Summary (one-paragraph teaser that the card shows)</span>
         <textarea rows={2} value={f.summary ?? ""}
                   onChange={e => setF({ ...f, summary: e.target.value })} />
       </label>
       <label className="col">
-        <span className="muted">Body (markdown)</span>
+        <span className="muted">Body (Markdown)</span>
         <textarea rows={10} className="code" value={f.body ?? ""}
                   onChange={e => setF({ ...f, body: e.target.value })}
                   placeholder="# Heading\n\nFull post body in markdown." />

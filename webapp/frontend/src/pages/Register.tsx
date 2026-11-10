@@ -26,9 +26,9 @@ export default function Register() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!captcha) { setErr("captcha not loaded"); return; }
-    if (password.length < 8) { setErr("password must be at least 8 chars"); return; }
-    if (password !== password2) { setErr("passwords don't match"); return; }
+    if (!captcha) { setErr("The captcha did not load."); return; }
+    if (password.length < 8) { setErr("The password must have at least 8 characters."); return; }
+    if (password !== password2) { setErr("The passwords do not match."); return; }
     try {
       await api.register({
         email, display_name: displayName,
@@ -103,9 +103,9 @@ export default function Register() {
       <div className="card col">
         <h2>Already have an account?</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          <Link to="/login">Sign in</Link> with your email and password. Your API
-          key is managed from your profile page after sign-in, so you never copy
-          or paste it.
+          <Link to="/login">Sign in</Link> with your email and password. After you
+          sign in, you manage your API key from your profile page, so you never
+          copy or paste it.
         </p>
       </div>
     </div>

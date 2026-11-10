@@ -23,28 +23,28 @@ export default function SubmissionsTable({ rows }: { rows: SubmissionPublic[] })
     <div className="card tbl-scroll" style={{ padding: 0 }}>
       <table className="tbl">
         <thead><tr>
-          <th title="Timestamp of the most recent attempt on this submission (falls back to creation time when nothing has been submitted yet). The table sorts by this so an active sweep stays at the top while it's still landing attempts.">When</th><th>Model</th><th>Submitter</th><th>Lang</th>
-          <th title="Registered prompt template used (clickable). 'ad-hoc' if the submitter passed inline prompt text instead of a registry id.">Prompt</th>
-          <th title="Competition this submission targeted. pass@1 and Solved are computed against THIS competition's problem set as the denominator. A dash marks a legacy row created before the per-submission scope existed.">Competition</th>
-          <th title="Perf oracle (harness) that scored this submission's runs. Resolved per submission (submission override → competition default). Every legacy row resolves to `leetcode` via the startup backfill.">Harness</th>
-          <th title="Correctness oracle: the verdict source (Accepted / Wrong Answer / RE / TLE) driving pass@1. Separate from the performance oracle, so one oracle can score a submission and another can measure it.">Correct</th>
+          <th title="Time of the most recent attempt on this submission. If the submission has no attempts yet, this is its creation time. The table sorts by this column, so an active sweep stays at the top while it still adds attempts.">When</th><th>Model</th><th>Submitter</th><th>Lang</th>
+          <th title="The registered prompt template that this submission used (click to open it). 'ad-hoc' means that the submitter sent inline prompt text instead of a registry ID.">Prompt</th>
+          <th title="The competition that this submission targeted. pass@1 and Solved use the problem set of this competition as the denominator. A dash marks a legacy row that was created before the per-submission scope existed.">Competition</th>
+          <th title="The performance oracle (harness) that scored the runs of this submission. It is resolved per submission: the submission override first, then the competition default. The startup backfill resolves every legacy row to `leetcode`.">Harness</th>
+          <th title="Correctness oracle: the verdict source (Accepted / Wrong Answer / RE / TLE) for pass@1. It is separate from the performance oracle, so one oracle can score a submission and another can measure it.">Correct</th>
           <th>Status</th><th>pass@1</th>
-          <th title="Mean acceptance rate across submitted attempts: total accepted / total submitted. Divides only by attempts actually shipped, so partial submissions aren't penalised for unattempted problems. Differs from pass@1 when there are multiple samples per problem.">pass@k</th>
+          <th title="Mean acceptance rate across submitted attempts: total accepted / total submitted. Only submitted attempts count in the denominator, so a partial submission is not penalized for problems it did not attempt. It differs from pass@1 when there are multiple samples per problem.">pass@k</th>
           <th>Solved</th>
-          <th title="Total attempts submitted (one Attempt = one code POST). Re-submissions for the same problem count.">Attempts</th>
+          <th title="Total attempts submitted (one attempt = one code POST). Resubmissions for the same problem count.">Attempts</th>
           <th title="Mean LeetCode-reported runtime">Avg RT</th>
-          <th title="Mean peak memory (MB) across runs. Peak (max resident), not per function call, correct on both oracles.">Peak mem</th>
+          <th title="Mean peak memory (MB) across runs. This is the peak (max resident) memory, not a per-function-call value, so it is valid on both oracles.">Peak mem</th>
           {SHOW_RELATIVE_METRICS && <th title="Avg LeetCode runtime percentile (relative to the reference population)">RT %ile</th>}
           {SHOW_RELATIVE_METRICS && <th title="Avg LeetCode memory percentile (relative to the reference population)">Mem %ile</th>}
           {showRuntimeEnergy && <th title="Avg runtime energy (Joules): mean of per-problem mean execution energy across accepted attempts. Reported only when the harness that scored this submission measures execution energy (an in-house runner with RAPL / NVML). Lower is better.">Avg E</th>}
-          {showRuntimeEnergy && <th title="Best runtime energy (Joules): mean of per-problem MIN execution energy across accepted attempts. Same source as Avg energy.">Best E</th>}
-          <th title="Total $ cost of all LLM calls in this submission. Live-recomputed from /models pricing × stored tokens when the model has rates configured; falls back to the snapshot stamped at submit otherwise. 0 for Ollama / local.">Cost</th>
-          <th title="Per-attempt median cost in USD. Apples-to-apples 'typical $ per problem solved', which doesn't scale with how many problems the submission covered.">$/att</th>
+          {showRuntimeEnergy && <th title="Best runtime energy (Joules): mean of the per-problem minimum execution energy across accepted attempts. Same source as Avg E.">Best E</th>}
+          <th title="Total $ cost of all LLM calls in this submission. If the model has rates configured, the cost is recomputed live from /models pricing × stored tokens. Otherwise, it is the snapshot stored at submit time. 0 for Ollama and other local models.">Cost</th>
+          <th title="Per-attempt median cost in USD: the typical $ per problem solved. It does not scale with the number of problems in the submission, so you can compare it across submissions.">$/att</th>
           <th title="Total code-only response tokens across all attempts.">Tokens</th>
-          <th title="Per-attempt median response_tokens: typical 'how many tokens does one solution from this model cost?' regardless of submission size.">tok/att</th>
+          <th title="Per-attempt median response_tokens: the typical number of tokens for one solution from this model, independent of submission size.">tok/att</th>
           <th title="Total generation wall-clock across all attempts (sum of each solution's generation time)">Gen time</th>
-          <th title="Per-attempt median generation time. Apples-to-apples 'how long does ONE solution take this model to generate' regardless of submission size.">gen/att</th>
-          {showEnergy && <th title="Total generation energy across all attempts (Joules). Reported by submit clients that have a power probe; LeetCode never reports it.">Gen E</th>}
+          <th title="Per-attempt median generation time: the typical time that this model takes to generate one solution, independent of submission size.">gen/att</th>
+          {showEnergy && <th title="Total generation energy across all attempts (Joules). Submit clients that have a power probe report it. LeetCode never reports it.">Gen E</th>}
           <th></th>
         </tr></thead>
         <tbody>

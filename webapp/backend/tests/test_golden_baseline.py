@@ -12,6 +12,7 @@ import pytest
 from sqlmodel import Session, select
 
 from conftest import ADMIN
+from app import ranking_store
 from app.db import engine
 from app.models import (
     Attempt, Competition, CompetitionProblem, Harness, Problem, Run, Submission,
@@ -100,7 +101,9 @@ def test_build_copies_each_metric_from_its_winner(client):
     assert a.code == "lat-llm python3 1" and a.response_tokens == 100 and a.cost_usd == 0.01
     assert a.trace["golden_baseline"]["sources"]["memory"]["model"] == "mem-llm"
 
-    # the reference row does not change the ranking of the real LLMs
+    # the reference row does not change the ranking of the real LLMs (the
+    # stored rankings show it after a recompute)
+    ranking_store.refresh_pass(force=True)
     after = _rankings(client)
     for k, e in before.items():
         for m in ("latency", "energy", "memory"):

@@ -25,11 +25,12 @@ export default function Machines() {
     <div className="col">
       <h1 style={{ marginBottom: 4 }}>Machines</h1>
       <div className="muted" style={{ fontSize: "0.9rem", marginBottom: 8 }}>
-        The measurement hosts submissions ran on. Runtime and energy are only
-        comparable within one machine and one energy tool, so each measurement
-        records the machine it was produced on. Rows are created automatically
-        when a runner reports its hardware descriptor.
-        {isAdmin && " As an admin you can edit each machine's details below."}
+        These are the measurement hosts that submissions ran on. Runtime and
+        energy are comparable only within one machine and one energy tool. For
+        this reason, each measurement records the machine that produced it.
+        The platform adds a machine automatically when a runner reports its
+        hardware descriptor.
+        {isAdmin && " As an admin, you can edit the details of each machine below."}
       </div>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

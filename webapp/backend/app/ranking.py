@@ -37,7 +37,9 @@ ALPHA = 0.05
 
 @dataclass
 class Settings:
-    tie_pct: dict[str, float]          # metric -> tie margin in percent
+    # metric -> tie margin in percent: one for every language, or a
+    # {language: percent} dict whose "*" entry covers the other languages
+    tie_pct: dict[str, float | dict[str, float]]
     bootstrap: int = 1000
     min_cells: int = 3                 # per-language minimum to get a rank
     min_problem_clusters: int = 30     # resample problems from this many on
@@ -106,19 +108,28 @@ def final_attempts(attempts: list, latest: bool = False) -> dict[tuple[int, int]
 
 # ---- duels and the Bradley-Terry fit --------------------------------------------
 
-def duel_matrices(cells: dict, keys: list[str], margin_pct: float):
+def band(margin_pct, lang: str) -> float:
+    """Log-ratio half-width within which two values of `lang` tie. A margin
+    is one percentage for every language, or a {language: percent} dict whose
+    "*" entry covers the languages that it does not name."""
+    if isinstance(margin_pct, dict):
+        margin_pct = margin_pct.get(lang, margin_pct.get("*", 0.0))
+    return math.log1p(margin_pct / 100.0)
+
+
+def duel_matrices(cells: dict, keys: list[str], margin_pct):
     """[(language, problem, W)] with W[i, j] = wins of keys[i] over keys[j]."""
     idx = {k: i for i, k in enumerate(keys)}
-    band = math.log1p(margin_pct / 100.0)
     out = []
     for (lang, prob), values in cells.items():
         present = [(idx[k], v) for k, v in values.items() if k in idx and v and v > 0]
         if len(present) < 2:
             continue
+        b = band(margin_pct, lang)
         W = np.zeros((len(keys), len(keys)))
         for (i, vi), (j, vj) in combinations(present, 2):
             d = math.log(vi / vj)
-            if abs(d) <= band:
+            if abs(d) <= b:
                 W[i, j] += 0.5
                 W[j, i] += 0.5
             elif d < 0:
@@ -144,6 +155,27 @@ def fit(W: np.ndarray, pseudo: float = 0.5, start=None, tol: float = 1e-9,
         p = new
         if done:
             break
+    return 1000 + 400 * np.log10(p)
+
+
+def fit_batch(Ws: np.ndarray, pseudo: float = 0.5, start=None, tol: float = 1e-9,
+              iters: int = 20000) -> np.ndarray:
+    """fit() on a stack of duel matrices (B x k x k) in one numpy loop. Each
+    matrix stops at its own convergence, so row b equals fit(Ws[b])."""
+    B, k, _ = Ws.shape
+    Ws = Ws + pseudo / 2 * (1 - np.eye(k))
+    N, w = Ws + Ws.transpose(0, 2, 1), Ws.sum(2)
+    p = np.tile(np.ones(k) if start is None else 10 ** ((np.asarray(start) - 1000) / 400), (B, 1))
+    live = np.arange(B)
+    for _ in range(iters):
+        if live.size == 0:
+            break
+        pl = p[live]
+        new = w[live] / (N[live] / (pl[:, :, None] + pl[:, None, :])).sum(2)
+        new /= np.exp(np.log(new).mean(1))[:, None]
+        done = np.max(np.abs(np.log(new / pl)), 1) < tol
+        p[live] = new
+        live = live[~done]
     return 1000 + 400 * np.log10(p)
 
 
@@ -176,7 +208,7 @@ def significance(keys: list[str], point: np.ndarray, units: list[np.ndarray],
         return beats, 0
     U = np.stack(units)
     counts = rng.multinomial(len(U), np.full(len(U), 1 / len(U)), size=n_boot)
-    samples = np.array([fit(np.tensordot(c, U, axes=1), start=point) for c in counts])
+    samples = fit_batch(np.tensordot(counts, U, axes=1), start=point)
     pairs = list(combinations(range(len(keys)), 2))
     pv = []
     for i, j in pairs:
@@ -204,7 +236,7 @@ def restrict(duels, keys: list[str], sub: list[str]):
     return [(l, p, W[np.ix_(idx, idx)]) for l, p, W in duels]
 
 
-def analyse_metric(cells: dict, keys: list[str], margin_pct: float, settings: Settings,
+def analyse_metric(cells: dict, keys: list[str], margin_pct, settings: Settings,
                    n_problems: int, per_language_min: bool, rng: np.random.Generator) -> dict:
     """Ratings, win probabilities, and tied leaders of one metric."""
     duels = duel_matrices(cells, keys, margin_pct)
@@ -252,19 +284,18 @@ def pareto(keys: list[str], beats_by_metric: dict[str, dict]) -> dict:
     return dict(level=level, edges=edges)
 
 
-def head_to_head(cells: dict, a: str, b: str, margin_pct: float) -> dict:
+def head_to_head(cells: dict, a: str, b: str, margin_pct) -> dict:
     """a against b on the cells that both solved: geometric-mean ratio of a's
     value to b's, and the shares of cells that a wins, ties, and loses."""
-    band = math.log1p(margin_pct / 100.0)
-    logs = [math.log(v[a] / v[b]) for v in cells.values()
-            if v.get(a) and v.get(b) and v[a] > 0 and v[b] > 0]
-    if not logs:
+    pairs = [(math.log(v[a] / v[b]), band(margin_pct, lang)) for (lang, _p), v in cells.items()
+             if v.get(a) and v.get(b) and v[a] > 0 and v[b] > 0]
+    if not pairs:
         return dict(n_shared=0, ratio=None, a_wins=None, ties=None, b_wins=None)
-    n = len(logs)
-    return dict(n_shared=n, ratio=math.exp(sum(logs) / n),
-                a_wins=sum(x < -band for x in logs) / n,
-                ties=sum(abs(x) <= band for x in logs) / n,
-                b_wins=sum(x > band for x in logs) / n)
+    n = len(pairs)
+    return dict(n_shared=n, ratio=math.exp(sum(x for x, _ in pairs) / n),
+                a_wins=sum(x < -h for x, h in pairs) / n,
+                ties=sum(abs(x) <= h for x, h in pairs) / n,
+                b_wins=sum(x > h for x, h in pairs) / n)
 
 
 def rank(cells_by_metric: dict[str, dict], keys: list[str], settings: Settings,

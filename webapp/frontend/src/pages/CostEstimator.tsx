@@ -84,9 +84,9 @@ export default function CostEstimator() {
         <h1>Cost estimator</h1>
         <p>
           Estimate the $ cost of populating a model across the platform.
-          The numbers come from observed token totals on already-completed
-          full sweeps. Narrow the cohort with the filters below for a
-          tighter envelope.
+          The numbers come from the token totals of full sweeps that already
+          finished. Narrow the cohort with the filters below for a tighter
+          envelope.
         </p>
       </div>
 
@@ -224,7 +224,7 @@ function EnvelopePanel({
       <div className="muted" style={{ fontSize: "0.85rem", marginTop: 10, lineHeight: 1.5 }}>
         Computed from <b>{n}</b> already-completed full sweep{n === 1 ? "" : "s"} matching the filters.
         {n === 0 && " No full sweep with token data exists yet for this combination. Try fewer filters or wait for a sweep to finish."}
-        {n > 0 && n < 3 && " Small sample, so treat the envelope as indicative until more sweeps land."}
+        {n > 0 && n < 3 && " The sample is small, so treat the envelope as approximate until more sweeps finish."}
       </div>
     </div>
   );
@@ -291,7 +291,7 @@ function SubmissionsTable({ rows }: { rows: CostEstimatorSubmissionRow[] }) {
           <th>Language</th>
           <th>Prompt</th>
           <th>Competition</th>
-          <th title="Unique problems hit / problems in scope. ≥ scope = full sweep.">Coverage</th>
+          <th title="Unique problems attempted / problems in scope. When attempted ≥ in scope, the submission is a full sweep.">Coverage</th>
           <th>Input tokens</th>
           <th>Output tokens</th>
         </tr></thead>

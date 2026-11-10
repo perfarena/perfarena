@@ -36,7 +36,7 @@ export default function CorrectnessOracles() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this correctness oracle? Refuses if any competitions / submissions / runs still reference it.")) return;
+    if (!confirm("Delete this correctness oracle? The server refuses the delete if any competition, submission, or run still references it.")) return;
     try { await api.deleteCorrectnessOracle(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -49,7 +49,7 @@ export default function CorrectnessOracles() {
         <label className="row" style={{ gap: 6 }}>
           <input type="checkbox" checked={includeRetired}
                  onChange={e => setIncludeRetired(e.target.checked)} />
-          show retired
+          Show retired
         </label>
         {isAdmin && (
           <button onClick={() => { setEditing(null); setShowForm(s => !s); }}>
@@ -128,9 +128,9 @@ function CorrectnessOracleCard({
         </Link>
         {isAdmin && (
           <>
-            <button className="secondary" onClick={onEdit}>edit</button>
+            <button className="secondary" onClick={onEdit}>Edit</button>
             <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                    onClick={onDelete}>delete</button>
+                    onClick={onDelete}>Delete</button>
           </>
         )}
       </div>
@@ -173,7 +173,7 @@ function CorrectnessOracleForm({
     let cfg: Record<string, unknown> | null = null;
     if (configText.trim()) {
       try { cfg = JSON.parse(configText); }
-      catch { setErr("config must be valid JSON"); setBusy(false); return; }
+      catch { setErr("Config must be valid JSON."); setBusy(false); return; }
     }
     try {
       const body: CorrectnessOracleIn = {
@@ -216,13 +216,13 @@ function CorrectnessOracleForm({
         </label>
       </div>
       <label className="col">
-        <span className="muted">Description (markdown). How does this oracle decide whether a solution is correct? What verdicts can it emit? Which test suite backs it?</span>
+        <span className="muted">Description (Markdown). How does this oracle decide whether a solution is correct? Which verdicts can it emit? Which test suite does it use?</span>
         <textarea rows={4} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
                   placeholder="e.g. Runs each submission against pytest inside a sandboxed container. Emits Accepted / Wrong Answer / Runtime Error / Timeout. Test suite: HumanEval-plus (r3). See docs/correctness/humaneval-plus.md." />
       </label>
       <label className="col">
-        <span className="muted">Config (JSON, optional). Test-suite path, docker image tag, timeouts, whatever the oracle needs to reproduce a verdict.</span>
+        <span className="muted">Config (JSON, optional). Add the test-suite path, Docker image tag, timeouts, and anything else that the oracle needs to reproduce a verdict.</span>
         <textarea rows={3} value={configText}
                   onChange={e => setConfigText(e.target.value)}
                   placeholder='{"tests_dir": "/opt/humaneval-plus", "image": "perfarena/correctness:sha256-…", "timeout_s": 30}'

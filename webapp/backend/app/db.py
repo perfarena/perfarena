@@ -145,7 +145,7 @@ _ADDITIVE_COLUMNS = [
     # of 45/99). NULL on legacy submissions; the leaderboard math falls
     # back to the canonical-99 universe for those.
     ("submission", "competition_id", "INTEGER"),
-    # Anti-contamination problem variants — see app/rewrite_competition.py.
+    # Anti-contamination problem variants — see app/seed_rewritten_competition.py.
     # A "variant" Problem is the same task as `original_problem_id`, but
     # the title / statement / function name have been rephrased so a model
     # that memorised the original training set can't pattern-match its way

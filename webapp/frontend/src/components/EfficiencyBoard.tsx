@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   api, EfficiencyEntrant, EfficiencyMetricName, EfficiencyRankings,
 } from "../lib/api";
-import { formatDollar, formatPassAt1, formatWinProb } from "../lib/format";
+import { formatDollar, formatPassAt1, formatTieMargin, formatWinProb } from "../lib/format";
 import Th from "./Th";
 
 /* Efficiency leaderboard with the method of the paper (GET
@@ -27,7 +27,7 @@ export function entrantLabel(e: { model_name: string; workflow: string; key: str
 export function ReferenceBadge({ version }: { version: string }) {
   return (
     <span className="badge badge-status" style={{ marginLeft: 6 }}
-          title={`Golden baseline, ${version}: for each problem, language, and metric, the best correct solution of the campaign LLMs. Copied from stored results, not generated or measured again. Listed, never ranked. Compare an LLM against it on the Compare page.`}>
+          title={`Golden baseline, ${version}: for each problem, language, and metric, the best correct solution of the campaign LLMs. The platform copied these values from stored results. It did not generate or measure them again. The reference is listed, never ranked. Compare an LLM against it on the Compare page.`}>
       reference
     </span>
   );
@@ -131,15 +131,15 @@ export default function EfficiencyBoard({
           <thead><tr>
             <Th label="#" tip="Row position under the current sort." />
             <Th label="Model" tip="Model name and version. Click the name to open the model's page." sortKey="model_name" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-            <Th label="Workflow" tip="How the model produced its solutions: a plain prompt (direct) or an agent, and how many rounds of refinement. Each model × workflow pair ranks as its own entrant." />
+            <Th label="Workflow" tip="How the model generated its solutions: a plain prompt (direct) or an agent, and how many rounds of refinement. Each model × workflow pair ranks as its own entrant." />
             {metrics.map(m => (
               <Th key={m} label={METRIC_LABEL[m]}
-                  tip={`Win probability in ${METRIC_LABEL[m].toLowerCase()}: the mean chance that this entrant beats another entrant on a problem that both solved in the same language (Bradley-Terry model). Two values within ${data.metrics[m].tie_pct}% tie and count as half a win. Bold marks the tied leaders: no other entrant is significantly better (bootstrap, Holm correction, α = 0.05). The small number is the rank.`}
+                  tip={`Win probability in ${METRIC_LABEL[m].toLowerCase()}: the mean chance that this entrant beats another entrant on a problem that both solved in the same language (Bradley-Terry model). Two values within ${formatTieMargin(data.metrics[m].tie_pct, data.language)} tie and count as half a win. Bold marks the tied leaders: no other entrant is significantly better (bootstrap, Holm correction, α = 0.05). The small number is the rank.`}
                   sortKey={m} activeKey={sortKey} dir={sortDir} onSort={onSort} />
             ))}
             <Th label="pass@1" tip="Share of the competition's cells (problem × language) where the first sample was correct. A failed problem gives no duel, so it shows here and not in the win probabilities." sortKey="pass_at_1" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <Th label="Solved" tip="Cells solved / cells the competition holds for this entrant's languages." />
-            <Th label="$/attempt" tip="LLM cost per attempted solution: the cost of every attempt (all rounds) divided by the number of attempted cells. Recomputed from current model pricing when it is set." sortKey="cost" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+            <Th label="$/attempt" tip="LLM cost per attempted solution: the cost of every attempt (all rounds) divided by the number of attempted cells. The platform recomputes it from the current model pricing when that pricing is set." sortKey="cost" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <Th label="Pareto" tip={`Pareto level over ${data.pareto_metrics.map(m => METRIC_LABEL[m].toLowerCase()).join(", ")}. Level 1 = no other entrant dominates it. One entrant dominates another when it is significantly better in at least one metric and significantly worse in none.`} sortKey="pareto" activeKey={sortKey} dir={sortDir} onSort={onSort} />
             <Th label="Langs" tip="Languages this entrant has a judged submission in. Hover for the list." />
           </tr></thead>
@@ -154,7 +154,7 @@ export default function EfficiencyBoard({
                   {e.reference && <ReferenceBadge version={e.model_version} />}
                   {e.partial && (
                     <span className="badge badge-medium" style={{ marginLeft: 6 }}
-                          title="Attempted fewer than a third of its cells: listed but not ranked.">
+                          title="This entrant attempted fewer than a third of its cells. It is listed but not ranked.">
                       partial
                     </span>
                   )}

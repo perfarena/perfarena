@@ -45,17 +45,17 @@ interface MetricSpec {
 const METRICS: MetricSpec[] = [
   {
     key: "runtime", label: "Runtime", unit: "ms",
-    unitTip: "Mean runtime of the best accepted attempt (ms). Lower ms is better. Bar width shows each model's RANK on this metric within the problem: the FASTEST model (lowest ms) fills the track; others scale down as (min / their_ms) × track_width. BIGGER bar is better.",
+    unitTip: "Mean runtime of the best accepted attempt (ms). Lower ms is better. Bar width shows each model's rank on this metric within the problem. The fastest model (lowest ms) fills the track. The other bars scale down as (min / their_ms) × track_width. A bigger bar is better.",
     raw: c => c.runtime_ms,
   },
   {
     key: "memory", label: "Peak mem", unit: "MB",
-    unitTip: "Mean peak (max resident) memory of the best accepted attempt (MB), peak on both oracles, never per function call. Lower MB is better. Same scaling as runtime: the LEANEST model (lowest MB) fills the track; others scale by ratio. BIGGER bar is better.",
+    unitTip: "Mean peak (max resident) memory of the best accepted attempt (MB). Both oracles report the peak memory, never the memory per function call. Lower MB is better. The scaling is the same as for runtime: the leanest model (lowest MB) fills the track, and the other bars scale by ratio. A bigger bar is better.",
     raw: c => c.memory_mb,
   },
   {
     key: "energy", label: "Energy", unit: "J",
-    unitTip: "Best-attempt energy in Joules. Prefers RUNTIME energy (execution-side, reported by arena-local and similar harnesses): the axis that actually varies across models solving the same problem. Falls back to GENERATION energy (LLM-side) when the runtime figure isn't populated. Lower J is better. Same scaling: the most efficient model fills the track.",
+    unitTip: "Energy of the best attempt, in joules. The chart prefers runtime energy (execution-side, reported by arena-local and similar harnesses), because that value varies across models that solve the same problem. When the runtime value is missing, the chart uses generation energy (LLM-side). Lower J is better. The scaling is the same: the most efficient model fills the track.",
     raw: c => c.runtime_energy_j ?? c.generation_energy_j,
   },
 ];

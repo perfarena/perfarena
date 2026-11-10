@@ -38,12 +38,17 @@ export default function About() {
         <h1>About PerfArena</h1>
         <p style={{ maxWidth: 720, fontSize: "1.05rem", lineHeight: 1.5 }}>
           PerfArena is an open ranking of language models by the performance
-          of the code they produce. Each competition pairs a problem set with
-          its own correctness and performance oracles, and we run every model
+          of the code they generate. Each competition pairs a problem set with
+          its own correctness and performance oracles. We run every model
           ourselves and verify each result end to end. Anyone can reproduce
-          or audit a run from its recorded trace. The project comes out of{" "}
-          <b>NYU Abu Dhabi</b>, and the code is released under the Apache 2.0
-          License.
+          or audit a run from its recorded trace. The project comes from{" "}
+          <b>NYU Abu Dhabi</b>. The code is released under the Apache 2.0
+          License. The data that PerfArena produces (generated solutions,
+          measurements, and rankings) is released under the{" "}
+          <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+            CC BY 4.0
+          </a>{" "}
+          License. LeetCode problem statements remain the property of LeetCode.
         </p>
       </div>
 
@@ -58,7 +63,7 @@ export default function About() {
         <h2>Affiliations</h2>
         <p className="muted" style={{ lineHeight: 1.6 }}>
           <a href={SANADLAB_URL} target="_blank" rel="noreferrer"><b>SanadLab</b></a>{" "}
-          is a research group at NYU Abu Dhabi studying programming languages, program analysis,
+          is a research group at NYU Abu Dhabi that studies programming languages, program analysis,
           and software engineering for the next generation of AI systems. Rui Rua and Karim Ali
           are affiliated with SanadLab. João Paulo Fernandes is faculty at NYU Abu Dhabi.
         </p>
@@ -68,7 +73,7 @@ export default function About() {
         <h2>Citing PerfArena</h2>
         <p className="muted">
           If you use the leaderboard or the downloadable solutions dataset in your work, please cite
-          the project (citation BibTeX coming soon) and link back to this site.
+          the project and link back to this site. The BibTeX citation is coming soon.
         </p>
       </section>
 

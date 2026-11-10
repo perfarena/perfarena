@@ -55,7 +55,7 @@ export default function AdminExport() {
     setErr(""); setBusy(true);
     try {
       const key = getApiKey();
-      if (!key) throw new Error("not authenticated");
+      if (!key) throw new Error("You are not signed in.");
       const ordered = tables.filter(t => picked.has(t));   // keep server's order
       // Only request credentials when leetcode_accounts is actually selected;
       // otherwise the flag is a no-op and confuses the audit log.
@@ -92,7 +92,7 @@ export default function AdminExport() {
       const text = await importFile.text();
       let parsed: unknown;
       try { parsed = JSON.parse(text); }
-      catch { throw new Error("Selected file isn't valid JSON."); }
+      catch { throw new Error("The selected file is not valid JSON."); }
       const r = await api.adminImport(parsed);
       setResult(r);
     } catch (e: unknown) {
@@ -105,12 +105,12 @@ export default function AdminExport() {
   return (
     <div className="col" style={{ gap: 24 }}>
       <div className="hero">
-        <h1>Export & Import</h1>
+        <h1>Export & import</h1>
         <p>
-          Snapshot the platform's content into a downloadable bundle, or
-          merge another instance's export into this database. Useful when
-          several replicas run in parallel (different LeetCode accounts)
-          and you want to converge them into one.
+          Download the platform's content as a bundle, or merge the export
+          of another instance into this database. Use this page when several
+          replicas run in parallel (with different LeetCode accounts) and you
+          want to merge them into one.
           {" "}<Link to="/admin">Back to admin</Link>
         </p>
       </div>
@@ -121,9 +121,9 @@ export default function AdminExport() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Export</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Pick tables, pick a format, then download. JSON can be replayed
-          back into another instance via Import below; CSV is for spreadsheet
-          inspection only.
+          Pick the tables and a format, then download. You can import a JSON
+          bundle into another instance with Import below. CSV is only for
+          inspection in a spreadsheet.
         </p>
 
         <div className="card col" style={{ gap: 10 }}>
@@ -131,8 +131,8 @@ export default function AdminExport() {
             <span className="muted" style={{ fontSize: "0.85rem" }}>
               Tables ({selectedCount} of {tables.length} selected)
             </span>
-            <button className="secondary" type="button" onClick={pickAll}>all</button>
-            <button className="secondary" type="button" onClick={pickNone}>none</button>
+            <button className="secondary" type="button" onClick={pickAll}>All</button>
+            <button className="secondary" type="button" onClick={pickNone}>None</button>
           </div>
           <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
             {tables.map(t => (
@@ -159,17 +159,18 @@ export default function AdminExport() {
               <div className="muted" style={{ fontSize: "0.8rem", lineHeight: 1.5 }}>
                 {includeCreds ? (
                   <>
-                    ⚠ The bundle will ship every account's raw{" "}
-                    <code>LEETCODE_SESSION</code> JWT. Treat the download as a
-                    secret — encrypt at rest, don't commit to git, and rotate
-                    the cookies on the target instance after import.
+                    ⚠ The bundle will contain the raw{" "}
+                    <code>LEETCODE_SESSION</code> JWT of every account. Treat the
+                    download as a secret. Encrypt it at rest, do not commit it to
+                    git, and rotate the cookies on the target instance after the
+                    import.
                   </>
                 ) : (
                   <>
-                    Account names + cooldown timestamps export normally;{" "}
-                    cookies appear as <code>&lt;head&gt;…&lt;redacted&gt;</code>.
-                    Tick the box only when migrating an actual credential pool
-                    to another instance.
+                    Account names and cooldown timestamps export normally.{" "}
+                    Cookies appear as <code>&lt;head&gt;…&lt;redacted&gt;</code>.
+                    Select the box only when you move a credential pool to
+                    another instance.
                   </>
                 )}
               </div>
@@ -181,7 +182,7 @@ export default function AdminExport() {
             <label className="row" style={{ gap: 6 }}>
               <input type="radio" name="format" value="json"
                      checked={format === "json"} onChange={() => setFormat("json")} />
-              JSON <span className="muted" style={{ fontSize: "0.8rem" }}>(round-trippable)</span>
+              JSON <span className="muted" style={{ fontSize: "0.8rem" }}>(can be imported)</span>
             </label>
             <label className="row" style={{ gap: 6 }}>
               <input type="radio" name="format" value="csv"
@@ -199,36 +200,40 @@ export default function AdminExport() {
       <section className="col">
         <h2 style={{ marginBottom: 4 }}>Import (merge)</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: "0.9rem" }}>
-          Drop a JSON bundle produced by another instance's export. Merge
-          semantics:
+          Select a JSON bundle that another instance exported. The import
+          merges it as follows:
         </p>
         <ul className="muted" style={{ marginTop: 0, lineHeight: 1.6, fontSize: "0.9rem" }}>
           <li>
             Natural-key tables (<code>users</code>, <code>problems</code>,{" "}
             <code>prompt_templates</code>, <code>registered_models</code>,{" "}
             <code>competitions</code>, <code>blog_posts</code>,{" "}
-            <code>baselines</code>) — incoming rows whose key already exists
-            locally are <b>skipped</b>; admin curation here wins.
+            <code>baselines</code>): the import <b>skips</b> an incoming row
+            when its key already exists locally, so the admin curation on this
+            instance wins.
           </li>
           <li>
             Surrogate-key tables (<code>submissions</code>,{" "}
-            <code>attempts</code>, <code>runs</code>) — rows are <b>always
-            inserted</b> with new local ids, FKs remapped so replicas with
-            overlapping integer ids merge cleanly.
+            <code>attempts</code>, <code>runs</code>): the import <b>always
+            inserts</b> the rows with new local ids and remaps the foreign keys.
+            Replicas with overlapping integer ids therefore merge without
+            collisions.
           </li>
           <li>
-            <code>leetcode_accounts</code> (file-backed credential pool) —
-            merged into <code>data/leetcode_accounts.json</code> by name.
-            Names that already exist locally are <b>skipped</b> (local cookies
-            win). Rows whose <code>cookie_header</code> looks redacted (no
+            <code>leetcode_accounts</code> (file-backed credential pool): the
+            import merges the rows into <code>data/leetcode_accounts.json</code>{" "}
+            by name. It <b>skips</b> names that already exist locally (local
+            cookies win). It also skips, without an error, rows whose{" "}
+            <code>cookie_header</code> looks redacted (no{" "}
             <code>LEETCODE_SESSION</code>, or marked{" "}
-            <code>&lt;redacted&gt;</code>) are silently skipped — so importing
-            a sanitized bundle is safe and just brings over the account-list
-            shape.
+            <code>&lt;redacted&gt;</code>). So you can safely import a
+            sanitized bundle. It only brings over the shape of the account
+            list.
           </li>
           <li>
-            The append-only transparency hash chain (<code>TraceLogEntry</code>)
-            is <b>not</b> imported — it's per-instance by construction.
+            The import does <b>not</b> copy the append-only transparency hash
+            chain (<code>TraceLogEntry</code>). Each instance has its own chain
+            by design.
           </li>
         </ul>
 

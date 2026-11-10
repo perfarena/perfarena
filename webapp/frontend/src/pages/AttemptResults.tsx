@@ -53,7 +53,7 @@ export default function AttemptResults() {
           {s && <span className="muted"> · {s.model_name} {s.model_version}</span>}
         </h1>
         <p className="muted" style={{ marginTop: 0 }}>
-          Every attempt below was dispatched to LeetCode and scored: accepted, rejected, or still queued.
+          Every attempt below was dispatched to LeetCode. Its status is accepted, rejected, or queued (not scored yet).
         </p>
         <p className="muted">
           Submission #{id}{s ? ` · ${s.language}` : ""} ·{" "}

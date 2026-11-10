@@ -42,7 +42,7 @@ export default function SnapshotDetailPage() {
           <table className="tbl">
             <thead><tr>
               <th>#</th><th>Model</th><th>Submitter</th><th>Lang</th>
-              <th title="Registered prompt template used at snapshot time. Pre-2026-05-28 snapshots may show 'ad-hoc' for all rows (field wasn't recorded yet).">Prompt</th>
+              <th title="Registered prompt template used at snapshot time. Snapshots from before 2026-05-28 may show 'ad-hoc' for all rows, because the platform did not record this field yet.">Prompt</th>
               <th>pass@1</th><th>Solved</th>{SHOW_RELATIVE_METRICS && <><th>Runtime %ile</th><th>Memory %ile</th></>}<th></th>
             </tr></thead>
             <tbody>

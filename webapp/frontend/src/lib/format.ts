@@ -153,3 +153,13 @@ export function energySeriesFormatter(
     return `${s.toFixed(a >= 100 ? 0 : a >= 10 ? 1 : 2)} ${unit}`;
   };
 }
+
+/** A tie margin as text: its percentage, the percentage of `language`, or the
+ *  range over the languages of a per-language margin. */
+export function formatTieMargin(t: number | Record<string, number>, language?: string | null): string {
+  const pct = (x: number) => `${+x.toFixed(2)}%`;
+  if (typeof t === "number") return pct(t);
+  if (language) return pct(t[language] ?? t["*"]);
+  const v = Object.entries(t).filter(([k]) => k !== "*").map(([, x]) => x);
+  return v.length ? `${+Math.min(...v).toFixed(2)}–${pct(Math.max(...v))} by language` : pct(t["*"]);
+}

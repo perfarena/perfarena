@@ -41,13 +41,14 @@ export default function AdminSpeedOutliers() {
         <h1>Too-fast outliers</h1>
         <p>
           Accepted attempts that ran at least <b>{factor}×</b> faster than the
-          median of the other accepted solutions for the same problem +
-          language. A solution this much faster has usually skipped the work the
-          benchmark measures (for example, computing a CLBG checksum in closed
-          form instead of actually allocating) — its runtime and energy are then
-          meaningless even though the output passed. This is a signal to review,
-          not proof: a genuinely clever optimization can land here too.
-          Label them on the <Link to="/admin/review">Review</Link> page.
+          median of the other accepted solutions for the same problem and
+          language. A solution this much faster has usually skipped the work that
+          the benchmark measures (for example, it computes a CLBG checksum in
+          closed form instead of allocating). Its runtime and energy are then
+          meaningless, even though the output passed. A flag is a reason to
+          review the solution. It is not proof, because a clever optimization can
+          also be this fast. Label them on the{" "}
+          <Link to="/admin/review">Review</Link> page.
         </p>
       </div>
 

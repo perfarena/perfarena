@@ -43,10 +43,10 @@ export default function HarnessesHub() {
           (Accepted / Wrong Answer / Runtime Error / TLE / Compile Error).
           LeetCode's online judge does both today, so the seeded{" "}
           <code>leetcode</code> row on each tab covers every legacy
-          submission. New harnesses go on the tab they belong to (an in-house
-          RAPL-instrumented runner for performance, a HumanEval unit-test
-          suite for correctness), and competition and submission rows bind
-          them independently.
+          submission. Add a new harness on the tab where it belongs (for
+          example, an in-house RAPL-instrumented runner for performance or a
+          HumanEval unit-test suite for correctness). Competitions and
+          submissions bind the two kinds of oracle independently.
         </p>
       </div>
 

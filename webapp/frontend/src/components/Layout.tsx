@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, getApiKey, MePayload, setApiKey, subscribeAuth } from "../lib/api";
+import { STATIC, snapshotMeta } from "../lib/staticMode";
 import ThemeToggle from "./ThemeToggle";
 
 /* Link lists shared between the desktop dropdowns and the mobile menu, so the
@@ -26,7 +27,7 @@ const ADMIN_LINKS = [
   { to: "/admin",                   label: "Admin" },
   { to: "/admin/pending",           label: "Pending" },
   { to: "/admin/leetcode-accounts", label: "LeetCode accounts" },
-  { to: "/admin/export",            label: "Export & Import" },
+  { to: "/admin/export",            label: "Export & import" },
   { to: "/admin/settings",          label: "Variables" },
 ];
 
@@ -34,8 +35,10 @@ export default function Layout() {
   const [me, setMe] = useState<MePayload | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [apiVersion, setApiVersion] = useState("");
+  const [snapshotDate, setSnapshotDate] = useState("");
   useEffect(() => {
     api.version().then(v => setApiVersion(v.version)).catch(() => {});
+    if (STATIC) snapshotMeta().then(m => setSnapshotDate(m ? m.exported_at.slice(0, 10) : ""));
   }, []);
   const nav = useNavigate();
   const loc = useLocation();
@@ -76,7 +79,7 @@ export default function Layout() {
           <Link to="/" className="brand">
             {/* /logo.png is served from public/. onError hides it gracefully
               * so the wordmark still renders if the file is missing in dev. */}
-            <img src="/logo.png" alt="PerfArena"
+            <img src={`${import.meta.env.BASE_URL}logo.png`} alt="PerfArena"
                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
             PerfArena
           </Link>
@@ -93,15 +96,17 @@ export default function Layout() {
           </nav>
         </div>
         <div className="row" style={{ gap: 12 }}>
-          <div className="row auth-desktop" style={{ gap: 12 }}>
-            {me ? (
-              <UserMenu me={me} onLogout={logout} />
-            ) : (
-              // Self-signup removed — the platform is curated by the team. Only
-              // sign-in stays surfaced; legacy /register stays reachable by URL.
-              <NavLink to="/login">Login</NavLink>
-            )}
-          </div>
+          {!STATIC && (
+            <div className="row auth-desktop" style={{ gap: 12 }}>
+              {me ? (
+                <UserMenu me={me} onLogout={logout} />
+              ) : (
+                // Self-signup removed — the platform is curated by the team. Only
+                // sign-in stays surfaced; legacy /register stays reachable by URL.
+                <NavLink to="/login">Sign in</NavLink>
+              )}
+            </div>
+          )}
           <ThemeToggle />
           <button
             className="nav-toggle"
@@ -118,19 +123,28 @@ export default function Layout() {
           <MobileNav me={me} onLogout={logout} onClose={() => setMobileOpen(false)} />
         )}
       </header>
+      {STATIC && (
+        <div className="snapshot-banner">
+          This is a read-only snapshot{snapshotDate ? ` of ${snapshotDate}` : ""}.
+        </div>
+      )}
       <main><Outlet /></main>
       <footer className="col" style={{ gap: 4 }}>
         <div>
-          Open, replicable coding-model rankings · every result verified and auditable ·
-          {" "}<a href="/docs" target="_blank" rel="noreferrer">API docs</a> ·
-          {" "}<a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a> ·
-          {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
+          Open, replicable rankings of coding models · every result is verified and auditable ·
+          {!STATIC && (
+            <>
+              {" "}<a href="/docs" target="_blank" rel="noreferrer">API docs</a> ·
+              {" "}<a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a> ·
+              {" "}<a href="/openapi.json" target="_blank" rel="noreferrer">OpenAPI spec</a> ·
+            </>
+          )}
           {" "}<a href="https://github.com/sanadlab/perfarena-leetcode" target="_blank" rel="noreferrer">source</a>
         </div>
         {/* Consolidated from the former per-page footers on Home / About. */}
         <div>
-          Licensed under the Apache License 2.0. Problem statements © LeetCode;
-          this site is not affiliated with LeetCode.
+          Licensed under the Apache License 2.0. Problem statements © LeetCode.
+          This site is not affiliated with LeetCode.
         </div>
         <div style={{ opacity: 0.7 }}>
           Build v{__APP_VERSION__}
@@ -168,16 +182,16 @@ function MobileNav({
       <div className="group-label">Catalog</div>
       {CATALOG_LINKS.map(l => link(l.to, l.label))}
 
-      <hr />
-      {me ? (
+      {!STATIC && <hr />}
+      {STATIC ? null : me ? (
         <>
           <div className="group-label">{me.display_name}{me.org ? ` · ${me.org}` : ""}</div>
           {ACCOUNT_LINKS.map(l => link(l.to, l.label))}
           {me.role === "admin" && ADMIN_LINKS.map(l => link(l.to, l.label))}
-          <button className="m-item" onClick={onLogout}>Logout</button>
+          <button className="m-item" onClick={onLogout}>Sign out</button>
         </>
       ) : (
-        link("/login", "Login")
+        link("/login", "Sign in")
       )}
     </nav>
   );
@@ -221,7 +235,7 @@ function UserMenu({ me, onLogout }: { me: MePayload; onLogout: () => void }) {
           <span>{label}</span>
           <span aria-hidden style={{ fontSize: "0.7em" }}>{open ? "▲" : "▼"}</span>
         </button>
-        <button className="secondary" onClick={onLogout}>Logout</button>
+        <button className="secondary" onClick={onLogout}>Sign out</button>
       </div>
       {open && (
         <div

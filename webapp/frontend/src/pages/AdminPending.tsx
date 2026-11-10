@@ -53,7 +53,7 @@ export default function AdminPending() {
     <div>
       <h1>Pending attempts</h1>
       <p>
-        Attempts that have not finalized yet, the backend queue. {rows.length} total
+        Attempts that are not final yet (the backend queue). {rows.length} total
         {summary ? ` (${summary})` : ""}.{" "}
         <button onClick={load} disabled={loading}>
           {loading ? "Refreshing" : "Refresh"}

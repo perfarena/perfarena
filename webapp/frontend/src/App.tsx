@@ -44,9 +44,17 @@ import About from "./pages/About";
 import Snapshots from "./pages/Snapshots";
 import SnapshotDetail from "./pages/SnapshotDetail";
 import { getApiKey } from "./lib/api";
+import { STATIC } from "./lib/staticMode";
 
 function Gated({ children }: { children: React.ReactNode }) {
+  if (STATIC) return <Navigate to="/" replace />;
   return getApiKey() ? <>{children}</> : <Navigate to="/register" replace />;
+}
+
+/* Pages that need the live backend (accounts, admin). The static snapshot
+ * sends them to the home page. */
+function LiveOnly({ children }: { children: React.ReactNode }) {
+  return STATIC ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
 export default function App() {
@@ -57,7 +65,7 @@ export default function App() {
         <Route path="rankings" element={<Rankings />} />
         <Route path="compare" element={<Compare />} />
         <Route path="cost-estimator" element={<CostEstimator />} />
-        <Route path="admin/leetcode-accounts" element={<LeetcodeAccounts />} />
+        <Route path="admin/leetcode-accounts" element={<LiveOnly><LeetcodeAccounts /></LiveOnly>} />
         <Route path="analysis" element={<Navigate to="/compare?tab=perf-vs-correctness" replace />} />
         {/* "Catalog" was renamed to "Models"; keep the old path as a redirect. */}
         <Route path="models" element={<Catalog />} />
@@ -88,8 +96,8 @@ export default function App() {
         <Route path="blog" element={<Blog />} />
         <Route path="blog/:slug" element={<BlogPost />} />
         <Route path="about" element={<About />} />
-        <Route path="register" element={<Register />} />
-        <Route path="login" element={<Login />} />
+        <Route path="register" element={<LiveOnly><Register /></LiveOnly>} />
+        <Route path="login" element={<LiveOnly><Login /></LiveOnly>} />
         {/* /submit merged into /submissions (table on top, submit flow below). */}
         <Route path="submit" element={<Navigate to="/submissions" replace />} />
         <Route path="submit/:id" element={<Gated><SubmitProgress /></Gated>} />

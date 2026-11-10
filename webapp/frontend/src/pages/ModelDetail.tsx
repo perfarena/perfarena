@@ -49,8 +49,8 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
     <div>
       <h2>By language</h2>
       <p className="muted" style={{ marginTop: 4 }}>
-        How this model does in each language it was submitted in. "Best" takes
-        the top value across that model's submissions in the language.
+        How this model performs in each language of its submissions. "Best" is
+        the top value across the submissions of this model in that language.
       </p>
       <div className="card tbl-scroll" style={{ padding: 0 }}>
         <table className="tbl">
@@ -62,7 +62,7 @@ function ByLanguage({ rows }: { rows: ModelDetailLanguageStat[] }) {
             {SHOW_RELATIVE_METRICS && <th title="Highest avg runtime percentile reached">RT %ile</th>}
             {SHOW_RELATIVE_METRICS && <th title="Highest avg memory percentile reached">Mem %ile</th>}
             <th>Fully accepted</th>
-            <th title="Any of this model's submissions in the language is currently on the leaderboard">On leaderboard</th>
+            <th title="At least one of this model's submissions in the language is currently on the leaderboard">On leaderboard</th>
           </tr></thead>
           <tbody>
             {rows.map(r => (

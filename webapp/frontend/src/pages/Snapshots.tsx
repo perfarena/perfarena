@@ -14,7 +14,7 @@ export default function Snapshots() {
     <div className="col">
       <div className="hero">
         <h1>Snapshots</h1>
-        <p>Point-in-time exports of the rankings, frozen each week so results stay reproducible: top models, top submitters, and overall competition health.</p>
+        <p>Point-in-time exports of the rankings. The team freezes one each week so that results stay reproducible. Each snapshot shows the top models, the top submitters, and the overall competition health.</p>
       </div>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)" }}>{err}</div>}

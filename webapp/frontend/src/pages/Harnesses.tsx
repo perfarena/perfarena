@@ -33,7 +33,7 @@ export default function Harnesses() {
   const isAdmin = me?.role === "admin";
 
   async function onDelete(id: number) {
-    if (!confirm("Delete this harness? Refuses if any competitions / submissions / runs still reference it.")) return;
+    if (!confirm("Delete this harness? The server refuses the delete if any competition, submission, or run still references it.")) return;
     try { await api.deleteHarness(id); await refresh(); }
     catch (e: unknown) { setErr(String(e)); }
   }
@@ -48,7 +48,7 @@ export default function Harnesses() {
         <label className="row" style={{ gap: 6 }}>
           <input type="checkbox" checked={includeRetired}
                  onChange={e => setIncludeRetired(e.target.checked)} />
-          show retired
+          Show retired
         </label>
         {isAdmin && (
           <button onClick={() => { setEditing(null); setShowForm(s => !s); }}>
@@ -147,9 +147,9 @@ function HarnessCard({
         )}
         {isAdmin && (
           <>
-            <button className="secondary" onClick={onEdit}>edit</button>
+            <button className="secondary" onClick={onEdit}>Edit</button>
             <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                    onClick={onDelete}>delete</button>
+                    onClick={onDelete}>Delete</button>
           </>
         )}
       </div>
@@ -203,7 +203,7 @@ function HarnessForm({
     let cfg: Record<string, unknown> | null = null;
     if (configText.trim()) {
       try { cfg = JSON.parse(configText); }
-      catch { setErr("config must be valid JSON"); setBusy(false); return; }
+      catch { setErr("Config must be valid JSON."); setBusy(false); return; }
     }
     // The dedicated field is the source of truth for the dispatch timeout.
     if (timeoutS > 0) cfg = { ...(cfg ?? {}), timeout_s: timeoutS };
@@ -250,17 +250,17 @@ function HarnessForm({
           <span className="muted">Dispatch timeout (s)</span>
           <input type="number" min={1} value={timeoutS}
                  onChange={e => setTimeoutS(Number(e.target.value))}
-                 title="Max seconds the backend waits for a /measure dispatch before it records a Dispatch timeout. Should exceed the runner's own watchdog (--request-timeout). Writes config.timeout_s." />
+                 title="The maximum number of seconds that the backend waits for a /measure dispatch. After this time, the backend records a Dispatch timeout. Set this value higher than the runner's own watchdog (--request-timeout). This field writes config.timeout_s." />
         </label>
       </div>
       <label className="col">
-        <span className="muted">Description (markdown). How does this harness score a solution? What does it measure? Where does the code run?</span>
+        <span className="muted">Description (Markdown). How does this harness score a solution? What does it measure? Where does the code run?</span>
         <textarea rows={4} value={f.description ?? ""}
                   onChange={e => setF({ ...f, description: e.target.value })}
                   placeholder="e.g. Runs each submission inside a firecracker VM on our local runner. Reports wall-clock ns via clock_monotonic and peak RSS via getrusage. See docs/harness/arena-local.md for the full pipeline." />
       </label>
       <label className="col">
-        <span className="muted">Config (JSON, optional). Endpoint URL, docker image tag, resource limits, whatever the harness needs to reproduce a run.</span>
+        <span className="muted">Config (JSON, optional). Add the endpoint URL, Docker image tag, resource limits, and anything else that the harness needs to reproduce a run.</span>
         <textarea rows={5} value={configText}
                   onChange={e => setConfigText(e.target.value)}
                   placeholder={`arena-local schema (what the dispatcher reads):

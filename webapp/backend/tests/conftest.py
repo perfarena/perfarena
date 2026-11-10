@@ -31,6 +31,8 @@ os.environ["ARENA_IP_RATE_LIMIT_ENABLED"] = "0"
 # Runtime default is now "off" (so a fresh deployment doesn't hide small
 # datasets); the eligibility tests want strict-mode behavior so they pin it.
 os.environ["ARENA_LEADERBOARD_GATE"] = "on"
+# No background ranking recompute: the tests call ranking_store.refresh_pass.
+os.environ["ARENA_RANKING_REFRESH"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, select       # noqa: E402

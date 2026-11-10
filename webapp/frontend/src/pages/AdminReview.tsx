@@ -204,11 +204,12 @@ export default function AdminReview() {
           Label each flagged solution <b>invalid</b> or <b>OK</b>. For now, a
           solution is invalid only when it runs code in another language to solve
           the problem (for example, C that it compiles and calls through ctypes).
-          Every other solution is OK, also one that skips work or uses another
-          algorithm. Swipe left for invalid and right for OK, or use the buttons or the
-          keys ← → (↓ skips, U undoes). An invalid solution still counts for
-          pass@k, but it leaves the performance rankings and comparisons at once,
-          and the golden baseline when the baseline is built again.
+          Every other solution is OK, including one that skips work or uses
+          another algorithm. Swipe left for invalid and right for OK, or use the
+          buttons or the keys ← → (↓ skips, U undoes). An invalid solution still
+          counts for pass@k. It leaves the performance rankings and comparisons
+          at once. It leaves the golden baseline when you build the baseline
+          again.
         </p>
       </div>
 
@@ -224,7 +225,7 @@ export default function AdminReview() {
             </button>
           ))}
         </div>
-        <Link to="/admin/speed-outliers" className="muted">all speed outliers</Link>
+        <Link to="/admin/speed-outliers" className="muted">All speed outliers</Link>
       </div>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}

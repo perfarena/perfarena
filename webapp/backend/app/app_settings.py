@@ -78,8 +78,14 @@ REGISTRY: list[dict[str, Any]] = [
      "env": "ARENA_RANKING_BOOTSTRAP", "default": 10000, "group": "Rankings",
      "min": 0, "max": 20000,
      "help": "Bootstrap samples behind the tied leaders and the Pareto levels. "
-             "More samples give steadier significance at a higher first-load cost "
-             "(results are cached per data version)."},
+             "More samples give steadier significance at a higher compute cost "
+             "(the rankings are stored and recomputed in the background)."},
+    {"key": "ranking.refresh_interval_s", "label": "Ranking refresh interval (s)",
+     "type": "float", "env": "ARENA_RANKING_REFRESH_INTERVAL_S", "default": 3600.0,
+     "group": "Rankings", "min": 60, "max": 86400,
+     "help": "After new data, a stored ranking is recomputed at most this often. "
+             "A change of the ranking settings recomputes it at the next request, and "
+             "the Admin page can recompute every ranking at once."},
     {"key": "ranking.tie_latency_pct", "label": "Latency tie margin (%)", "type": "float",
      "env": "ARENA_RANKING_TIE_LATENCY", "default": 1.84, "group": "Rankings",
      "min": 0, "max": 50,

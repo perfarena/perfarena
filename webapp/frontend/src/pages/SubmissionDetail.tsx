@@ -60,10 +60,10 @@ function BaselineSourceChip({
       {fresh && <> · newest fetched {fresh}</>}
       {!allReal && (
         <div className="muted" style={{ marginTop: 4 }}>
-          Coefficients that include synthetic baselines are estimates. New
-          submissions auto-seed a baseline for their (language, problem) pair;
-          the auto-refresher upgrades placeholders to real LeetCode data when
-          an accepted submission + credentials are available.
+          Coefficients that include synthetic baselines are estimates. Each new
+          submission seeds a baseline for its (language, problem) pair. The
+          auto-refresher replaces placeholders with real LeetCode data when an
+          accepted submission and credentials are available.
           {isAdmin && (
             <div className="row" style={{ gap: 8, marginTop: 6, alignItems: "center" }}>
               <button className="secondary" disabled={busy} onClick={refresh}>
@@ -90,18 +90,18 @@ function LeaderboardBanner({ s }: { s: SubmissionPublic }) {
   const r = s.leaderboard_reason;
   let msg: string;
   if (r === "incomplete") {
-    msg = `Not on the leaderboard yet: this submission needs at least one attempt for every supported problem. Solved ${s.total_solved}/${s.total_problems}; total attempts so far: ${s.n_attempts}. Append the missing slugs via /api/submissions/${s.id}/attempts.`;
+    msg = `To qualify, this submission needs at least one attempt for every supported problem. Solved: ${s.total_solved}/${s.total_problems}. Attempts so far: ${s.n_attempts}. Append the missing slugs through /api/submissions/${s.id}/attempts.`;
   } else if (r === "pass-rate-too-low") {
     const pct = s.total_problems > 0 ? Math.round((s.total_solved / s.total_problems) * 100) : 0;
-    msg = `Not on the leaderboard: pass-rate ${pct}% does not exceed the 25% threshold. Fix or re-submit failing problems to raise it.`;
+    msg = `The pass rate is ${pct}%, which does not exceed the 25% threshold. To raise it, fix or resubmit the failing problems.`;
   } else if (r === "not-judged") {
-    msg = `Submission is still being scored: it will be evaluated for the leaderboard once dispatch finishes.`;
+    msg = `This submission is still being scored. The leaderboard check runs when dispatch finishes.`;
   } else {
-    msg = `Not on the leaderboard.`;
+    msg = ``;
   }
   return (
     <div className="card" style={{ borderColor: "var(--medium)", background: "rgba(220,180,80,0.08)" }}>
-      <b>Not on leaderboard.</b> {msg}
+      <b>Not on the leaderboard.</b> {msg}
     </div>
   );
 }
@@ -129,7 +129,7 @@ export default function SubmissionDetailPage() {
   }, [id]);
 
   async function onDelete() {
-    if (!confirm(`Permanently delete submission #${id} and all its attempts/runs? This can't be undone.`)) return;
+    if (!confirm(`Permanently delete submission #${id} and all its attempts and runs? You cannot undo this.`)) return;
     try {
       await api.deleteSubmission(id);
       nav("/me");
@@ -173,22 +173,22 @@ export default function SubmissionDetailPage() {
 
       <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
         <Stat label={`k (samples)`} value={String(s.n_samples_per_problem)} />
-        <Stat label="pass@1" tip="Chen unbiased estimator at k=1, averaged over ALL supported problems (unattempted problems contribute 0). Single-shot accuracy across the full problem set." value={formatPassAt1(s.pass_at_1)} />
-        <Stat label="pass@k" tip="Mean acceptance rate across submitted attempts: total accepted / total submitted. Only divides by attempts that were actually shipped, so partial submissions aren't penalised for unattempted problems." value={formatPassAt1(s.pass_at_k)} />
-        <Stat label="pass@full" tip="Best-of-k per problem, averaged over all supported problems. Fraction of the full set the submitter solved AT LEAST ONCE across their k samples." value={formatPassAt1(s.pass_at_full)} />
+        <Stat label="pass@1" tip="Chen's unbiased estimator at k=1, averaged over all supported problems. A problem without an attempt counts as 0. This is the single-shot accuracy across the full problem set." value={formatPassAt1(s.pass_at_1)} />
+        <Stat label="pass@k" tip="Mean acceptance rate across submitted attempts: total accepted / total submitted. Only submitted attempts count in the denominator, so a partial submission is not penalized for problems it did not attempt." value={formatPassAt1(s.pass_at_k)} />
+        <Stat label="pass@full" tip="Best-of-k per problem, averaged over all supported problems. This is the fraction of the full set that the submitter solved at least once in their k samples." value={formatPassAt1(s.pass_at_full)} />
         <Stat label="solved" value={`${s.total_solved} / ${s.total_problems}`} />
         <Stat label="attempts" value={String(s.n_attempts)} />
         <Stat label="total cost"
-              tip="Sum of the $ cost of every LLM call in this submission (k samples × problems × rounds). 0 for Ollama / local models; blank if not reported."
+              tip="Sum of the $ cost of every LLM call in this submission (k samples × problems × rounds). The cost is 0 for Ollama and other local models. Blank if the client did not report it."
               value={s.total_cost_usd == null ? "–" : `$${s.total_cost_usd.toFixed(4)}`} />
         <Stat label="code tokens"
-              tip="Sum of code-only response tokens across all attempts (excludes reasoning). Best-effort estimate from the submitting client."
+              tip="Sum of code-only response tokens across all attempts, without reasoning tokens. Best-effort estimate from the submitting client."
               value={s.total_response_tokens == null ? "–" : s.total_response_tokens.toLocaleString()} />
         <Stat label="total gen time"
               tip="Sum of the generation wall-clock of every solution in this submission (k samples × problems × rounds). Blank if not reported."
               value={formatDuration(s.total_generation_ms)} />
         <Stat label="avg gen time"
-              tip="Mean generation wall-clock per attempt: total_gen_time / n_attempts. The per-attempt cost of producing one solution from this model+prompt+language, in isolation from the number of samples or problems shipped."
+              tip="Mean generation wall-clock per attempt: total_gen_time / n_attempts. It is the time to generate one solution with this model, prompt, and language, independent of the number of samples or problems submitted."
               value={
                 s.total_generation_ms == null || s.n_attempts === 0
                   ? "–"
@@ -196,7 +196,7 @@ export default function SubmissionDetailPage() {
               } />
         {s.total_generation_energy_j != null && (
           <Stat label="total gen energy"
-                tip="Sum of generation energy across all attempts (Joules). Reported only when the submit client has a power probe; omitted when no data."
+                tip="Sum of generation energy across all attempts (Joules). The submit client reports it only when it has a power probe. Hidden when there is no data."
                 value={formatEnergy(s.total_generation_energy_j)} />
         )}
         <Stat label={locallyMeasured ? "avg runtime / call" : "avg runtime"}
@@ -206,12 +206,12 @@ export default function SubmissionDetailPage() {
               value={formatRuntime(s.avg_runtime_ms)} />
         <Stat label={locallyMeasured ? "best runtime / call" : "best runtime"}
               tip={locallyMeasured
-                ? "Fastest per function call time. This submission was measured locally."
+                ? "Fastest time per function call. This submission was measured locally."
                 : undefined}
               value={formatRuntime(s.best_runtime_ms)} />
         {s.avg_memory_mb != null && (
           <Stat label="peak mem"
-                tip="Peak (max resident) memory. Peak on both oracles, never per function call."
+                tip="Peak (max resident) memory. Both oracles report the peak, never a per-function-call value."
                 value={formatMemory(s.avg_memory_mb)} />
         )}
         {s.best_memory_mb != null && (
@@ -219,27 +219,27 @@ export default function SubmissionDetailPage() {
         )}
         {s.avg_runtime_energy_j != null && (
           <Stat label="avg runtime energy"
-                tip="Mean execution energy (Joules) across accepted attempts. Reported by execution-instrumented harnesses (e.g. arena-local). Lower is better."
+                tip="Mean execution energy (Joules) across accepted attempts. Harnesses that instrument execution report it (for example, arena-local). Lower is better."
                 value={formatEnergy(s.avg_runtime_energy_j)} />
         )}
         {s.best_runtime_energy_j != null && (
           <Stat label="best runtime energy"
-                tip="Least execution energy any accepted attempt in this submission consumed. Same source as avg runtime energy."
+                tip="Lowest execution energy of any accepted attempt in this submission. Same source as avg runtime energy."
                 value={formatEnergy(s.best_runtime_energy_j)} />
         )}
         {s.avg_energy_j_per_op != null && (
           <Stat label="energy / call"
-                tip="Runtime energy per function call under the looped curated methodology — the cross-language-comparable energy figure. Lower is better."
+                tip="Runtime energy per function call under the looped curated methodology. You can compare this energy figure across languages. Lower is better."
                 value={formatEnergy(s.avg_energy_j_per_op)} />
         )}
         {s.avg_time_us_per_op != null && (
           <Stat label="time / call"
-                tip="Runtime per function call under the looped curated methodology — the fair time, normalized across languages."
+                tip="Runtime per function call under the looped curated methodology. This time is normalized across languages, so the comparison is fair."
                 value={formatMicros(s.avg_time_us_per_op)} />
         )}
         {s.avg_iterations != null && (
           <Stat label="calls / measurement"
-                tip="Mean number of function calls behind each measurement — the confidence count. More calls mean a tighter per-function-call estimate."
+                tip="Mean number of function calls behind each measurement (the confidence count). More calls give a tighter per-function-call estimate."
                 value={Math.round(s.avg_iterations).toLocaleString()} />
         )}
         {SHOW_RELATIVE_METRICS && (
@@ -274,7 +274,7 @@ export default function SubmissionDetailPage() {
             </span>
           )}
           {s.avg_iterations != null && (
-            <span>{Math.round(s.avg_iterations).toLocaleString()} solves / measurement</span>
+            <span>{Math.round(s.avg_iterations).toLocaleString()} calls / measurement</span>
           )}
         </div>
         {s.run_uid && (
@@ -291,17 +291,17 @@ export default function SubmissionDetailPage() {
         )}
         {(s.machine_name || s.energy_tool) && (
           <div className="muted" style={{ marginTop: 4 }}>
-            Energy / time figures are only comparable within one
+            Energy and time figures are comparable only within one
             (energy&nbsp;tool, machine) pair.
           </div>
         )}
       </div>
 
       <p className="muted" style={{ marginTop: -4, fontSize: "0.85rem" }}>
-        Every problem is dispatched to LeetCode 5× and all runs are stored.
-        "avg" is the mean of each problem's runs; "best" is each problem's fastest /
-        leanest run. Submission-level numbers are the mean of those per-problem values
-        across accepted problems.
+        Every problem is dispatched to LeetCode 5×, and all runs are stored.
+        "avg" is the mean of each problem's runs. "best" is each problem's fastest
+        or leanest run. Submission-level numbers are the mean of these per-problem
+        values across accepted problems.
       </p>
 
       {/* "vs. LeetCode baselines" section hidden for now, per request.
@@ -311,9 +311,10 @@ export default function SubmissionDetailPage() {
           <h2 style={{ marginBottom: 0 }}>vs. LeetCode baselines</h2>
           <p className="muted" style={{ marginTop: 4 }}>
             Ratio of the LeetCode population baseline to the model metric. <b>&gt; 1.0×</b> means
-            the model outperforms the cohort; <b>&lt; 1.0×</b> means it's worse. The cohort
-            is everyone who's submitted on LeetCode for that problem in the same language,
-            both humans <em>and</em> AI-assisted submissions, since LeetCode doesn't separate them.
+            that the model is better than the cohort. <b>&lt; 1.0×</b> means that it is worse.
+            The cohort is everyone who submitted on LeetCode for that problem in the same
+            language. It includes both human <em>and</em> AI-assisted submissions, because
+            LeetCode does not separate them.
           </p>
           <BaselineSourceChip summary={d.baselines} isAdmin={me?.role === "admin"}
                               onRefreshed={loadDetail} />
@@ -346,8 +347,9 @@ export default function SubmissionDetailPage() {
           )}
         </div>
         <p className="muted" style={{ marginTop: 4, fontSize: "0.85rem" }}>
-          The exact text snapshot persisted at submission time. If the registry's
-          template was edited later, this stays the version the model saw.
+          This is the exact text that was stored at submission time. If someone
+          edits the registry template later, this text stays the version that the
+          model saw.
         </p>
         <pre className="code">{d.prompt_template}</pre>
       </div>
@@ -384,12 +386,12 @@ export default function SubmissionDetailPage() {
 
       <p className="muted" style={{ fontSize: "0.85rem" }}>
         Each row is one attempt. Click <b>N runs</b> to see the per-run
-        runtime/memory chart across the dispatch repeats and the full run
-        table · <b>Error log</b> surfaces LeetCode's traceback / failing
-        testcase when a run failed · <b>Provenance</b> shows the exact prompt,
-        the model's full response, and its reasoning trace · <b>Log entry</b>
-        is that attempt's append-only transparency-log row (sequence, hashes,
-        signature). The entries are hash-chained to the previous one, so any
+        runtime and memory chart across the dispatch repeats, and the full run
+        table. <b>Error log</b> shows LeetCode's traceback or failing test case
+        when a run failed. <b>Provenance</b> shows the exact prompt, the model's
+        full response, and its reasoning trace. <b>Log entry</b> is the
+        attempt's row in the append-only transparency log (sequence, hashes,
+        signature). Each entry is hash-chained to the previous one, so any
         tampering is detectable.
       </p>
     </div>

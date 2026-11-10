@@ -38,10 +38,11 @@ export default function Prompts() {
       <div className="hero">
         <h1>Prompt templates</h1>
         <p>
-          The exact prompts we send the model when producing a submission.
-          Placeholders <code>{"{{slug}}"}</code>, <code>{"{{statement}}"}</code>,{" "}
-          <code>{"{{language}}"}</code>, <code>{"{{language_display}}"}</code>,{" "}
-          <code>{"{{language_fence}}"}</code> are expanded per problem at run time.
+          These are the exact prompts that we send to the model to produce a
+          submission. At run time, we fill in the placeholders{" "}
+          <code>{"{{slug}}"}</code>, <code>{"{{statement}}"}</code>,{" "}
+          <code>{"{{language}}"}</code>, <code>{"{{language_display}}"}</code>, and{" "}
+          <code>{"{{language_fence}}"}</code> for each problem.
         </p>
       </div>
 
@@ -49,7 +50,7 @@ export default function Prompts() {
         <label className="row" style={{ gap: 6 }}>
           <input type="checkbox" checked={includeRetired}
                  onChange={e => setIncludeRetired(e.target.checked)} />
-          show retired
+          Show retired
         </label>
         {isAdmin && (
           <button onClick={() => { setEditing(null); setShowForm(s => !s); }}>
@@ -136,9 +137,9 @@ function PromptCard({
         </button>
         {isAdmin && (
           <>
-            <button className="secondary" onClick={onEdit}>edit</button>
+            <button className="secondary" onClick={onEdit}>Edit</button>
             <button className="secondary" style={{ borderColor: "var(--bad)", color: "var(--bad)" }}
-                    onClick={onDelete}>delete</button>
+                    onClick={onDelete}>Delete</button>
           </>
         )}
       </div>
@@ -234,7 +235,7 @@ function PromptForm({
                   placeholder='Solve this LeetCode problem `{{slug}}` in {{language_display}}.\n\n{{statement}}' />
       </label>
       <label className="col">
-        <span className="muted">Notes (markdown OK)</span>
+        <span className="muted">Notes (Markdown OK)</span>
         <textarea rows={2} value={f.notes ?? ""} onChange={e => setF({ ...f, notes: e.target.value })} />
       </label>
       <div className="row" style={{ gap: 6 }}>

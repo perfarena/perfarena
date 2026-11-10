@@ -138,7 +138,7 @@ function MethodologyCard({ open, onToggle }: { open: boolean; onToggle: () => vo
     <div className="card" style={{ padding: 16 }}>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <div style={{ fontWeight: 600 }}>How these problems were chosen</div>
+          <div style={{ fontWeight: 600 }}>How we chose these problems</div>
           <div className="muted" style={{ fontSize: "0.85rem" }}>
             Top 33 per difficulty, ranked by runtime discrimination on LeetCode's real submission histograms.
           </div>
@@ -151,12 +151,14 @@ function MethodologyCard({ open, onToggle }: { open: boolean; onToggle: () => vo
       {open && (
         <div className="col" style={{ gap: 12, marginTop: 14 }}>
           <p style={{ marginTop: 0, lineHeight: 1.55 }}>
-            Across 1,973 LeetCode problems in our parquet dataset, 1,730 currently
-            have an anchor submission_id (a previous submission that grants access to
-            LeetCode's <code>submissionDistribution</code> endpoint, the histogram of
-            every accepted submission's runtime/memory for that problem). Premium-only
-            problems aren't anchorable without a LeetCode Premium subscription
-            and are excluded; renamed slugs are auto-resolved via the stable
+            Our parquet dataset has 1,973 LeetCode problems. Of these, 1,730
+            currently have an anchor submission_id. An anchor is a previous
+            submission that gives access to LeetCode's{" "}
+            <code>submissionDistribution</code> endpoint. This endpoint returns
+            the histogram of the runtime and memory of every accepted submission
+            for that problem. We cannot anchor Premium-only problems without a
+            LeetCode Premium subscription, so we exclude them. We resolve renamed
+            slugs automatically through the stable
             <code> questionFrontendId</code>.
           </p>
 
@@ -167,7 +169,7 @@ function MethodologyCard({ open, onToggle }: { open: boolean; onToggle: () => vo
           <ul style={{ lineHeight: 1.55, marginTop: -8 }}>
             <li><b>p10 / p50 / p95</b>: the 10th, 50th, and 95th percentile runtimes of LeetCode's accepted submissions.</li>
             <li><b>spread_ms = p95 − p10</b>: absolute room (in ms) between the 90th-percentile-from-fastest and 90th-percentile-from-slowest.</li>
-            <li><b>spread_ratio = p95 / p10</b>: relative room (test-count-invariant; fairer when problems use different test-set sizes).</li>
+            <li><b>spread_ratio = p95 / p10</b>: relative room. It does not depend on the test count, so it is fairer when problems use test sets of different sizes.</li>
             <li><b>n_buckets</b>: how many distinct runtime values the histogram covers (a proxy for how many submissions LeetCode has on file).</li>
           </ul>
 
@@ -176,26 +178,26 @@ function MethodologyCard({ open, onToggle }: { open: boolean; onToggle: () => vo
             filters:
           </p>
           <ul style={{ lineHeight: 1.55, marginTop: -8 }}>
-            <li><code>p50 ≥ 10 ms</code>: median submission takes long enough that the timer matters.</li>
-            <li><code>spread_ms ≥ 10 ms</code>: there's a real gap between fast and slow.</li>
-            <li><code>n_buckets ≥ 15</code>: the histogram is rich enough for percentile estimates to be stable.</li>
+            <li><code>p50 ≥ 10 ms</code>: the median submission takes long enough for the timer to matter.</li>
+            <li><code>spread_ms ≥ 10 ms</code>: there is a real gap between fast and slow submissions.</li>
+            <li><code>n_buckets ≥ 15</code>: the histogram has enough data for stable percentile estimates.</li>
           </ul>
 
           <p style={{ lineHeight: 1.55 }}>
-            Of the 1,730 anchored problems: 886 survive all three filters, 610 are
-            dropped as noise-floor cases, 234 don't return a usable histogram, and
-            22 of the survivors are LeetCode-Premium-only and removed from the
-            candidate pool. That leaves 864 performance-discriminative problems
-            partitioned across difficulty levels (151 Easy / 486 Medium / 227 Hard).
+            Of the 1,730 anchored problems, 886 pass all three filters. We drop
+            610 as noise-floor cases, and 234 do not return a usable histogram.
+            Of the 886 that pass, 22 are LeetCode Premium only, so we remove them
+            from the candidate pool. That leaves 864 performance-discriminative
+            problems: 151 Easy, 486 Medium, and 227 Hard.
           </p>
 
           <p style={{ lineHeight: 1.55 }}>
-            We take the <b>top 33 per difficulty</b> ranked by{" "}
-            <code>spread_ratio</code> (the test-count-invariant metric) for a final
-            seed of 99 problems with an even 33 / 33 / 33 split. The ranking and
-            every signal value used to pick each problem is dumped to{" "}
-            <code>data/runtime_ranking.json</code> for auditability; the final pick
-            is in <code>data/sampled_problems.json</code>.
+            We take the <b>top 33 per difficulty</b>, ranked by{" "}
+            <code>spread_ratio</code> (the test-count-invariant metric). The final
+            seed has 99 problems, with an even 33 / 33 / 33 split. We write the
+            ranking and every signal value that we used to pick each problem
+            to <code>data/runtime_ranking.json</code>, so that anyone can audit
+            them. The final pick is in <code>data/sampled_problems.json</code>.
           </p>
 
           <p style={{ lineHeight: 1.55 }}>
@@ -211,25 +213,27 @@ function MethodologyCard({ open, onToggle }: { open: boolean; onToggle: () => vo
           </ul>
 
           <p className="muted" style={{ lineHeight: 1.55, fontSize: "0.9rem" }}>
-            <b>Honest caveats.</b> (1) The LeetCode "population" the histograms reflect
-            includes both human and AI-assisted submissions, and LeetCode doesn't
-            separate them. (2) Anchored runtimes drift over time as the population shifts; we
-            refresh baselines after every real submission. (3) The 10 ms / 15-bucket
-            thresholds are conservative defaults. See
+            <b>Caveats.</b> (1) The histograms show the LeetCode "population",
+            which includes both human and AI-assisted submissions. LeetCode does
+            not separate them. (2) Anchored runtimes drift over time as the
+            population changes. We refresh the baselines after every real
+            submission. (3) The 10 ms and 15-bucket thresholds are conservative
+            defaults. See
             <code> app/rank_problems_by_runtime.py</code> for the exact filter logic
-            and to tune them. (4) The source parquet shipped with{" "}
-            <code>title_slug</code> / <code>level</code> / <code>tag</code> columns
-            decoupled from <code>id</code> + content (46% drift). That was repaired by{" "}
-            <code>app/fix_parquet.py</code> using LeetCode's own catalog as ground
-            truth. The original parquet is preserved as a timestamped backup, and
-            <code> anchors.json</code> was rekeyed in lock-step.
+            and to tune them. (4) In the source parquet, the{" "}
+            <code>title_slug</code>, <code>level</code>, and <code>tag</code>{" "}
+            columns did not match the <code>id</code> and content (46% drift). We
+            repaired this with <code>app/fix_parquet.py</code>, with LeetCode's
+            own catalog as ground truth. We keep the original parquet as a
+            timestamped backup, and we rekeyed
+            <code> anchors.json</code> at the same time.
           </p>
 
           <p className="muted" style={{ lineHeight: 1.55, fontSize: "0.9rem" }}>
-            <b>Want more detail?</b> See <code>docs/problem-selection.md</code> in the
-            repo, a plain-English walkthrough of every step with live data
-            (real GraphQL query, raw <code>submissionDistribution</code> payload,
-            and the exact spread numbers for the top picks per level).
+            <b>More detail.</b> See <code>docs/problem-selection.md</code> in the
+            repo. It walks through every step in plain English, with live data:
+            a real GraphQL query, a raw <code>submissionDistribution</code> payload,
+            and the exact spread numbers for the top picks per level.
           </p>
         </div>
       )}

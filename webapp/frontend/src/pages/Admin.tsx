@@ -12,6 +12,7 @@ export default function Admin() {
   // in (or hand over to legacy users who didn't set a password at register).
   const [issued, setIssued] = useState<{ user: PendingUser; api_key: string } | null>(null);
   const [harnessErrors, setHarnessErrors] = useState<HarnessErrorRow[]>([]);
+  const [rankingRefresh, setRankingRefresh] = useState("");
 
   async function refresh() {
     try { setPending(await api.adminPending()); }
@@ -32,6 +33,15 @@ export default function Admin() {
     } catch (e: unknown) { setErr(String(e)); }
     finally { setBusyId(null); }
   }
+  async function refreshRankings() {
+    setRankingRefresh("");
+    try {
+      const { started } = await api.adminRefreshRankings();
+      setRankingRefresh(started
+        ? "Started. The rankings update in a few minutes."
+        : "A recompute is already running.");
+    } catch (e: unknown) { setRankingRefresh(String(e)); }
+  }
   async function reject(u: PendingUser) {
     if (!confirm(`Reject ${u.email}? This cannot be undone.`)) return;
     setBusyId(u.id); setErr("");
@@ -51,17 +61,17 @@ export default function Admin() {
       <div className="hero" style={{ paddingBottom: 0 }}>
         <h1>Admin</h1>
         <p>
-          Review pending registrations and grant access — approved users
-          get an API key and can sign in with email + password (if they set
-          one during registration). For replica work, the{" "}
-          <Link to="/admin/export">Export &amp; Import</Link> page lets you
-          download a JSON bundle of the platform's content and merge it back
+          Review pending registrations and grant access. Each approved user
+          gets an API key and can sign in with email and password (if they set
+          a password during registration). For replica work, the{" "}
+          <Link to="/admin/export">Export &amp; import</Link> page lets you
+          download a JSON bundle of the platform's content and merge it
           into another instance. The{" "}
           <Link to="/admin/speed-outliers">Too-fast outliers</Link> page flags
-          accepted attempts that ran implausibly faster than their peers — a
-          measurement-integrity check for solutions that skipped the workload —
-          and the <Link to="/admin/review">Review</Link> page lets you label each
-          of them invalid or OK.
+          accepted attempts that ran implausibly faster than their peers. This
+          measurement-integrity check looks for solutions that skipped the
+          workload. On the <Link to="/admin/review">Review</Link> page, you
+          label each of them invalid or OK.
         </p>
       </div>
       {harnessErrors.length > 0 && (
@@ -97,6 +107,20 @@ export default function Admin() {
         </div>
       )}
 
+      <div className="card">
+        <b>Efficiency rankings</b>
+        <div className="muted" style={{ marginTop: 4 }}>
+          The platform stores the rankings and recomputes them in the
+          background. After new results, it recomputes them at most once per
+          refresh interval (Variables tab). After a change of the ranking
+          settings, it recomputes them at the next request.
+        </div>
+        <div className="row" style={{ marginTop: 8, gap: 8, alignItems: "center" }}>
+          <button onClick={refreshRankings}>Recompute all rankings now</button>
+          {rankingRefresh && <span className="muted">{rankingRefresh}</span>}
+        </div>
+      </div>
+
       <h2 style={{ marginBottom: 4 }}>Pending registrations</h2>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}
@@ -105,9 +129,9 @@ export default function Admin() {
         <div className="card" style={{ borderColor: "var(--easy)", background: "rgba(120,200,120,0.08)" }}>
           <b>Approved {issued.user.display_name}</b> ({issued.user.email}).
           <div className="muted" style={{ marginTop: 4 }}>
-            They can log in with the password they chose at registration. If
-            they didn't set one (legacy flow), share this API key with them —
-            it won't be shown again:
+            They can sign in with the password they chose at registration. If
+            they did not set a password (legacy flow), share this API key with
+            them. The page shows the key only once:
           </div>
           <pre className="code" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{issued.api_key}</pre>
           <div className="row">

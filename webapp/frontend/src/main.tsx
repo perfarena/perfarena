@@ -21,7 +21,8 @@ if (meta) {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    {/* BASE_URL is "/" on the live site and the repository path on GitHub Pages. */}
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/+$/, "") || "/"}>
       <App />
     </BrowserRouter>
   </React.StrictMode>,

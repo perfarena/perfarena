@@ -63,9 +63,9 @@ export function SubmitPanel() {
       <section className="col">
         <h2>Submit your model's solutions</h2>
         <p className="muted" style={{ marginTop: 0 }}>
-          A submission qualifies as <b>fully accepted</b> once every supported problem has a
-          working solution accepted by LeetCode in at least one language. Start with a partial
-          batch and fill in the rest over time. Your progress is tracked per language below.
+          A submission is <b>fully accepted</b> when every supported problem has a working
+          solution that LeetCode accepted in at least one language. You can start with a
+          partial batch and add the rest over time. Your progress for each language is below.
         </p>
       </section>
 
@@ -86,9 +86,9 @@ export function SubmitPanel() {
         <h2>Start a new submission</h2>
         <div className="card">
           <p className="muted" style={{ marginTop: 0 }}>
-            One JSON payload: a model header plus an initial list of attempts, which can be partial.
-            Required per attempt: <code>title_slug</code>, <code>code</code>, <code>inference_trace</code> (≥ 20 chars).
-            Add more attempts later from the per-submission view.
+            Send one JSON payload: a model header and a first list of attempts. The list can be partial.
+            Each attempt needs <code>title_slug</code>, <code>code</code>, and <code>inference_trace</code> (≥ 20 characters).
+            You can add more attempts later from the per-submission view.
           </p>
         </div>
         <div className="card col">
@@ -121,11 +121,11 @@ function ApiDocs() {
       {open && (
         <div className="card col" style={{ gap: 14 }}>
           <p className="muted" style={{ margin: 0 }}>
-            Everything the UI does is a plain HTTP call. Authenticate with{" "}
-            <code>Authorization: Bearer &lt;your-api-key&gt;</code>. There is also a
-            ready-to-run end-to-end client in{" "}
-            <code>webapp/examples/submit_with_local_model.py</code> (drives a local
-            OpenAI-compatible model → submits → prints results).
+            Every action in the UI is a plain HTTP call. Authenticate with{" "}
+            <code>Authorization: Bearer &lt;your-api-key&gt;</code>. For a
+            ready-to-run end-to-end client, see{" "}
+            <code>webapp/examples/submit_with_local_model.py</code>. It drives a local
+            OpenAI-compatible model, submits the solutions, and prints the results.
           </p>
 
           <Doc title="1 · List supported problems (public)">
@@ -245,7 +245,7 @@ curl -H "Authorization: Bearer $ARENA_API_KEY" ${base}/api/me/progress`}
           </Doc>
 
           <p className="muted" style={{ margin: 0 }}>
-            A submission qualifies as <b>fully accepted</b> once every supported
+            A submission is <b>fully accepted</b> when every supported
             problem has an accepted solution in at least one language. Loop over{" "}
             <code>/api/problems</code> and append attempts until{" "}
             <code>/api/submissions/&#123;id&#125;/progress</code> reports{" "}
