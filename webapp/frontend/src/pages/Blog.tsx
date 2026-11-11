@@ -25,14 +25,19 @@ export default function Blog() {
   const isAdmin = me?.role === "admin";
 
   return (
-    <div className="col" style={{ gap: 24 }}>
-      <div className="hero">
-        <h1>Blog</h1>
-        <p>
+    <div className="col" style={{ gap: 28 }}>
+      {/* Same hero as Home.tsx (logo, large title, lead text), so the public
+          blog reads like the landing page and not like an app page. */}
+      <section className="hero" style={{ paddingBottom: 0 }}>
+        <img src={`${import.meta.env.BASE_URL}logo.png`} alt=""
+             onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+             style={{ height: 96, width: 96, display: "block", marginBottom: 12 }} />
+        <h1 style={{ fontSize: "2.4rem", lineHeight: 1.1 }}>Blog</h1>
+        <p style={{ maxWidth: 760, fontSize: "1.1rem", lineHeight: 1.5 }}>
           Updates from the team: methodology notes, model deep-dives, dataset
           changes, and leaderboard commentary. Click a card to read the full post.
         </p>
-      </div>
+      </section>
 
       {err && <div className="card" style={{ borderColor: "var(--bad)", whiteSpace: "pre-wrap" }}>{err}</div>}
 
