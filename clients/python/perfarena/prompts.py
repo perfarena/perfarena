@@ -89,6 +89,56 @@ def clbg_system_prompt(language: str, slug: str = "") -> str:
             f"be non-public (Java allows one public top-level class per file). A "
             f"class named anything else fails with ClassNotFoundException."
         )
+    # Scala runs a named object like Java (`java -cp ... <name> N`).
+    obj = CLBG_JAVA_CLASS.get(slug) if language == "scala" else None
+    if obj:
+        base += (
+            f"\n\nSCALA ENTRY POINT — the harness runs `java -cp <classes>:<scala "
+            f"library> {obj} N`, so your program MUST be `object {obj}` "
+            f"containing `def main(args: Array[String]): Unit`. An object with "
+            f"any other name fails with ClassNotFoundException."
+        )
+    # Swift compiles one file with swiftc; top-level code is the program.
+    if language == "swift":
+        base += (
+            "\n\nSWIFT BUILD — the program is one file compiled with `swiftc "
+            "-Ounchecked -wmo`: write top-level code (statements at file scope "
+            "run as the program) and do not use `@main`. Import what you use "
+            "(Foundation, Dispatch, or Darwin/Glibc); no Swift packages are "
+            "available."
+        )
+    # Erlang compiles one module and runs `erl -run <module> main N`; the module
+    # names are the Java class names (see CLBG_JAVA_CLASS).
+    mod = CLBG_JAVA_CLASS.get(slug) if language == "erlang" else None
+    if mod:
+        base += (
+            f"\n\nERLANG ENTRY POINT — write one module named `{mod}` (start "
+            f"with `-module({mod}).`) that exports `main/1`. PerfArena compiles "
+            f"it with erlc and runs `erl -noshell -run {mod} main N -s init stop`, "
+            f"so `main/1` gets the argument as a list of strings, for example "
+            f"`[\"15000000\"]`. Do not write an escript."
+        )
+    # Elixir: the file is compiled once before it is measured.
+    if language == "elixir":
+        base += (
+            "\n\nELIXIR ENTRY POINT — write the program as modules and start it "
+            "with top-level code at the end of the file (for example "
+            "`NBody.run(String.to_integer(hd(System.argv())))`), or define "
+            "`main/1` in one module and do not call it; PerfArena then calls it "
+            "with `System.argv()`. PerfArena compiles the file once before it "
+            "measures, so do not compute results in module attributes or module "
+            "bodies."
+        )
+    # Rust builds with cargo from Energy-Languages/Rust/clbg/Cargo.toml; a crate
+    # that is not listed there fails to compile. Keep this list equal to it.
+    if language == "rust":
+        base += (
+            "\n\nRUST BUILD — the program is compiled with cargo, edition 2024, "
+            "release profile. The only external crates are futures 0.1, "
+            "futures-cpupool 0.1, num_cpus 1, num-bigint 0.4, ordermap 0.3, "
+            "rayon 1, regex 1 and typed-arena 2. Use only the standard library "
+            "and these crates."
+        )
     return base
 
 

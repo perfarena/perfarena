@@ -292,31 +292,48 @@ _TRANSIENT_STATUSES = frozenset({
 })
 
 
-def _unwrap_ruby_class_for_leetcode(code: str) -> str:
+def _is_design_problem(problem: "Problem") -> "bool | None":
+    """True when LeetCode instantiates the solution's class itself (a design
+    problem: its test input is an operation sequence, ops/args), False when it
+    calls one method, None when unknown (no snippets stored). LeetCode's starter
+    snippet of a design problem, in every language, ends with the comment "Your
+    <Class> object will be instantiated and called as such:"; no other does."""
+    snippets = getattr(problem, "code_snippets", None) or {}
+    if not snippets:
+        return None
+    return any("instantiated and called as such" in (s or "") for s in snippets.values())
+
+
+def _unwrap_ruby_class_for_leetcode(code: str, design: "bool | None" = None) -> str:
     """LeetCode's Ruby judge calls the solution method at TOP LEVEL (its driver
     does `ret = some_method(param)`), so a method the model tucked inside
     `class Solution ... end` is invisible and raises
     `undefined method '...' for main:Object`. Models routinely wrap non-design
     solutions in a class (the system prompt asks for the "Solution shape"),
     which is semantically fine but fails LeetCode's harness — while our own
-    arena harness.rb accepts it via `Solution.new`. Lift the body of a single
-    wrapping class to top level so the method is callable on both oracles.
+    arena harness.rb accepts it via `Solution.new`. Lift the body of the
+    `class Solution` to top level so the method is callable on both oracles.
+    Other classes (a solution's own TreeNode / ListNode helper) stay as they are.
 
-    DESIGN problems (LeetCode instantiates the class itself) are left alone; a
-    `def initialize` constructor is the tell."""
+    DESIGN problems (LeetCode instantiates the class itself; some name it
+    `Solution`, e.g. random-pick-index) are left alone. `design` comes from the
+    problem (_is_design_problem); when it is unknown (None), a `def initialize`
+    inside `class Solution` is the tell."""
+    import re as _re
+    if design:
+        return code                                   # design class -> keep
     lines = code.split("\n")
     def _indent(l): return len(l) - len(l.lstrip())
-    ci = next((i for i, l in enumerate(lines)
-               if l.lstrip().startswith("class ") and l.lstrip()[6:7].isupper()), None)
+    ci = next((i for i, l in enumerate(lines) if _re.match(r"\s*class\s+Solution\b", l)), None)
     if ci is None:
         return code                                   # already top-level
-    if any(l.lstrip().startswith("def initialize") for l in lines):
-        return code                                   # design class -> keep
     indent = _indent(lines[ci])
-    ei = next((i for i in range(len(lines) - 1, ci, -1)
+    ei = next((i for i in range(ci + 1, len(lines))   # the class's own `end`
                if lines[i].strip() == "end" and _indent(lines[i]) == indent), None)
     if ei is None:
         return code
+    if design is None and any(l.lstrip().startswith("def initialize") for l in lines[ci + 1:ei]):
+        return code                                   # design class -> keep
     body = lines[ci + 1:ei]
     dents = [_indent(l) for l in body if l.strip()]
     d = min(dents) if dents else 0
@@ -413,10 +430,12 @@ def _strip_ts_node_defs(code: str) -> str:
     return code
 
 
-def _normalize_for_leetcode(language: str, code: str) -> str:
-    """Per-language LeetCode-judge shape fixes, one dispatch point."""
+def _normalize_for_leetcode(language: str, code: str,
+                            design: "bool | None" = None) -> str:
+    """Per-language LeetCode-judge shape fixes, one dispatch point. `design`:
+    see _is_design_problem."""
     if language == "ruby":
-        return _unwrap_ruby_class_for_leetcode(code)
+        return _unwrap_ruby_class_for_leetcode(code, design)
     if language == "c":
         return _strip_c_main_for_leetcode(code)
     if language == "typescript":
@@ -1125,7 +1144,7 @@ def _real_dispatch_repeated(problem: Problem, language: str, code: str, repeats:
     # just _leetbot_validate. Ruby/C/TS use top-level defs; models wrap them in
     # `class Solution` / add a `main` (the "Solution class" prompt), which the
     # judge rejects.
-    code = _normalize_for_leetcode(language, code)
+    code = _normalize_for_leetcode(language, code, _is_design_problem(problem))
     # Per-subprocess env override for account pinning. We copy os.environ
     # so the parent process's env isn't mutated mid-flight (the API and
     # the dispatcher run on different threads — a shared mutation would

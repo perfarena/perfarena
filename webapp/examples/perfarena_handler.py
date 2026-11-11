@@ -982,14 +982,21 @@ _MAKE_BUILD_INPUTS = ("Makefile", "*.csproj", "test_suite.cpp", "TestSuite.java"
                       "test_suite.ts", "test_suite.py", "test_suite.js",
                       "test_suite.php", "problem.json")
 _HARNESS_BUILD_INPUTS = {"cpp": ("harness_cpp.py",),
-                         "c": ("harness_c.py", "harness_cpp.py"),
+                         "c": ("harness_c.py", "harness_cpp.py", "uthash.h"),
+                         "golang": ("harness_go.sh", "harness_go.go.tmpl",
+                                    "go_lc_deps/go.mod", "go_lc_deps/go.sum"),
                          "scala": ("harness_scala.py", "harness_cpp.py"),
+                         "swift": ("harness_swift.py", "harness_cpp.py"),
+                         "dart": ("harness_dart.py", "harness_cpp.py"),
                          "elixir": ("harness.exs", "elixir_hns.exs"),
                          "erlang": ("perf_harness.erl", "node.hrl"),
+                         "racket": ("harness.rkt", "rkt_hns.rkt", "nodes.rkt"),
                          "java": ("Harness.java", "TreeNode.java", "ListNode.java"),
                          "kotlin": ("Harness.java", "TreeNode.java", "ListNode.java"),
                          "csharp": ("Harness.cs",),
-                         "typescript": ("harness_ts.js", "harness_node_common.js")}
+                         "typescript": ("harness_ts.js", "harness_node_common.js"),
+                         "rust": ("harness_rust.py", "rust_lc_deps/Cargo.toml",
+                                  "rust_lc_deps/Cargo.lock")}
 
 
 # ---- toolchain record: what a run's numbers depend on besides the solution ----
@@ -1178,7 +1185,11 @@ def _run_harness_peak_rss(cell: Path, harness_lang: str, budget: float, idx: int
     RSS from _peak_rss_run, as on CLBG."""
     argv = _prebuilt_argv(cell, harness_lang, budget, idx)
     if argv:
-        return _peak_rss_run(argv, cell, _prebuilt_env(), timeout)
+        # PERFARENA_MEM_PASS: a harness that prepares input copies outside the
+        # timed region in batches prepares one at a time here, so the peak RSS
+        # holds one copy, as before.
+        env = {**_prebuilt_env(), "PERFARENA_MEM_PASS": "1"}
+        return _peak_rss_run(argv, cell, env, timeout)
     return {"exit_code": 2, "wall_s": 0.0, "peak_rss_kb": None, "timed_out": False,
             "output_limit_exceeded": False,
             "stderr_tail": f"no prebuilt {harness_lang} program"}
@@ -1512,8 +1523,160 @@ def _strip_kotlin_class(code: str, name: str) -> str:
         out = out[:i] + out[end:]
 
 
-def _normalize_solution_code(language: str, code: str, is_clbg: bool = False) -> str:
-    """Best-effort fixups so common model-output quirks still compile."""
+# Erlang: strings, quoted atoms, and char literals ($%) are kept, so that a `%`
+# inside them does not start a comment; everything from another `%` to the end
+# of the line is a comment. Used only to CHECK the code, never to change it.
+_ERLANG_TOKEN_RE = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\$\\?.|%[^\n]*')
+_ERLANG_MODULE_RE = re.compile(r"(?m)^[ \t]*-module\s*\([^)]*\)\s*\.[ \t]*")
+
+
+def _erlang_without_comments(code: str) -> str:
+    return _ERLANG_TOKEN_RE.sub(lambda m: "" if m.group(0).startswith("%") else m.group(0), code)
+
+
+def _erlang_spec_export(cell: Path) -> "str | None":
+    """`-export([...]).` of the functions that the cell's LeetCode snippet
+    declares with -spec (the functions the harness calls), or None."""
+    try:
+        snip = json.loads((cell / "problem.json").read_text())["code_snippets"]["erlang"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    funs = []
+    for name, params in re.findall(r"(?m)^-spec\s+([a-z]\w*)\s*\((.*)\)\s*->", snip):
+        depth, arity = 0, 1 if params.strip() else 0
+        for ch in params:
+            depth += (ch in "([{") - (ch in ")]}")
+            arity += ch == "," and depth == 0
+        funs.append(f"{name}/{arity}")
+    return f"-export([{', '.join(funs)}]).\n" if funs else None
+
+
+def _normalize_erlang(code: str, is_clbg: bool, source: "Path | None") -> str:
+    """LeetCode Erlang: the judge's snippet has no -module and no -export, and
+    keeps the node records only in a comment. Make the code module `solution`,
+    export the functions that the snippet declares (-spec), and include the
+    harness's node.hrl when the code uses #tree_node/#list_node without
+    defining the record. Only the declared functions are exported, not all
+    (export_all): the compiler optimizes a local function better, and
+    export_all made one reference solution 4-5% slower per call.
+    CLBG: the cell runs `erl -run <module> main N`, so the module takes the
+    cell's name (the source file's stem), an escript's `#!` and `%%!` lines
+    go, and main/1 is exported."""
+    if is_clbg:
+        code = "".join(ln for ln in code.splitlines(keepends=True)
+                       if not ln.startswith(("#!", "%%!")))
+    bare = _erlang_without_comments(code)
+    if is_clbg:
+        head = f"-module({source.stem}).\n"
+        exports = re.findall(r"-export\s*\(\s*\[([^\]]*)\]", bare)
+        if not any(re.search(r"\bmain\s*/\s*1\b", e) for e in exports):
+            head += "-export([main/1]).\n"
+    else:
+        head = "-module(solution).\n" + (
+            (source and _erlang_spec_export(source.parent))
+            or "-compile([export_all, nowarn_export_all]).\n")
+        if (re.search(r"#\s*(?:tree_node|list_node)\b", bare)
+                and not re.search(r"-record\s*\(\s*(?:tree_node|list_node)\b", bare)
+                and not re.search(r'-include(?:_lib)?\s*\(\s*"[^"]*node\.hrl"', bare)):
+            head += '-include("node.hrl").\n'
+    m = _ERLANG_MODULE_RE.search(code)
+    if m and not _erlang_without_comments(code[:m.start()]).strip():
+        return code[:m.start()] + head + code[m.end():].lstrip("\n")   # in its place
+    if m:   # a -module line after other forms: drop it, the head goes first
+        code = code[:m.start()] + code[m.end():]
+    return head + code
+
+
+# Racket (LeetCode): the judge's snippet has no `#lang` line and no `provide`,
+# and keeps the node structs in a #| ... |# comment (the judge defines them).
+# The cell's solution.rkt is a module that the harness loads by name, so it
+# needs `#lang racket`, `(provide (all-defined-out))` and, for a tree or list
+# problem, selection/nodes.rkt: the one tree-node / list-node struct that the
+# harness builds. A solution's own node struct (an uncommented snippet) is
+# another struct type, so it is removed, as the Kotlin branch removes its node
+# classes.
+_RKT_NODES_REQUIRE = '(require "../../../selection/nodes.rkt")\n'
+_RKT_OWN_NODE_RE = re.compile(r"\((?:struct|define-struct)\s+(?:tree-node|list-node)\b"
+                              r"|\(define\s+\(\s*make-(?:tree|list)-node\b")
+
+
+def _racket_code_only(code: str, strings: bool = True) -> str:
+    """`code` with its comments (and string contents and character literals
+    when `strings`) blanked: same length, newlines kept. Used only to CHECK the
+    code, never to change it."""
+    out, i, n = list(code), 0, len(code)
+
+    def blank(a: int, b: int) -> None:
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+    while i < n:
+        if code[i] == ";":
+            j = code.find("\n", i)
+            j = n if j == -1 else j
+            blank(i, j)
+            i = j
+        elif code.startswith("#|", i):          # block comments nest
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if code.startswith("#|", j):
+                    depth, j = depth + 1, j + 2
+                elif code.startswith("|#", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            blank(i, j)
+            i = j
+        elif code.startswith("#\\", i):         # #\( is a char, not a paren
+            if strings:
+                blank(i, i + 3)
+            i += 3
+        elif code[i] == '"':
+            j = i + 1
+            while j < n and code[j] != '"':
+                j += 2 if code[j] == "\\" else 1
+            if strings:
+                blank(i + 1, j)
+            i = j + 1
+        else:
+            i += 1
+    return "".join(out)
+
+
+def _normalize_racket(code: str) -> str:
+    bare = _racket_code_only(code)
+    cuts = []                                    # the solution's own node structs
+    for m in _RKT_OWN_NODE_RE.finditer(bare):
+        depth, j = 0, m.start()
+        while j < len(bare):
+            if bare[j] in "([{":
+                depth += 1
+            elif bare[j] in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        cuts.append((m.start(), j + 1))
+    for a, b in reversed(cuts):
+        code, bare = code[:a] + code[b:], bare[:a] + bare[b:]
+    m = re.search(r"(?m)^[ \t]*#lang[ \t]+\S[^\n]*(?:\n|$)", bare)
+    at = m.end() if m else 0
+    head = ("" if bare[:at].endswith("\n") else "\n") if m else "#lang racket\n"
+    if (re.search(r"tree-node|list-node", bare)
+            and "selection/nodes.rkt" not in _racket_code_only(code, strings=False)):
+        head += _RKT_NODES_REQUIRE
+    code = code[:at] + head + code[at:]
+    if not re.search(r"\(provide\s+\(all-defined-out\)\s*\)", bare):
+        code = code.rstrip("\n") + "\n(provide (all-defined-out))\n"
+    return code
+
+
+def _normalize_solution_code(language: str, code: str, is_clbg: bool = False,
+                             source: "Path | None" = None) -> str:
+    """Best-effort fixups so common model-output quirks still compile.
+    `source` is the cell's source file (its stem names an Erlang CLBG module)."""
+    if language == "erlang" and (source is not None or not is_clbg):
+        return _normalize_erlang(code, is_clbg, source)
     if language == "php" and is_clbg:
         # CLBG runs the .php file standalone, and PHP only executes code inside a
         # `<?php ... ?>` block. A program without the opening tag is printed as
@@ -1544,6 +1707,8 @@ def _normalize_solution_code(language: str, code: str, is_clbg: bool = False) ->
         return _RUST_STRUCT_SOLUTION_RE.sub("", code)
     if language == "kotlin":
         return _strip_kotlin_class(_strip_kotlin_class(code, "TreeNode"), "ListNode")
+    if language == "racket" and not is_clbg:
+        return _normalize_racket(code)
     return code
 
 
@@ -1924,10 +2089,10 @@ def _make_validate_status(returncode: int, stderr: str) -> str:
     wrong answer: the model's program can CRASH (Runtime Error) or HANG past the
     per-case cap (Time Limit Exceeded). The validators name the cause in stderr —
     `clbg_validate.sh` prints `crashed rc=` / `timed out after`, and
-    `perfarena.mk`'s single-file path (used by CLBG mandelbrot and the LeetCode
-    legacy fallback) prints `program exited` — so read it instead of collapsing
+    `perfarena.mk`'s single-file path (used by CLBG mandelbrot) prints
+    `program exited` — so read it instead of collapsing
     every failure to Wrong Answer. Falls back to Wrong Answer for a genuine output
-    mismatch. Shared by the CLBG paths and the LeetCode rc-2 fallback."""
+    mismatch. Used by the CLBG paths."""
     if returncode == 0:
         return "Accepted"
     s = stderr or ""
@@ -1965,8 +2130,8 @@ def _full_suite_validate(cell: Path, arena_lang: str,
                          timeout: float = 300.0) -> subprocess.CompletedProcess:
     """Run the full-suite correctness validator (selection/run_validate.sh) FROM
     the cell — the solution against EVERY reference case. Exit codes: 0 Accepted,
-    1 Wrong Answer, 3 Runtime Error, 2 not-yet-built for this language (the
-    caller falls back to the legacy single-case `make validate`).
+    1 Wrong Answer, 3 Runtime Error, 2 the code could not be built or run with
+    the validator's harness (the caller reports Compile Error).
 
     Java and C# validate with the measurement build (_cached_harness_build),
     which compiles the same sources, so a validation and the measurement of the
@@ -1981,13 +2146,37 @@ def _full_suite_validate(cell: Path, arena_lang: str,
     return _run(cmd, cwd=cell, timeout=timeout)
 
 
+_VALIDATE_PASS_RE = re.compile(r"^VALIDATE slug=\S+ PASS\b", re.M)
+
+
+def _validate_tle(e: subprocess.TimeoutExpired) -> "dict[str, Any]":
+    """The verdict for a validation that ran past its timeout."""
+    note = f"validation did not finish within {e.timeout:.0f}s and was stopped"
+    return {"status_msg": "Time Limit Exceeded", "error_log": note,
+            "raw_response": {"stage": "validate", "note": note}}
+
+
+def _full_suite_status(returncode: int, stderr: str) -> str:
+    """Verdict of a run_validate.sh run: exit 0 with the validator's
+    `VALIDATE ... PASS` line Accepted, 1 Wrong Answer, 2 Compile Error (the
+    validator could not build or run the code), 3 Runtime Error. Exit 0 with no
+    PASS line means the solution ended the process itself (exit(0)) before the
+    validator finished, and an exit code of 128 or more (or a negative one)
+    means a signal killed it: both are Runtime Error."""
+    if returncode == 0:
+        return "Accepted" if _VALIDATE_PASS_RE.search(stderr or "") else "Runtime Error"
+    if returncode < 0 or returncode >= 128:
+        return "Runtime Error"
+    return {2: "Compile Error", 3: "Runtime Error"}.get(returncode, "Wrong Answer")
+
+
 def _is_clbg_cell(cell: Path, title_slug: str) -> bool:
     """True when (language, title_slug) is a CLBG benchmark rather than a
     LeetCode problem. CLBG cells live under `<Lang>/clbg/<slug>/` and are
     validated by the golden-output `make validate` path — never the LeetCode
     full-suite validator, which needs a `reference/leetcode/workloads/<slug>.json`
     that CLBG problems don't have (harness_cpp.py raises FileNotFoundError on
-    them, exiting 1 instead of the rc-2 the fallback expects). Detected by the
+    them, exiting 1). Detected by the
     cell path or the presence of a CLBG reference so it works for both the
     `<Lang>/clbg/<slug>` and legacy `<Lang>/<slug>` layouts."""
     if "clbg" in cell.parts:
@@ -2025,7 +2214,7 @@ def validate_once(
         if source.exists():
             shutil.copy2(source, backup)
         source.write_text(_normalize_solution_code(
-            language, code, _is_clbg_cell(cell, title_slug)))
+            language, code, _is_clbg_cell(cell, title_slug), source))
 
         rc, flag_fb = _cached_make_compile(cell, source, 60.0)
         if rc.returncode != 0:
@@ -2038,28 +2227,30 @@ def validate_once(
         # Correctness. CLBG benchmarks are validated by the golden-output
         # `make validate` path (multi-case diff via clbg_validate.sh) — they have
         # no LeetCode workload, so the full-suite LeetCode validator crashes on
-        # them instead of cleanly signalling rc 2. Route CLBG straight to
-        # `make validate`; LeetCode problems use the full-suite validator with
-        # its rc-2 fallback to the legacy single-case `make validate`.
+        # them. Route CLBG straight to `make validate`; LeetCode problems use
+        # the full-suite validator.
         total_correct = total_testcases = None
+        try:
+            vr = (_run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+                  if _is_clbg_cell(cell, title_slug) else _full_suite_validate(cell, language))
+        except subprocess.TimeoutExpired as e:
+            # A solution that never finishes: LeetCode's verdict is Time Limit
+            # Exceeded (the timeout used to escape as a handler exception).
+            return _validate_tle(e)
         if _is_clbg_cell(cell, title_slug):
-            vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
             status = _make_validate_status(vr.returncode, vr.stderr or "")
             # clbg_validate.sh emits `passed=<K> ncases=<N>` — same shape the
             # full-suite parser reads, so the per-run breakdown is populated too.
             total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         else:
-            vr = _full_suite_validate(cell, language)
-            if vr.returncode == 2:
-                # rc 2 = full-suite validator can't run; fall back to the legacy
-                # single-case `make validate` and read its cause the same way.
-                vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-                status = _make_validate_status(vr.returncode, vr.stderr or "")
-            else:
-                status = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
-                # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
-                # before the verdict (== LeetCode total_correct), N total.
-                total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
+            # rc 2 = the validator could not build or run the code with its
+            # harness. A LeetCode cell's `make validate` always passes
+            # (REFERENCE_OUTPUT=/dev/null), so falling back to it accepted
+            # code that was never checked: report Compile Error instead.
+            status = _full_suite_status(vr.returncode, vr.stderr or "")
+            # Full-suite validators emit `passed=<K> ncases=<N>`: K cases passed
+            # before the verdict (== LeetCode total_correct), N total.
+            total_correct, total_testcases = _parse_validate_counts(vr.stderr or "")
         if status != "Accepted":
             # Pull the expected/produced diff markers (if any) out of the
             # validator output so the SPA can render a side-by-side panel, and
@@ -2434,7 +2625,7 @@ def _measure_once(
         if source.exists():
             shutil.copy2(source, backup)
         source.write_text(_normalize_solution_code(
-            language, code, _is_clbg_cell(cell, title_slug)))
+            language, code, _is_clbg_cell(cell, title_slug), source))
 
         # 1. build — ONCE per request, never per repeat, and only when this
         # exact code is not built yet (_cached_make_compile). A CLBG cell builds
@@ -2458,18 +2649,15 @@ def _measure_once(
             # CLBG benchmarks validate via the golden-output `make validate`
             # path; only LeetCode problems go through the full-suite validator
             # (which has no workload for CLBG and would crash). See _is_clbg_cell.
+            try:
+                vr = (_run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
+                      if _is_clbg_cell(cell, title_slug) else _full_suite_validate(cell, language))
+            except subprocess.TimeoutExpired as e:
+                return [{**_validate_tle(e), "runtime_ms": None, "memory_mb": None}]
             if _is_clbg_cell(cell, title_slug):
-                vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
                 _vstatus = _make_validate_status(vr.returncode, vr.stderr or "")
             else:
-                vr = _full_suite_validate(cell, language)
-                if vr.returncode == 2:
-                    # rc 2 = full-suite validator can't run; fall back to the legacy
-                    # single-case `make validate` and read its cause the same way.
-                    vr = _run(["make", "-s", "validate"], cwd=cell, timeout=120.0)
-                    _vstatus = _make_validate_status(vr.returncode, vr.stderr or "")
-                else:
-                    _vstatus = {0: "Accepted", 3: "Runtime Error"}.get(vr.returncode, "Wrong Answer")
+                _vstatus = _full_suite_status(vr.returncode, vr.stderr or "")   # see validate_once
             _log(f"validate {_vstatus} in {time.perf_counter() - _tv:.2f}s")
             if _vstatus != "Accepted":
                 return [_fail_dict("validate", _vstatus, vr)]

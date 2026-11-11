@@ -184,14 +184,14 @@ FOREIGN_CODE: dict[str, list[tuple[str, str]]] = {
               (r"@_silgen_name|\bdlopen\s*\(", _NATIVE)],
     "dart": [(r"\bProcess\.(run|start|runSync)\b", _PROCESS),
              (r"\bdart:ffi\b", _NATIVE)],
-    "ruby": [(r"`[^`\n]+`|%x[({\[]|(?<![\w.])(system|spawn|exec)\s*[( ]|\bIO\.popen\b|\bOpen3\b",
-              _PROCESS),
+    "ruby": [(r"`[^`\n]+`|%x[({\[]|(?<![\w.:])(system|spawn|exec)\b[ \t]*[(\"'%`A-Za-z_@$:\[]"
+              r"|\bIO\.popen\b|\bOpen3\b", _PROCESS),
              (r"\bFiddle\b|\bFFI::", _NATIVE)],
     "elixir": [(r"\bSystem\.cmd\b|:os\.cmd\b|\bPort\.open\b", _PROCESS),
                (r":erlang\.load_nif\b|@on_load\b", "loads a native function (NIF)")],
-    "erlang": [(r"\bos:cmd\b|\bopen_port\b", _PROCESS),
+    "erlang": [(r"\bos:cmd\b|\bopen_port\s*\(\s*\{\s*spawn", _PROCESS),
                (r"\berlang:load_nif\b", "loads a native function (NIF)")],
-    "racket": [(r"\((system|system\*|process|process\*|subprocess)\s", _PROCESS),
+    "racket": [(r"\((?P<name>system\*?|process\*?|subprocess)\s", _PROCESS),
                (r"\bffi/unsafe\b", _NATIVE)],
 }
 FOREIGN_CODE["python"] = FOREIGN_CODE["python3"]
@@ -217,14 +217,69 @@ def _strip_comments(code: str, language: str) -> str:
     return code
 
 
+# PHP runs a command in backticks, but not backticks inside a quoted string,
+# so quoted strings are emptied before the scan.
+_QUOTED = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'')
+# Ruby text that never runs: =begin/=end blocks, heredoc bodies, strings (also
+# over several lines), char literals (?x) and # comments.
+_RB_BEGIN = re.compile(r"^=begin\b.*?^=end\b[^\n]*", re.S | re.M)
+_RB_HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Za-z_]\w*)\1([^\n]*)\n.*?^[ \t]*\2[ \t]*$", re.S | re.M)
+_RB_TOKENS = re.compile(r'(?P<s>"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')'
+                        r'|(?P<c>(?<![\w)\]}])\?(?:\\.|[^\s]))|(?P<m>#[^\n]*)')
+# Racket text that never runs: strings, #| |# and ; comments, #; datum comments.
+_RKT_TOKENS = re.compile(r'(?P<s>"(?:\\.|[^"\\])*")|(?P<b>#\|.*?\|#)|(?P<m>;[^\n]*)', re.S)
+_RKT_DEFINES = re.compile(r"\((?:define|let\*?|letrec)\s+\(?\s*([^\s()\[\]]+)")
+
+
+def _strip_ruby(code: str) -> str:
+    code = _RB_BEGIN.sub(" ", code)
+    code = _RB_HEREDOC.sub(lambda m: '""' + m.group(3), code)
+    return _RB_TOKENS.sub(lambda m: '""' if (m.group("s") or m.group("c")) else "", code)
+
+
+def _strip_racket(code: str) -> str:
+    code = _RKT_TOKENS.sub(lambda m: '""' if m.group("s") else " ", code)
+    out, i = [], 0
+    while True:                       # #; comments out the next datum
+        j = code.find("#;", i)
+        if j < 0:
+            out.append(code[i:]); break
+        out.append(code[i:j]); k = j + 2
+        while k < len(code) and code[k].isspace():
+            k += 1
+        if k < len(code) and code[k] in "([":
+            depth = 0
+            while k < len(code):
+                depth += code[k] in "(["; depth -= code[k] in ")]"; k += 1
+                if depth == 0:
+                    break
+        else:
+            while k < len(code) and not code[k].isspace() and code[k] not in "()[]":
+                k += 1
+        i = k
+    return "".join(out)
+
+
 def foreign_code(code: str | None, language: str) -> list[str]:
     """What in `code` runs code of another language, as reasons (no duplicates)."""
     if not code:
         return []
-    code = _strip_comments(code, language)
+    if language == "ruby":
+        code = _strip_ruby(code)
+    elif language == "racket":
+        code = _strip_racket(code)
+    else:
+        code = _strip_comments(code, language)
+        if language == "php":
+            code = _QUOTED.sub('""', code)
+    # a name the solution defines itself (for example a Racket helper named
+    # `process`) is its own function, not the library call
+    defined = set(_RKT_DEFINES.findall(code)) if language == "racket" else set()
     found: list[str] = []
     for rx, why in _FOREIGN_RE.get(language, ()):
-        if rx.search(code) and why not in found:
+        hit = (any(m.group("name") not in defined for m in rx.finditer(code))
+               if "name" in rx.groupindex else rx.search(code))
+        if hit and why not in found:
             found.append(why)
     return found
 
