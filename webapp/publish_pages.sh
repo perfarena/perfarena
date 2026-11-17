@@ -36,7 +36,7 @@
 set -euo pipefail
 
 SRC=${1:?usage: publish_pages.sh <database | export folder> [base]}
-BASE=${2:-/perfarena/}
+BASE=${2:-/}
 [[ "$BASE" == /*/ || "$BASE" == / ]] || { echo "base must start and end with /" >&2; exit 2; }
 SRC=$(cd "$(dirname "$SRC")" && pwd)/$(basename "$SRC")
 HERE=$(cd "$(dirname "$0")" && pwd)

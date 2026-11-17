@@ -17,15 +17,15 @@ const TEAM = [
   },
   {
     name: "Karim Ali",
-    site: "https://example.com/karim-ali",
+    site: "https://karimali.ca",
     position: "Associate Professor, NYU Abu Dhabi",
     affiliations: ["SanadLab"],
     photo: "https://karimali.ca/resources/images/karim.jpg",
   },
   {
     name: "João Paulo Fernandes",
-    site: "https://example.com/joao-paulo-fernandes",
-    position: "Visiting Associate Professor, NYU Abu Dhabi",
+    site: "https://joao30730.github.io/Site/Home.html",
+    position: "Associate Professor, University of Algarve",
     affiliations: [],
     photo: "https://joao30730.github.io/Site/Home_files/droppedImage.jpg",
   },
@@ -65,7 +65,8 @@ export default function About() {
           <a href={SANADLAB_URL} target="_blank" rel="noreferrer"><b>SanadLab</b></a>{" "}
           is a research group at NYU Abu Dhabi that studies programming languages, program analysis,
           and software engineering for the next generation of AI systems. Rui Rua and Karim Ali
-          are affiliated with SanadLab. João Paulo Fernandes is faculty at NYU Abu Dhabi.
+          are affiliated with SanadLab. João Paulo Fernandes is an Associate Professor at the
+          University of Algarve in Faro, Portugal.
         </p>
       </section>
 
