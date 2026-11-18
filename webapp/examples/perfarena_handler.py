@@ -1684,7 +1684,9 @@ def _normalize_solution_code(language: str, code: str, is_clbg: bool = False,
         # PHP harness, which wraps user code in an already-open tag. The CLBG
         # standalone file needs it back, so add it when it is missing. Leetcode
         # PHP (is_clbg=False) keeps the stripped shape its harness expects.
-        if not re.match(r"\s*<\?(php\b|=)", code, re.IGNORECASE):
+        # The CLBG Makefiles run php with short_open_tag=On, so a bare `<?`
+        # (two CLBG reference programs use it) opens PHP code too.
+        if not re.match(r"\s*<\?(php\b|=|\s)", code, re.IGNORECASE):
             code = "<?php\n" + code
         return code
     if language == "java":
