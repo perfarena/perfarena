@@ -845,27 +845,53 @@ def _preflight_toolchains() -> None:
     Also prints PATH and PERFARENA_ROOT status, since a runner launched from a
     bare environment (systemd, cron, non-login shell) is the usual cause of
     'npx: not found' when node is installed but only on an interactive PATH.
+    Each tool line gives its version and the file it resolves to, on the PATH
+    that builds use (the runner's Python bin first, as the handler sets it).
     Never blocks startup."""
     import shutil
-    groups = [
-        ("python3", ["python3"]),
-        ("c/cpp", ["gcc", "g++"]),
-        ("java", ["javac", "java"]),
-        ("csharp", ["dotnet"]),
-        ("php", ["php"]),
-        ("typescript", ["node", "npx"]),
-        ("rust", ["rustc"]),
-        ("go", ["go"]),
-        ("ruby", ["ruby"]),
+    import subprocess
+    otp = ('{ok, V} = file:read_file(filename:join([code:root_dir(), "releases", '
+           'erlang:system_info(otp_release), "OTP_VERSION"])), io:format("OTP ~s", [V]), halt().')
+    groups = [  # language -> the version command of each tool it needs
+        ("python3", [["python3", "--version"]]),
+        ("c/cpp", [["cc", "--version"], ["gcc", "--version"], ["g++", "--version"]]),
+        ("java", [["javac", "-version"], ["java", "-version"]]),
+        ("kotlin", [["kotlinc", "-version"]]),
+        ("scala", [["scalac", "-version"]]),
+        ("csharp", [["dotnet", "--version"]]),
+        ("php", [["php", "--version"]]),
+        ("javascript", [["node", "--version"]]),
+        ("typescript", [["tsc", "--version"], ["npx", "--version"]]),
+        ("rust", [["rustc", "--version"], ["cargo", "--version"]]),
+        ("go", [["go", "version"]]),
+        ("ruby", [["ruby", "--version"]]),
+        ("swift", [["swift", "--version"]]),
+        ("dart", [["dart", "--version"]]),
+        ("erlang", [["erl", "-noshell", "-eval", otp]]),
+        ("elixir", [["elixir", "-e", 'IO.puts("Elixir " <> System.version())']]),
+        ("racket", [["racket", "--version"]]),
     ]
+    env = dict(os.environ)
+    env["PATH"] = f"{os.path.dirname(sys.executable)}:{env.get('PATH', '')}"
+
+    def version(argv: list) -> str:
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=60, env=env)
+            lines = [ln.strip() for ln in (r.stdout + "\n" + r.stderr).splitlines() if ln.strip()]
+            return lines[0][:100] if lines else f"(no output, exit {r.returncode})"
+        except (OSError, subprocess.SubprocessError) as e:
+            return f"(version check failed: {e!r})"[:100]
+
     print("[harness-runner] toolchain preflight:", file=sys.stderr)
-    for lang, tools in groups:
-        missing = [t for t in tools if shutil.which(t) is None]
+    for lang, cmds in groups:
+        missing = [c[0] for c in cmds if shutil.which(c[0], path=env["PATH"]) is None]
         if missing:
             print(f"[harness-runner]   {lang:<11} MISSING {missing} — "
                   f"{lang} attempts will fail to build/run", file=sys.stderr)
-        else:
-            print(f"[harness-runner]   {lang:<11} ok", file=sys.stderr)
+            continue
+        for c in cmds:
+            exe = os.path.realpath(shutil.which(c[0], path=env["PATH"]))
+            print(f"[harness-runner]   {lang:<11} {c[0]:<8} {version(c)}  [{exe}]", file=sys.stderr)
     root = os.environ.get("PERFARENA_ROOT")
     if root:
         ok = os.path.exists(os.path.join(root, "perfarena.mk"))
