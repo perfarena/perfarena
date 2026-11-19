@@ -1091,8 +1091,35 @@ def _toolchain(cell: Path, title_slug: str, language: str) -> "dict[str, Any]":
     return {"harness": {n: _file_hash(f) for f, n in names.items()}, "tools": tools}
 
 
+# Tools whose binaries identify the toolchain in a build key: each versioned
+# tool, plus compiler names that builds call directly (CLBG C runs `cc`).
+_BUILD_KEY_TOOLS = tuple(dict.fromkeys(
+    [argv[0] for argv in _TOOL_VERSION_ARGV.values()] + ["cc", "c++", "scalac", "swiftc", "cargo", "raco"]))
+
+
+def _toolchain_identity(env: "dict[str, str]") -> str:
+    """The binary that each toolchain tool resolves to on env's PATH (real
+    path, size, mtime), and JAVA_HOME / DOTNET_ROOT. It is part of every build
+    key, so after a toolchain change a cell that holds the same code is built
+    again instead of running the old toolchain's binary."""
+    parts = []
+    for t in _BUILD_KEY_TOOLS:
+        exe = shutil.which(t, path=env.get("PATH"))
+        if exe is None:
+            continue
+        real = os.path.realpath(exe)
+        try:
+            st = os.stat(real)
+            parts.append(f"{t}={real}:{st.st_size}:{st.st_mtime_ns}")
+        except OSError:
+            parts.append(f"{t}={real}")
+    parts += [f"{v}={os.path.realpath(env[v])}" for v in ("JAVA_HOME", "DOTNET_ROOT") if env.get(v)]
+    return "\n".join(parts)
+
+
 def _build_key(files: "list[Path]") -> str:
     h = hashlib.sha256(os.environ.get("PERFARENA_COMPILE_FLAGS", "").encode())
+    h.update(_toolchain_identity(_harness_env("build")).encode())
     for f in files:
         h.update(f"\0{f}\0".encode())
         if f.is_file():

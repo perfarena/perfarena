@@ -68,6 +68,36 @@ def test_an_upgraded_tool_is_seen_on_the_next_run(tmp_path, monkeypatch):
     assert h._toolchain(cell, "two-sum", "javascript")["tools"]["node"] == "v22.1.0"
 
 
+def test_a_toolchain_change_rebuilds_a_built_cell(tmp_path, monkeypatch):
+    """The build cache skips a build of code that is already built, but not
+    after the toolchain changed: an old binary must not be measured again."""
+    cell = _tree(tmp_path, monkeypatch)
+    src = cell / "solution.js"
+    src.write_text("var x = 1;\n")
+    builds = []
+
+    def build():
+        builds.append(1)
+        (cell / "out.bin").write_text(f"built {len(builds)}\n")
+        return True, None
+
+    assert h._cached_build(cell, "t", [src], build) == (True, None, False)
+    assert h._cached_build(cell, "t", [src], build) == (True, None, True)   # same code: skipped
+    # Upgrading a tool replaces its binary (size or mtime changes).
+    node = tmp_path / "bin" / "node"
+    node.write_text(node.read_text() + "# upgraded\n")
+    assert h._cached_build(cell, "t", [src], build)[2] is False
+    assert h._cached_build(cell, "t", [src], build)[2] is True
+    # A PATH that resolves the tool to another installation also rebuilds.
+    other = tmp_path / "bin2"
+    other.mkdir()
+    (other / "node").write_text("#!/bin/sh\necho v26.13.1\n")
+    (other / "node").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{other}:{os.environ['PATH']}")
+    assert h._cached_build(cell, "t", [src], build)[2] is False
+    assert len(builds) == 3
+
+
 def test_platform_stores_the_record_on_the_run(real_mode, runners, client):
     perf = runners("perf")
     record = {"harness": {"selection/harness.js": "abc"}, "tools": {"node": "v20.20.2"}}
