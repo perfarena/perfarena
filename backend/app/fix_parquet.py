@@ -44,7 +44,6 @@ import datetime as dt
 import json
 import shutil
 import time
-from pathlib import Path
 
 import httpx
 import pandas as pd
@@ -52,8 +51,7 @@ import pandas as pd
 from .leetcode_accounts import mark_exhausted, pick_account
 
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR as DATA  # noqa: E402
 PARQUET = DATA / "problems.parquet"
 PREMIUM_JSON = DATA / "premium_status.json"
 ANCHORS_JSON = DATA / "anchors.json"

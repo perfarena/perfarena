@@ -41,8 +41,9 @@ from .models import Competition, CompetitionProblem, Problem
 # Paths default to the source-tree layout; override via flag for ops who
 # run this against a different ARENA_DB. Both files ship in the data/
 # directory at the repo root.
-DEFAULT_RANKING = Path(__file__).parent.parent.parent / "data" / "runtime_ranking.json"
-DEFAULT_PARQUET = Path(__file__).parent.parent.parent / "data" / "problems.parquet"
+from .paths import DATA_DIR  # noqa: E402
+DEFAULT_RANKING = DATA_DIR / "runtime_ranking.json"
+DEFAULT_PARQUET = DATA_DIR / "problems.parquet"
 
 
 def _select_top_99_hard(ranking_path: Path, parquet_path: Path) -> tuple[list[dict], list[dict]]:

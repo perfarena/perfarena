@@ -133,8 +133,8 @@ def seed(problems_yaml: Path) -> None:
             # Startup creates only the `leetcode` harness. Each submission names
             # its own harness, so the competition works without this default;
             # run the script again after you register the harness to set it.
-            print(f"  [!] harness {_HARNESS_SLUG!r} not found: the competition "
-                  "gets no default harness (run this again after you register it)")
+            print(f"  [!] no harness {_HARNESS_SLUG!r}: the competition gets no default "
+                  "harness. This is harmless: each submission names its own harness.")
 
         # ---- Competition ----
         comp = s.exec(

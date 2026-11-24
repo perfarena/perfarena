@@ -375,7 +375,7 @@ setup_energy() {
     run "$SUDO chmod -R a+r /sys/class/powercap/intel-rapl* 2>/dev/null || true"
     # Persist across reboot via a udev rule.
     run "printf 'SUBSYSTEM==\"powercap\", ACTION==\"add\", MODE=\"0444\"\n' | $SUDO tee /etc/udev/rules.d/99-rapl-read.rules >/dev/null"
-    log "RAPL powercap readable (persistent udev rule installed)"
+    log "RAPL powercap readable now. The udev rule does not hold after a reboot on every kernel: also install runner/perfarena-rapl-grant.service (docs/replication.md, step 1c)"
   else
     warn "no intel-rapl powercap found; this host has no RAPL. codecarbon will fall back to a TDP estimate (not a hardware measurement)."
   fi
@@ -398,6 +398,7 @@ tune_machine() {
 # ---------------------------------------------------------------- verify
 write_versions() {
   local out="$REPO_ROOT/runner/harness-host-versions.txt"
+  if [ "$DRY_RUN" = 1 ]; then echo "  + (record the toolchain versions in $out)"; return; fi
   export PATH="$HOME/.cargo/bin:$HOME/.dotnet:$PATH"
   info "recording toolchain versions -> $out"
   { echo "date=$(date -Iseconds 2>/dev/null || date)"; echo "host=$OS/$ARCH"
@@ -446,13 +447,9 @@ so the runner's subprocesses find kotlinc/scalac/swiftc/dart without extra setup
 Confirm all four appear in harness-host-versions.txt below; if kotlinc is still
 "not found" for the runner, restart it so it inherits the updated PATH.
 
-Launch the arena-local runner from the measurement venv so it can measure energy:
+Start the runner with the paper's settings (docs/replication.md, step 1d):
 
-    cd $REPO_ROOT/runner && HARNESS_RUNNER_TOKEN=<shared secret> \\
-      PERFARENA_ROOT=$HARNESS_DIR PYTHONPATH=$HARNESS_DIR \\
-      "$VENV/bin/python" harness_runner_server.py --host 0.0.0.0 --port 8787 \\
-        --measure-handler perfarena_handler:measure_once \\
-        --validate-handler perfarena_handler:validate_once   # serves :8787
+    PERFARENA_PYTHON="$VENV/bin/python" $REPO_ROOT/runner/start_runner.sh   # serves :8787
 
 Verify a single case in any language from a cell directory, e.g.:
 

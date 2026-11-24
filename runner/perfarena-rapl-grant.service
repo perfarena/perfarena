@@ -1,0 +1,18 @@
+# Gives the PerfArena runner's group read access to the RAPL energy counters at
+# every boot (see perfarena-rapl-grant.sh). Install:
+#   sudo install -m 755 runner/perfarena-rapl-grant.sh /usr/local/sbin/
+#   sudo install -m 644 runner/perfarena-rapl-grant.service /etc/systemd/system/
+#   sudo systemctl enable --now perfarena-rapl-grant.service
+# Set PERFARENA_RAPL_GROUP below to the group of the user that runs the runner.
+[Unit]
+Description=Grant the PerfArena runner read access to the RAPL energy counters
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+Environment=PERFARENA_RAPL_GROUP=perfrunner
+ExecStart=/usr/local/sbin/perfarena-rapl-grant.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

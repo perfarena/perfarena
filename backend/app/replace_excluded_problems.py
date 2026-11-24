@@ -54,8 +54,7 @@ from .models import (
 )
 
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR  # noqa: E402
 RANKING_JSON = DATA_DIR / "runtime_ranking.json"
 PROBLEMS_PARQUET = DATA_DIR / "problems.parquet"
 

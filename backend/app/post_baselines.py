@@ -17,12 +17,10 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 import httpx
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR  # noqa: E402
 COMBINED_JSON = DATA_DIR / "baselines.json"
 PER_PAIR_DIR = DATA_DIR / "baselines"
 

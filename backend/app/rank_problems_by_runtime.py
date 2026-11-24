@@ -39,7 +39,6 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from pathlib import Path
 
 import pandas as pd
 from sqlmodel import Session, select
@@ -48,7 +47,7 @@ from . import leetcode_dist
 from .db import engine
 from .models import Attempt, Problem, Run, Submission
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+from .paths import DATA_DIR  # noqa: E402
 PARQUET = DATA_DIR / "problems.parquet"
 SAMPLED_JSON = DATA_DIR / "sampled_problems.json"
 RANKING_JSON = DATA_DIR / "runtime_ranking.json"

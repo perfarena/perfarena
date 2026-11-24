@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import text
@@ -29,7 +28,7 @@ from .db import engine, init_db
 from .models import Problem, User, UserRole, UserStatus
 
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+from .paths import DATA_DIR  # noqa: E402
 SAMPLED_JSON = DATA_DIR / "sampled_problems.json"
 PROBLEMS_PARQUET = DATA_DIR / "problems.parquet"
 

@@ -46,8 +46,7 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR as DATA  # noqa: E402
 RUNTIME_RANKING_JSON = DATA / "runtime_ranking.json"
 PREMIUM_JSON = DATA / "premium_status.json"
 PARQUET = DATA / "problems.parquet"

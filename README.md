@@ -37,7 +37,10 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 │   ├── harness_runner_server.py  the harness runner (port 8787)
 │   ├── perfarena_handler.py      builds, validates, and measures one solution
 │   ├── setup-harness-host.sh     installs the toolchains on a measurement host
-│   └── harness-host-versions.txt the toolchain versions that setup-harness-host.sh found
+│   ├── harness-host-versions.txt the toolchain versions that setup-harness-host.sh found
+│   ├── start_runner.sh           starts the runner with the paper's settings
+│   └── perfarena-rapl-grant.*    a boot service that gives the runner read access to the energy counters
+├── analysis/                     the scripts that make the paper's tables and figures
 ├── infra/
 │   ├── docker-compose.local.yml  the backend and a harness runner on one computer
 │   ├── harness-test/             a Docker copy of the measurement host, for local tests
@@ -93,20 +96,21 @@ To see the site with data but without an LLM or a measurement host, run `python 
 
 ## Replicate the paper
 
-The paper uses the competitions `leetcode-99-perf` and `clbg-10`, 13 LLMs, and 7 languages.
+The paper uses the competitions `leetcode-99-perf` and `clbg-10`, 13 LLMs, and 7 languages. [`docs/replication.md`](docs/replication.md) gives every step with the paper's values:
 
-1. Set up the arena and one Linux measurement host. The paper measures with the `arena-linux-local` harness.
-2. Load the problems (step 1 above).
-3. Generate one submission for each LLM, language, and competition with `matrix_sweep.py` (step 3 above, and section 4 of [`docs/deployment.md`](docs/deployment.md)). Use the `leetcode` correctness oracle for `leetcode-99-perf` and the `arena-local` oracle for `clbg-10`.
-4. Make the tables and the figures with the scripts in `figs/scripts/` of the paper's repository:
-   - `snapshot_to_cache.py` reads a copy of the arena database and writes the submissions and their attempts to a cache folder.
-   - `gen_paper_data.py` computes the ratios to the golden baseline, pass@1, and the cost of each LLM.
-   - `bt_analysis.py` computes the Bradley-Terry rankings, and `make_bt_tables.py` writes their tables.
+1. the measurement host: the paper's hardware and settings, the toolchains, read access to the energy counters, and the runner (`runner/start_runner.sh`);
+2. the backend;
+3. the configuration: the problems, the harness `arena-linux-local`, the correctness oracles, and the tie margins;
+4. the runs: the 13 LLMs, the prompt template, and `matrix_sweep.py` for each competition, then the golden baseline;
+5. the tables and the figures, with the scripts in [`analysis/`](analysis/README.md).
+
+The code of the paper is the release [`paper-v1`](https://github.com/perfarena/perfarena/releases/tag/paper-v1).
 
 `scripts/bicho_checks/` holds the checks for the threats to validity, and its README tells how to run them on the measurement host.
 
 ## More documentation
 
+- [`docs/replication.md`](docs/replication.md): set up an instance and run the paper's experiments, step by step.
 - [`docs/architecture.md`](docs/architecture.md): the parts of the arena and the sequence diagrams of the main workflows.
 - [`docs/deployment.md`](docs/deployment.md): installation, deployment, configuration (environment variables), tests, and contributions.
 - [`docs/deploy-replica-pools.md`](docs/deploy-replica-pools.md): more than one runner for a harness or an oracle.

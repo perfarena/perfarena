@@ -14,12 +14,12 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from pathlib import Path
 
 import pandas as pd
 
-PARQUET = Path(__file__).parent.parent.parent / "data" / "problems.parquet"
-OUTPUT = Path(__file__).parent.parent.parent / "data" / "sampled_problems.json"
+from .paths import DATA_DIR  # noqa: E402
+PARQUET = DATA_DIR / "problems.parquet"
+OUTPUT = DATA_DIR / "sampled_problems.json"
 
 LEVELS = ("Easy", "Medium", "Hard")
 PER_LEVEL = 33

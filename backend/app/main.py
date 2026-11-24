@@ -22,7 +22,7 @@ load_dotenv(_REPO_ENV)
 
 # Repo-root data directory (<repo>/data) — holds the precomputed analysis
 # artifacts (discrimination.json, etc.) shared with the CLI scripts.
-REPO_ROOT_DATA = Path(__file__).parent.parent.parent / "data"
+from .paths import DATA_DIR as REPO_ROOT_DATA  # noqa: E402
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -2380,6 +2380,7 @@ def list_competitions(
             n_models=n_models,
             harnesses_with_data=_competition_harnesses_with_data(session, c),
             compatible_harness_slugs=c.compatible_harness_slugs or [],
+            ranking_tie_pct=c.ranking_tie_pct,
         ))
     return out
 

@@ -43,8 +43,7 @@ from sqlmodel import Session, select
 from .db import engine
 from .models import Attempt, Problem, Run, Submission
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR  # noqa: E402
 PARQUET = DATA_DIR / "problems.parquet"
 ANCHORS_JSON = DATA_DIR / "anchors.json"
 FAILURES_JSON = DATA_DIR / "anchor_failures.json"

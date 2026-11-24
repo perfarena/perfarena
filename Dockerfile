@@ -47,6 +47,9 @@ ENV PYTHONUNBUFFERED=1 \
     # SQLite lands on the /data volume so it persists across container
     # restarts / re-creates.
     ARENA_DB=/data/arena.db \
+    # The data folder of the repo (app/paths.py). /data is the database volume,
+    # so the image keeps the data folder at /app/data.
+    ARENA_DATA_DIR=/app/data \
     # Tells main.py to mount the built SPA at root.
     ARENA_SERVE_FRONTEND_DIR=/app/web \
     # Per-(IP, endpoint) rate-limit cap for unauthenticated reads — 60
@@ -71,7 +74,7 @@ RUN pip install -r /app/requirements.txt
 COPY backend/ /app/
 
 # Reference data (anchors, baselines, discrimination, sampled problems).
-# Path matches the one app/* scripts default to (repo-root / data).
+# ARENA_DATA_DIR above points the app and its scripts here.
 COPY data /app/data
 
 # Built frontend (Vite dist/).

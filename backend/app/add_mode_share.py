@@ -37,12 +37,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from pathlib import Path
 
 from . import leetcode_dist
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-RUNTIME_RANKING_JSON = REPO_ROOT / "data" / "runtime_ranking.json"
+from .paths import REPO_ROOT, DATA_DIR  # noqa: E402
+RUNTIME_RANKING_JSON = DATA_DIR / "runtime_ranking.json"
 
 
 _Q = """

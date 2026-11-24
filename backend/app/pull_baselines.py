@@ -42,7 +42,6 @@ import random
 import statistics
 import sys
 import time
-from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
@@ -53,8 +52,7 @@ from .languages import LANGUAGES
 from .models import Attempt, Problem, Run, Submission
 
 
-REPO_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = REPO_ROOT / "data"
+from .paths import REPO_ROOT, DATA_DIR  # noqa: E402
 SAMPLED_JSON = DATA_DIR / "sampled_problems.json"
 ANCHORS_JSON = DATA_DIR / "anchors.json"
 OUTPUT_DIR = DATA_DIR / "baselines"
