@@ -25,17 +25,24 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 
 ```
 .
-├── webapp/
-│   ├── backend/                  FastAPI + SQLModel + SQLite: the API, the dispatch worker, and the rankings
-│   │   ├── app/                  the app, and the scripts that seed competitions and select problems
-│   │   └── tests/                pytest tests (offline, with a fake judge)
-│   ├── frontend/                 Vite + React + TypeScript site
-│   ├── examples/                 the harness runner and the scripts that generate and submit solutions
+├── backend/                      FastAPI + SQLModel + SQLite: the API, the dispatch worker, and the rankings
+│   ├── app/                      the app, and the scripts that seed competitions and select problems
+│   └── tests/                    pytest tests (offline, with a fake judge)
+├── frontend/                     (submodule) Vite + React + TypeScript site
+├── clients/
+│   ├── python/                   the perfarena package: SDK, CLI, and MCP server
+│   └── scripts/                  the scripts that generate and submit solutions
+├── runner/                       the code that runs on a measurement host
+│   ├── harness_runner_server.py  the harness runner (port 8787)
+│   ├── perfarena_handler.py      builds, validates, and measures one solution
+│   ├── setup-harness-host.sh     installs the toolchains on a measurement host
+│   └── harness-host-versions.txt the toolchain versions that setup-harness-host.sh found
+├── infra/
+│   ├── docker-compose.local.yml  the backend and a harness runner on one computer
+│   ├── harness-test/             a Docker copy of the measurement host, for local tests
 │   └── publish_pages.sh          builds the read-only snapshot of the site for GitHub Pages
-├── clients/python/               the perfarena package: SDK, CLI, and MCP server
 ├── Energy-Languages/             (submodule) the measurement harnesses, the LeetCode test cases, and the CLBG problems
 ├── data/                         the problem data and the outputs of the problem selection
-├── docker/harness-test/          a Docker copy of the measurement host, for local tests
 ├── scripts/bicho_checks/         the checks on the measurement host for the threats to validity of the paper
 ├── docs/                         architecture, deployment, problem selection, and LeetCode percentiles
 ├── human_solutions/              human-written LeetCode solutions for each problem and language (the arena does not use them)
@@ -43,13 +50,12 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 ├── prepare_dataset.py            makes data/problems.parquet and data/solutions.parquet from the source dataset
 ├── train-00000-of-00001.parquet  the source dataset of LeetCode problems and solutions
 ├── export_human_solutions.py     writes human_solutions/ from data/solutions.parquet
-├── setup-harness-host.sh         installs the toolchains on a measurement host
-├── harness-host-versions.txt     the toolchain versions that setup-harness-host.sh found
 ├── Dockerfile                    one container with the backend and the built frontend
-├── docker-compose.local.yml      the backend and a harness runner on one computer
 ├── LICENSE                       the license of the code
 └── DATA_LICENSE.md               the license of the data
 ```
+
+`frontend/` and `Energy-Languages/` are submodules. Clone with `git clone --recurse-submodules`, or run `git submodule update --init` in a clone that you already have.
 
 The main files in `data/`:
 
@@ -61,7 +67,7 @@ The main files in `data/`:
 
 ## Populate the arena
 
-[`docs/deployment.md`](docs/deployment.md) tells how to install the arena. Run the commands below in `webapp/backend`, with its virtual environment.
+[`docs/deployment.md`](docs/deployment.md) tells how to install the arena. Run the commands below in `backend`, with its virtual environment.
 
 **1. Load the problems.** The app makes the `leetcode-99-perf` competition at its first start. Then:
 
@@ -70,14 +76,14 @@ python -m app.seed                                   # the 99 problems of data/s
 python -m app.fetch_code_snippets --sampled-only --force
 python -m app.seed_leetcode_hard_competition
 python -m app.replace_excluded_problems --dataset LeetCodeDataset-v0.1.0-train.jsonl
-python -m app.seed_clbg_competition --problems-yaml ../../Energy-Languages/perfarena/configs/problems.yaml
+python -m app.seed_clbg_competition --problems-yaml ../Energy-Languages/perfarena/configs/problems.yaml
 ```
 
 `replace_excluded_problems` replaces six problems in `leetcode-99-perf` and `leetcode-99-hard-perf` with problems of the same difficulty, because the arena excludes them (contamination or missing test cases). It needs both competitions and the train file of [LeetCodeDataset](https://huggingface.co/datasets/newfacade/LeetCodeDataset). `seed_rewritten_competition` makes `leetcode-99-rewritten` from `data/leetcode-99-rewritten-statements.csv` (its docstring gives the command). To select the 99 LeetCode problems again from the source dataset, run `prepare_dataset.py` and then the steps in [`docs/problem-selection.md`](docs/problem-selection.md).
 
-**2. Add a harness and a correctness oracle.** Start a harness runner (`webapp/examples/harness_runner_server.py` with the handler `perfarena_handler.py`) on a measurement host. Then register it on the Harnesses page of the site. [`docs/deployment.md`](docs/deployment.md), section 3, tells how to set up the host. For a local test, `docker compose -f docker-compose.local.yml up -d` and `docker/harness-test/register-harness.sh` start and register a runner in Docker.
+**2. Add a harness and a correctness oracle.** Start a harness runner (`runner/harness_runner_server.py` with the handler `perfarena_handler.py`) on a measurement host. Then register it on the Harnesses page of the site. [`docs/deployment.md`](docs/deployment.md), section 3, tells how to set up the host. For a local test, `docker compose --project-directory . -f infra/docker-compose.local.yml up -d` and `infra/harness-test/register-harness.sh` start and register a runner in Docker.
 
-**3. Submit solutions.** `webapp/examples/matrix_sweep.py` asks an LLM for a solution to each problem and submits the solutions for a competition, a harness, and a correctness oracle. The `perfarena` CLI in `clients/python` does the same from a spec file. `webapp/examples/submit_with_local_model.py` submits one solution.
+**3. Submit solutions.** `clients/scripts/matrix_sweep.py` asks an LLM for a solution to each problem and submits the solutions for a competition, a harness, and a correctness oracle. The `perfarena` CLI in `clients/python` does the same from a spec file. `clients/scripts/submit_with_local_model.py` submits one solution.
 
 To see the site with data but without an LLM or a measurement host, run `python -m app.seed_fake_submissions`. It adds fake LLMs and judged submissions.
 
@@ -102,10 +108,10 @@ The paper uses the competitions `leetcode-99-perf` and `clbg-10`, 13 LLMs, and 7
 - [`docs/deploy-replica-pools.md`](docs/deploy-replica-pools.md): more than one runner for a harness or an oracle.
 - [`docs/problem-selection.md`](docs/problem-selection.md): how we select the 99 LeetCode problems.
 - [`docs/leetcode-percentile-semantics.md`](docs/leetcode-percentile-semantics.md): the noise of the LeetCode percentiles.
-- [`webapp/README.md`](webapp/README.md): the public and the gated pages, and the read-only snapshot on GitHub Pages.
-- [`webapp/backend/README.md`](webapp/backend/README.md), [`webapp/frontend/README.md`](webapp/frontend/README.md), and [`webapp/examples/README.md`](webapp/examples/README.md): the backend, the frontend, and the scripts.
+- [`docs/web-app.md`](docs/web-app.md): the public and the gated pages, and the read-only snapshot on GitHub Pages.
+- [`backend/README.md`](backend/README.md), [`frontend/README.md`](frontend/README.md), and [`clients/scripts/README.md`](clients/scripts/README.md): the backend, the frontend, and the scripts.
 - [`clients/python/README.md`](clients/python/README.md): the SDK, the CLI, and the MCP server.
-- [`docker/harness-test/README.md`](docker/harness-test/README.md): the Docker copy of the measurement host.
+- [`infra/harness-test/README.md`](infra/harness-test/README.md): the Docker copy of the measurement host.
 
 ## License
 

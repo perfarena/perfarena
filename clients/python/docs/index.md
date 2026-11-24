@@ -24,7 +24,7 @@ result = Arena.from_profile("prod").run(spec, ledger="ledger.json")
 print(result.completed, result.failed, result.submissions)
 ```
 
-The client scripts in `webapp/examples/` stay the reference implementation.
+The client scripts in `clients/scripts/` stay the reference implementation.
 The parity tests run the scripts and the SDK on the same inputs and require
 identical prompts, attempts, and submissions ({doc}`design`).
 

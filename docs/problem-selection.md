@@ -412,7 +412,7 @@ python -m app.rank_problems_by_runtime --rank-by spread_ms
 ## How to reproduce
 
 ```bash
-cd webapp/backend
+cd backend
 
 # 1. Bootstrap anchors (once, ~hours, uses the credential pool):
 .venv/bin/python -m app.seed_anchors_from_parquet --rate 0.05
@@ -451,7 +451,7 @@ Tweak thresholds during step 2 if you want a stricter or more permissive set:
 
 ## Source of truth
 
-The actual code is in **`webapp/backend/app/rank_problems_by_runtime.py`**
-(measurement + initial bucketing) and **`webapp/backend/app/fix_parquet.py`**
+The actual code is in **`backend/app/rank_problems_by_runtime.py`**
+(measurement + initial bucketing) and **`backend/app/fix_parquet.py`**
 (parquet repair + re-bucketing with correct levels). If the doc and the
 code ever diverge, the code is right and this doc is stale — open a PR.

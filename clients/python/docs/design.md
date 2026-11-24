@@ -45,9 +45,9 @@ where it has no rate.
 $ cd clients/python && .venv/bin/python -m pytest
 ```
 
-The tests run the real backend (`webapp/backend`) in process on a temporary
+The tests run the real backend (`backend`) in process on a temporary
 database, with real dispatch to fake runners and a fake LLM over HTTP. The
-SDK venv therefore also needs `pip install -r webapp/backend/requirements.txt`.
+SDK venv therefore also needs `pip install -r backend/requirements.txt`.
 
 `test_parity_units.py`
 : Compares the functions of the scripts with the SDK's: the prompts as sent

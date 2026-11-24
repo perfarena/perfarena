@@ -1,5 +1,5 @@
 """Language slugs the platform accepts: display name and markdown fence tag.
-Mirrors webapp/backend/app/languages.py and the client scripts."""
+Mirrors backend/app/languages.py and the client scripts."""
 from __future__ import annotations
 
 LANGUAGE_DISPLAY: dict[str, tuple[str, str]] = {

@@ -8,7 +8,7 @@ interfaces on one core:
 - an **MCP server** (`perfarena mcp`), so an agent can read the arena, submit
   solutions, and start runs.
 
-The client scripts in `webapp/examples/` stay maintained. They are the
+The client scripts in `clients/scripts/` stay maintained. They are the
 reference implementation: the parity tests run them and the SDK on the same
 inputs and require identical results (see "Tests").
 
@@ -203,9 +203,9 @@ mybackend = "mypkg.provider:make"
 cd clients/python && .venv/bin/python -m pytest
 ```
 
-The tests run the real backend (`webapp/backend`) in process on a temporary
+The tests run the real backend (`backend`) in process on a temporary
 database, with real dispatch to fake runners and a fake LLM over HTTP. The SDK
-venv therefore also needs `pip install -r webapp/backend/requirements.txt`.
+venv therefore also needs `pip install -r backend/requirements.txt`.
 
 - `test_parity_units.py` checks the scripts' functions against the SDK's:
   prompts as sent on the wire for every seeded prompt, extraction, language

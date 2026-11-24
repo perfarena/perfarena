@@ -34,7 +34,7 @@ rollups (means over per-problem aggregates). So when the leaderboard
 shows "Avg runtime" and "Runtime %ile" for a submission, it's a mean
 of 5-run means over ~99 problems = ~500 underlying LC measurements.
 The aggregation logic lives in
-[`app/dispatch.py:_aggregate_attempt`](../webapp/backend/app/dispatch.py).
+[`app/dispatch.py:_aggregate_attempt`](../backend/app/dispatch.py).
 
 ### 1.2 LC's distributions ARE bucket histograms
 

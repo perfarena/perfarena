@@ -23,10 +23,10 @@ WORKDIR /build
 
 # Cache npm install separately from the source code so editing TSX doesn't
 # bust the install layer.
-COPY webapp/frontend/package.json webapp/frontend/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY webapp/frontend/. ./
+COPY frontend/. ./
 
 # Default to same-origin /api in production; override at build time with
 # --build-arg VITE_API_URL=https://api.example.com to point elsewhere.
@@ -63,11 +63,11 @@ RUN apt-get update \
 WORKDIR /app
 
 # Install Python deps first so the layer cache survives source-only edits.
-COPY webapp/backend/requirements.txt /app/requirements.txt
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
 # Backend source.
-COPY webapp/backend/ /app/
+COPY backend/ /app/
 
 # LeetCode submission CLI — lives at the repo root in the source tree,
 # but the runtime expects to subprocess it from /app/leetbot.py (and

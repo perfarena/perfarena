@@ -1,4 +1,4 @@
-"""End-to-end parity: the client scripts (webapp/examples) and the SDK run the
+"""End-to-end parity: the client scripts (clients/scripts) and the SDK run the
 same experiment against the same live backend, fake LLM, and fake runner,
 and must produce the same prompts, submissions, and attempts. The scripts
 run as real subprocesses, unchanged, so they are an independent reference."""

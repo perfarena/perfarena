@@ -1,4 +1,4 @@
-"""Provenance helpers; must mirror webapp/backend/app/provenance.py.
+"""Provenance helpers; must mirror backend/app/provenance.py.
 
 The leaf hash is sha256 over canonical JSON of {code, inference_trace,
 trace}. The server recomputes it and anchors it in its append-only log, so

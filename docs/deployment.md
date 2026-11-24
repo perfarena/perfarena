@@ -9,7 +9,7 @@ This file tells how to install PerfArena, deploy it, configure it, and test it. 
 The single-container image bakes the frontend, backend, reference data, and migrations. SQLite lives on a volume so the DB survives upgrades.
 
 ```bash
-git clone https://github.com/sanadlab/perfarena.git
+git clone --recurse-submodules https://github.com/sanadlab/perfarena.git
 cd perfarena
 docker build -t perfarena .
 
@@ -36,11 +36,11 @@ See `.env.example` for the cookie shape.
 For iterating on backend or frontend code without Docker:
 
 ```bash
-git clone https://github.com/sanadlab/perfarena.git
+git clone --recurse-submodules https://github.com/sanadlab/perfarena.git
 cd perfarena
 
 # ---- backend ----
-cd webapp/backend
+cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m app.seed                  # imports problems.parquet, seeds default prompts
@@ -71,12 +71,12 @@ A recent security pass changed how components authenticate and how the runner is
 #   ARENA_BOOTSTRAP_ADMIN_API_KEY=<strong random>
 #   ARENA_SESSION_SECRET=<random>          # required for stable SPA logins
 #   PERFARENA_RUNNER_TOKEN=<random>        # optional: enforce runner auth
-docker compose -f docker-compose.local.yml build
-docker compose -f docker-compose.local.yml up -d
-./docker/harness-test/register-harness.sh
+docker compose --project-directory . -f infra/docker-compose.local.yml build
+docker compose --project-directory . -f infra/docker-compose.local.yml up -d
+./infra/harness-test/register-harness.sh
 ```
 
-The runner sits on an internal, egress-less network (reachable only by the backend at `http://harness:8787`) and mounts only `Energy-Languages` + `webapp/examples`, so executed code sees neither `.env` nor `data/`.
+The runner sits on an internal, egress-less network (reachable only by the backend at `http://harness:8787`) and mounts only `Energy-Languages` + `runner`, so executed code sees neither `.env` nor `data/`.
 
 ### 2. Backend container (standalone)
 
@@ -110,7 +110,7 @@ Provision toolchains + venv once, then run the runner as a dedicated non-root us
 
 ```bash
 # one-time: toolchains + codecarbon venv
-cd ~/bench/perfarena-leetcode && bash setup-harness-host.sh --skip-energy
+cd ~/bench/perfarena-leetcode && bash runner/setup-harness-host.sh --skip-energy
 
 # one-time: non-root user + lock secrets away from it
 sudo useradd -r -s /usr/sbin/nologin perfrunner
@@ -123,10 +123,10 @@ sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -o lo -j ACCEPT
 sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -j REJECT
 
 # start the runner (localhost-only, token-protected, no npx download)
-cd webapp/examples
+cd runner
 sudo -u perfrunner env \
-  PERFARENA_ROOT="$PWD/../../Energy-Languages" \
-  PYTHONPATH="$PWD/../../Energy-Languages" \
+  PERFARENA_ROOT="$PWD/../Energy-Languages" \
+  PYTHONPATH="$PWD/../Energy-Languages" \
   PERFARENA_MACHINE_NAME=bicho PERFARENA_ENERGY_TOOL=codecarbon \
   TSC=tsc PERFARENA_ISOLATION_CHECK=1 \
   PERFARENA_HANDLER_TIMEOUT_S=1200 PERFARENA_LC_MEASURE_TIMEOUT_S=420 \
@@ -156,7 +156,7 @@ Runtime knobs (repeats, TLE retries, correctness-gate retries, per-account gap) 
 ### 4. Run a sweep
 
 ```bash
-PYTHONUNBUFFERED=1 python -u webapp/examples/matrix_sweep.py \
+PYTHONUNBUFFERED=1 python -u clients/scripts/matrix_sweep.py \
   --provider openai --openai-base-url https://openrouter.ai/api/v1/ \
   --openai-api-key "$OPENROUTER_KEY" \
   --model z-ai/glm-5.3-flash --prompts experiment-system-with-shape \
@@ -181,7 +181,7 @@ implementation that the SDK is parity-tested against.
 
 ```bash
 export ARENA_API_KEY=arena_…
-python webapp/examples/submit_with_local_model.py \
+python clients/scripts/submit_with_local_model.py \
   --base-url http://localhost:8000 \
   --slug two-sum --language python3 \
   --ollama-url http://localhost:11434 --model qwen2.5-coder:7b
@@ -191,7 +191,7 @@ python webapp/examples/submit_with_local_model.py \
 
 ```bash
 export ARENA_API_KEY=arena_…
-python webapp/examples/matrix_sweep.py \
+python clients/scripts/matrix_sweep.py \
   --base-url http://localhost:8000 \
   --ollama-url http://localhost:11434 \
   --models qwen2.5-coder:7b,deepseek-coder:6.7b \
@@ -220,7 +220,7 @@ This bypasses the platform; useful for smoke-testing LeetCode auth.
 
 | var | default | purpose |
 |-----|---------|---------|
-| `ARENA_DB` | `webapp/backend/arena.db` (`/data/arena.db` in Docker) | SQLite path |
+| `ARENA_DB` | `backend/arena.db` (`/data/arena.db` in Docker) | SQLite path |
 | `ARENA_SERVE_FRONTEND_DIR` | unset (Docker: `/app/web`) | Serve the SPA at `/` from this dir |
 | `ARENA_IP_RATE_LIMIT_ENABLED` | `1` | Toggle per-(IP, endpoint) GET cap |
 | `ARENA_IP_RATE_LIMIT_PER_MIN` | `60` | Cap value |
@@ -270,12 +270,12 @@ Set on the runner process (see Deployment §3). The `--auth-token` flag / `HARNE
 | `ARENA_SUBMIT_COOLDOWN_S` | `600` | Min seconds between batches per user |
 | `ARENA_SUBMIT_DAILY_CAP` | `5` | Max batches per rolling 24h per user |
 
-Backend reads `webapp/backend/.env` at startup via `python-dotenv`.
+Backend reads `backend/.env` at startup via `python-dotenv`.
 
 ## Testing
 
 ```bash
-cd webapp/backend
+cd backend
 pytest                              # 152+ tests; runs offline (fake judge)
 pytest -k ip_ratelimit              # one module
 pytest -k iterative_refine -vv      # verbose, single module
@@ -291,11 +291,11 @@ PerfArena is research code, but it's structured for outside contributions. Two r
 
 ### 1. The DB is sacred. All schema changes are additive.
 
-Every column you add lands in `db.py:_ADDITIVE_COLUMNS` so a redeploy on top of existing data Just Works™. Never drop, rename, or retype a column on a populated DB. If you genuinely need a destructive change, write a backfill script under `webapp/backend/app/` and call it out explicitly in the PR.
+Every column you add lands in `db.py:_ADDITIVE_COLUMNS` so a redeploy on top of existing data Just Works™. Never drop, rename, or retype a column on a populated DB. If you genuinely need a destructive change, write a backfill script under `backend/app/` and call it out explicitly in the PR.
 
 ### 2. The population scripts use the public API like a user would.
 
-Don't read or write the DB from `webapp/examples/`. If a sweep needs a new field, expose it through an API endpoint with a typed response in `schemas.py`, then have the sweeper hit that endpoint. This keeps third-party clients on equal footing with the official sweepers.
+Don't read or write the DB from `clients/scripts/`. If a sweep needs a new field, expose it through an API endpoint with a typed response in `schemas.py`, then have the sweeper hit that endpoint. This keeps third-party clients on equal footing with the official sweepers.
 
 ### Code conventions
 
@@ -306,7 +306,7 @@ Don't read or write the DB from `webapp/examples/`. If a sweep needs a new field
 ### PR process
 
 1. Branch from `main` (the working branch is `master`; PRs merge into `main`).
-2. Add or extend tests under `webapp/backend/tests/` for any new endpoint, schema change, or behaviour switch.
+2. Add or extend tests under `backend/tests/` for any new endpoint, schema change, or behaviour switch.
 3. Run `pytest` — all 152+ tests must pass. The CI gate is the same.
 4. Keep the diff focused; mixed-concern PRs get split.
 5. The maintainers will run `/ultrareview` on the branch before merging.

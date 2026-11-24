@@ -1,4 +1,4 @@
-"""SDK tests run against the REAL backend (webapp/backend) in-process, on a
+"""SDK tests run against the REAL backend (backend) in-process, on a
 throw-away SQLite DB, with real dispatch to fake runners. The environment is
 set before the backend is imported."""
 from __future__ import annotations
@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-BACKEND = REPO / "webapp" / "backend"
-EXAMPLES = REPO / "webapp" / "examples"
+BACKEND = REPO / "backend"
+EXAMPLES = REPO / "clients" / "scripts"
 _TMP = Path(tempfile.mkdtemp(prefix="perfarena-sdk-test-"))
 
 os.environ.update({

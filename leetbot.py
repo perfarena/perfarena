@@ -23,14 +23,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Make the webapp's `app.*` package importable regardless of cwd. This
+# Make the backend's `app.*` package importable regardless of cwd. This
 # matters when leetbot is invoked as a subprocess (e.g. by app.dispatch or
 # app.seed_anchors_from_parquet) — cwd is then the repo root, not the
-# webapp/backend folder, so a bare `from app.leetcode_accounts import …`
+# backend folder, so a bare `from app.leetcode_accounts import …`
 # would fail and the credential-pool rotation would silently fall back to
 # the .env-only path (single account, no rotation on 429).
 _REPO_ROOT = Path(__file__).parent
-_BACKEND_DIR = _REPO_ROOT / "webapp" / "backend"
+_BACKEND_DIR = _REPO_ROOT / "backend"
 if _BACKEND_DIR.exists() and str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
@@ -404,7 +404,7 @@ def main() -> int:
             pick_account_by_name,
         )
     except ImportError:
-        # leetbot used standalone outside the webapp tree — fall back hard.
+        # leetbot used standalone outside this repo — fall back hard.
         pick_account = mark_exhausted = _load_accounts = None  # type: ignore
         pick_account_by_name = None  # type: ignore
 

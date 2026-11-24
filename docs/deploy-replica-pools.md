@@ -190,10 +190,10 @@ site configuration, so database exports leave them out.
 ## Local stack
 
 ```bash
-docker compose -f docker-compose.local.yml build
-docker compose -f docker-compose.local.yml --profile replicas up -d
-./docker/harness-test/register-harness.sh
-./docker/harness-test/register-replicas.sh
+docker compose --project-directory . -f infra/docker-compose.local.yml build
+docker compose --project-directory . -f infra/docker-compose.local.yml --profile replicas up -d
+./infra/harness-test/register-harness.sh
+./infra/harness-test/register-replicas.sh
 ```
 
 Without `--profile replicas`, the compose stack is the same as before.

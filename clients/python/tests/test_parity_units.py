@@ -1,5 +1,5 @@
 """Parity with the client scripts, function by function: the same inputs go
-through the scripts' code (webapp/examples) and the SDK, and must give the
+through the scripts' code (clients/scripts) and the SDK, and must give the
 same result. The scripts stay the reference implementation."""
 from __future__ import annotations
 

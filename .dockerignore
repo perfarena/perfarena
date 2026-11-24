@@ -23,14 +23,16 @@ venv/
 *.egg-info
 
 # Node — built fresh inside the Node stage
-webapp/frontend/node_modules
-webapp/frontend/dist
+frontend/node_modules
+frontend/dist
 
 # Backend local artefacts
-webapp/backend/arena.db
-webapp/backend/arena.db-journal
-webapp/backend/.pytest_cache
-webapp/backend/.venv
+backend/arena.db
+backend/arena.db-journal
+backend/.pytest_cache
+backend/.venv
+# Backend settings with LeetCode credentials; the container gets its settings from -e
+backend/.env
 
 # Editor / OS
 .vscode
