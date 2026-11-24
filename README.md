@@ -45,11 +45,9 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 ├── data/                         the problem data and the outputs of the problem selection
 ├── scripts/bicho_checks/         the checks on the measurement host for the threats to validity of the paper
 ├── docs/                         architecture, deployment, problem selection, and LeetCode percentiles
-├── human_solutions/              human-written LeetCode solutions for each problem and language (the arena does not use them)
 ├── leetbot.py                    sends a solution to LeetCode (the leetcode oracle and harness use it)
 ├── prepare_dataset.py            makes data/problems.parquet and data/solutions.parquet from the source dataset
-├── train-00000-of-00001.parquet  the source dataset of LeetCode problems and solutions
-├── export_human_solutions.py     writes human_solutions/ from data/solutions.parquet
+├── export_human_solutions.py     writes data/human_solutions/ from data/solutions.parquet
 ├── Dockerfile                    one container with the backend and the built frontend
 ├── LICENSE                       the license of the code
 └── DATA_LICENSE.md               the license of the data
@@ -59,7 +57,9 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 
 The main files in `data/`:
 
+- `train-00000-of-00001.parquet`: the source dataset of LeetCode problems and solutions.
 - `problems.parquet` and `solutions.parquet`: the problems and the solutions of the source dataset.
+- `human_solutions/`: human-written LeetCode solutions for each problem and language. The arena does not use them.
 - `sampled_problems.json`: the 99 problems that `python -m app.seed` loads.
 - `runtime_ranking.json`, `anchors.json`, `discrimination.json`, and `premium_status.json`: the outputs of the problem selection ([`docs/problem-selection.md`](docs/problem-selection.md)).
 - `leetcode-99-rewritten-statements.csv` and `leetcode-99-hard-rewritten-statements.csv`: the new statements for the rewritten competitions.

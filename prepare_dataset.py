@@ -7,7 +7,7 @@ Outputs (under ./data):
                      submittable shape (uses `class Solution`).
 
 Usage:
-    python prepare_dataset.py [--src train-00000-of-00001.parquet] [--out data]
+    python prepare_dataset.py [--src data/train-00000-of-00001.parquet] [--out data]
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def looks_leetcode_shaped(lang: str, code: str) -> bool:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default="train-00000-of-00001.parquet")
+    ap.add_argument("--src", default="data/train-00000-of-00001.parquet")
     ap.add_argument("--out", default="data")
     args = ap.parse_args()
 
