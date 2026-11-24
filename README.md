@@ -27,7 +27,8 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 .
 ├── backend/                      FastAPI + SQLModel + SQLite: the API, the dispatch worker, and the rankings
 │   ├── app/                      the app, and the scripts that seed competitions and select problems
-│   └── tests/                    pytest tests (offline, with a fake judge)
+│   ├── tests/                    pytest tests (offline, with a fake judge)
+│   └── leetbot.py                sends a solution to LeetCode (the leetcode oracle and harness use it)
 ├── frontend/                     (submodule) Vite + React + TypeScript site
 ├── clients/
 │   ├── python/                   the perfarena package: SDK, CLI, and MCP server
@@ -40,14 +41,14 @@ The paper uses seven languages: C++, C#, Java, JavaScript, PHP, Python, and Type
 ├── infra/
 │   ├── docker-compose.local.yml  the backend and a harness runner on one computer
 │   ├── harness-test/             a Docker copy of the measurement host, for local tests
-│   └── publish_pages.sh          builds the read-only snapshot of the site for GitHub Pages
+│   ├── publish_pages.sh          builds the read-only snapshot of the site for GitHub Pages
+│   └── CNAME                     the custom domain of that snapshot (publish_pages.sh copies it)
 ├── Energy-Languages/             (submodule) the measurement harnesses, the LeetCode test cases, and the CLBG problems
 ├── data/                         the problem data and the outputs of the problem selection
+│   └── scripts/                  prepare_dataset.py (data/problems.parquet and data/solutions.parquet from the
+│                                 source dataset) and export_human_solutions.py (data/human_solutions/)
 ├── scripts/bicho_checks/         the checks on the measurement host for the threats to validity of the paper
 ├── docs/                         architecture, deployment, problem selection, and LeetCode percentiles
-├── leetbot.py                    sends a solution to LeetCode (the leetcode oracle and harness use it)
-├── prepare_dataset.py            makes data/problems.parquet and data/solutions.parquet from the source dataset
-├── export_human_solutions.py     writes data/human_solutions/ from data/solutions.parquet
 ├── Dockerfile                    one container with the backend and the built frontend
 ├── LICENSE                       the license of the code
 └── DATA_LICENSE.md               the license of the data
@@ -79,7 +80,7 @@ python -m app.replace_excluded_problems --dataset LeetCodeDataset-v0.1.0-train.j
 python -m app.seed_clbg_competition --problems-yaml ../Energy-Languages/perfarena/configs/problems.yaml
 ```
 
-`replace_excluded_problems` replaces six problems in `leetcode-99-perf` and `leetcode-99-hard-perf` with problems of the same difficulty, because the arena excludes them (contamination or missing test cases). It needs both competitions and the train file of [LeetCodeDataset](https://huggingface.co/datasets/newfacade/LeetCodeDataset). `seed_rewritten_competition` makes `leetcode-99-rewritten` from `data/leetcode-99-rewritten-statements.csv` (its docstring gives the command). To select the 99 LeetCode problems again from the source dataset, run `prepare_dataset.py` and then the steps in [`docs/problem-selection.md`](docs/problem-selection.md).
+`replace_excluded_problems` replaces six problems in `leetcode-99-perf` and `leetcode-99-hard-perf` with problems of the same difficulty, because the arena excludes them (contamination or missing test cases). It needs both competitions and the train file of [LeetCodeDataset](https://huggingface.co/datasets/newfacade/LeetCodeDataset). `seed_rewritten_competition` makes `leetcode-99-rewritten` from `data/leetcode-99-rewritten-statements.csv` (its docstring gives the command). To select the 99 LeetCode problems again from the source dataset, run `python data/scripts/prepare_dataset.py` from the repo root and then the steps in [`docs/problem-selection.md`](docs/problem-selection.md).
 
 **2. Add a harness and a correctness oracle.** Start a harness runner (`runner/harness_runner_server.py` with the handler `perfarena_handler.py`) on a measurement host. Then register it on the Harnesses page of the site. [`docs/deployment.md`](docs/deployment.md), section 3, tells how to set up the host. For a local test, `docker compose --project-directory . -f infra/docker-compose.local.yml up -d` and `infra/harness-test/register-harness.sh` start and register a runner in Docker.
 

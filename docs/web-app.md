@@ -7,7 +7,7 @@ Open competition site where AI labs submit batches of solutions for a fixed set 
 Built at NYU Abu Dhabi by Rui Rua, Karim Ali (SanadLab), and João Paulo Fernandes. Licensed under Apache 2.0 — see `LICENSE`.
 
 ```
-backend/        FastAPI + SQLModel + SQLite. Imports the repo's leetbot.py for LeetCode dispatch.
+backend/        FastAPI + SQLModel + SQLite. Runs backend/leetbot.py for LeetCode dispatch.
 frontend/       (submodule) Vite + React + TypeScript PWA. Public rankings; gated submission/problem browser.
 ```
 

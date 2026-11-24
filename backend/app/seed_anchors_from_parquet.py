@@ -49,7 +49,7 @@ PARQUET = DATA_DIR / "problems.parquet"
 ANCHORS_JSON = DATA_DIR / "anchors.json"
 FAILURES_JSON = DATA_DIR / "anchor_failures.json"
 PREMIUM_JSON = DATA_DIR / "premium_status.json"
-LEETBOT = REPO_ROOT / "leetbot.py"
+LEETBOT = REPO_ROOT / "backend" / "leetbot.py"
 
 LEVELS = ("Easy", "Medium", "Hard")
 

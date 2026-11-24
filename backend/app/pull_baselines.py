@@ -155,7 +155,7 @@ def _build_client() -> httpx.Client:
         raise SystemExit(
             "missing LeetCode auth — set LEETCODE_COOKIE_HEADER or "
             "LEETCODE_SESSION + LEETCODE_CSRF_TOKEN in the repo-root .env "
-            "(`python leetbot.py --whoami` to verify)"
+            "(`python backend/leetbot.py --whoami` to verify)"
         )
     return httpx.Client(
         base_url=host,

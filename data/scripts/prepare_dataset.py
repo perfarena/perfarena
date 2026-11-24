@@ -7,7 +7,7 @@ Outputs (under ./data):
                      submittable shape (uses `class Solution`).
 
 Usage:
-    python prepare_dataset.py [--src data/train-00000-of-00001.parquet] [--out data]
+    python data/scripts/prepare_dataset.py [--src data/train-00000-of-00001.parquet] [--out data]
 """
 
 from __future__ import annotations

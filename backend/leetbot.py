@@ -29,8 +29,8 @@ from typing import Any
 # backend folder, so a bare `from app.leetcode_accounts import …`
 # would fail and the credential-pool rotation would silently fall back to
 # the .env-only path (single account, no rotation on 429).
-_REPO_ROOT = Path(__file__).parent
-_BACKEND_DIR = _REPO_ROOT / "backend"
+_BACKEND_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _BACKEND_DIR.parent
 if _BACKEND_DIR.exists() and str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
@@ -391,7 +391,7 @@ def main() -> int:
     if args.repeat < 1:
         p.error("--repeat must be >= 1")
 
-    load_dotenv()
+    load_dotenv(_REPO_ROOT / ".env")   # the repo-root .env (LeetCode cookies), as before the move to backend/
     host = os.getenv("LEETCODE_HOST", "https://leetcode.com")
 
     # Credential pool first; falls back to .env transparently for callers that

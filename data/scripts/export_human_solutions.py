@@ -2,7 +2,7 @@
 problem's solutions into <out>/<slug>/<lang>/solution-<nr>.<ext>.
 
 Usage:
-    python export_human_solutions.py [--top 30] [--out data/human_solutions]
+    python data/scripts/export_human_solutions.py [--top 30] [--out data/human_solutions]
 """
 
 from __future__ import annotations

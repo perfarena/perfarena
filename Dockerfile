@@ -66,18 +66,9 @@ WORKDIR /app
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt
 
-# Backend source.
+# Backend source, with the LeetCode submission CLI (backend/leetbot.py ->
+# /app/leetbot.py, where app.dispatch._resolve_leetbot() looks first).
 COPY backend/ /app/
-
-# LeetCode submission CLI — lives at the repo root in the source tree,
-# but the runtime expects to subprocess it from /app/leetbot.py (and
-# app.dispatch._resolve_leetbot() looks here first inside the container).
-# The extra /leetbot.py copy that used to sit here was a legacy fallback
-# — it CLASHES with the src_layout candidate computed at container
-# runtime, tricking the resolver into cwd=/ mode (where `/app` isn't a
-# Python package). Dropped so there's exactly one canonical container
-# path.
-COPY leetbot.py /app/leetbot.py
 
 # Reference data (anchors, baselines, discrimination, sampled problems).
 # Path matches the one app/* scripts default to (repo-root / data).

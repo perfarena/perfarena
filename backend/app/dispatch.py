@@ -49,20 +49,16 @@ from .measurement_profile import config_hash, get_or_create_profile
 def _resolve_leetbot() -> Path:
     """Locate leetbot.py across the layouts we actually deploy to:
       1. ARENA_LEETBOT — explicit override for ops.
-      2. /app/leetbot.py — container layout (Dockerfile copies it there).
-      3. <repo_root>/leetbot.py — source-tree dev runs.
+      2. /app/leetbot.py — container layout (the Dockerfile copies backend/ to /app).
+      3. <repo>/backend/leetbot.py — source-tree dev runs.
       4. /leetbot.py — legacy fallback path (older container images).
 
-    /app/leetbot.py MUST be tried before the source-tree fallback: inside
-    the container, `Path(__file__).parent.parent.parent` computes
-    to `/`, so `src_layout` accidentally resolves to `/leetbot.py`. If we
-    picked that first, subprocess cwd would be `/` — where `/app` is a
-    directory but not a Python package (the real package is `/app/app/`)
-    — and leetbot's `from app.leetcode_accounts import …` would silently
-    fail. That would fall back to the single-account .env path, using the
-    stale LEETCODE_SESSION from container env, and the pool rotation
-    would appear broken with "no signed-in LeetCode account available"
-    even though the pool is healthy.
+    The subprocess runs with cwd = the folder of leetbot.py, which holds the
+    `app` package in both layouts (backend/ and /app). With cwd `/`, leetbot's
+    `from app.leetcode_accounts import …` would silently fail and fall back to
+    the single-account .env path, and the pool rotation would appear broken
+    with "no signed-in LeetCode account available" even though the pool is
+    healthy.
 
     Returns the first existing candidate; if nothing exists yet we fall
     back to the source-tree default so error messages name the path a
@@ -71,7 +67,7 @@ def _resolve_leetbot() -> Path:
     override = os.environ.get("ARENA_LEETBOT")
     if override:
         return Path(override)
-    src_layout = Path(__file__).parent.parent.parent / "leetbot.py"
+    src_layout = Path(__file__).parent.parent / "leetbot.py"
     candidates = (Path("/app/leetbot.py"), src_layout, Path("/leetbot.py"))
     for cand in candidates:
         if cand.is_file():

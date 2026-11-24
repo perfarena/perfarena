@@ -208,7 +208,7 @@ The sweep is **resumable** — kill it and re-run; the progress log skips comple
 ### Run a population batch from the legacy one-shot path
 
 ```bash
-python leetbot.py two-sum python3 data/test_submissions/two-sum.py
+python backend/leetbot.py two-sum python3 data/test_submissions/two-sum.py
 # → appends a line to data/runs.jsonl
 ```
 

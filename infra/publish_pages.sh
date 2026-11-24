@@ -60,6 +60,9 @@ cp -R "$EXPORT/data" "$OUT/site/data"
 # with 404.html, so 404.html is the app too.
 cp "$OUT/site/index.html" "$OUT/site/404.html"
 touch "$OUT/site/.nojekyll"                    # serve the files as they are
+# The custom domain (perfarena.net). Each snapshot replaces gh-pages, so without
+# this file a publish would remove the domain from GitHub Pages.
+cp "$REPO/infra/CNAME" "$OUT/site/CNAME"
 
 echo "== 3/3 commit to gh-pages"
 # The site becomes one commit with no parent, built with a separate index, so the

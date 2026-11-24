@@ -210,7 +210,7 @@ def _bootstrap_anchor(slug: str, language: str) -> int | None:
     Mirrors seed_anchors_from_parquet; only for non-python3 langs that lack
     one. Returns the submission_id or None."""
     import subprocess, sys, tempfile
-    LEETBOT = REPO_ROOT / "leetbot.py"
+    LEETBOT = REPO_ROOT / "backend" / "leetbot.py"
     stub = "class Solution:\n    pass\n" if language == "python3" else "// stub\n"
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write(stub)
