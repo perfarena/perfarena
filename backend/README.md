@@ -18,7 +18,7 @@ uvicorn app.main:app --reload --port 8000
 python -m app.seed_fake_submissions
 ```
 
-Visit http://localhost:8000/docs for the auto-generated OpenAPI UI.
+With `ARENA_ENABLE_DOCS=1`, http://localhost:8000/docs shows the auto-generated OpenAPI UI (off by default).
 
 ## Environment variables
 
@@ -27,9 +27,9 @@ Visit http://localhost:8000/docs for the auto-generated OpenAPI UI.
 | `ARENA_DB`                          | `backend/arena.db` | sqlite path                  |
 | `ARENA_ADMIN_EMAIL` / `_NAME`       |         | bootstrap admin (seed only)                        |
 | `ARENA_DISPATCH_ENABLED`            | `0`     | `1` → call real `leetbot.py`; else fake judge      |
-| `ARENA_DISPATCH_INTER_DELAY`        | `12`    | seconds between LeetCode submits within one batch (±20% jitter) |
-| `ARENA_DISPATCH_MAX_RETRIES`        | `4`     | retries with exponential backoff on 429            |
-| `ARENA_DISPATCH_SUBPROC_TIMEOUT`    | `180`   | per-attempt subprocess timeout (seconds)           |
+| `ARENA_DISPATCH_INTER_DELAY`        | `120`   | seconds between LeetCode submits within one batch (±20% jitter) |
+| `ARENA_DISPATCH_MAX_RETRIES`        | `3`     | retries with exponential backoff on 429            |
+| `ARENA_DISPATCH_SUBPROC_TIMEOUT`    | `1200`  | per-attempt subprocess timeout (seconds)           |
 | `ARENA_SUBMIT_COOLDOWN_S`           | `600`   | per-user min seconds between batches               |
 | `ARENA_SUBMIT_DAILY_CAP`            | `5`     | per-user max batches per rolling 24h               |
 
@@ -55,7 +55,7 @@ Authorization: Bearer arena_xxxxxxxx
 
 - `GET /api/me` — whoami
 - `GET /api/problems/{slug}` — full problem statement
-- `POST /api/submissions` — submit a batch (all problems required)
+- `POST /api/submissions` — submit a batch (all problems required; admins only)
 - `GET /api/me/submissions` — your submissions
 
 ## Admin routes (`role=admin`)

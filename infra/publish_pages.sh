@@ -13,8 +13,8 @@
 #                   --db /data/arena.db --out /data/pages-export
 #               then copied here. Step 1 is then skipped.
 #   [base]      the path that GitHub Pages serves the site under:
-#               /perfarena/ for https://perfarena.github.io/perfarena/
-#               (the default), or / for a custom domain.
+#               / for the custom domain perfarena.net (the default), or
+#               /perfarena/ for https://perfarena.github.io/perfarena/.
 #
 # Steps:
 #   1. backend/app/static_export.py answers every public GET request that the

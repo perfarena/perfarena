@@ -130,11 +130,11 @@ def seed(problems_yaml: Path) -> None:
             select(Harness).where(Harness.slug == _HARNESS_SLUG)
         ).first()
         if harness is None:
-            raise SystemExit(
-                f"harness {_HARNESS_SLUG!r} not found — seed the harness "
-                "registry first (arena-local is created by the default "
-                "startup migration)."
-            )
+            # Startup creates only the `leetcode` harness. Each submission names
+            # its own harness, so the competition works without this default;
+            # run the script again after you register the harness to set it.
+            print(f"  [!] harness {_HARNESS_SLUG!r} not found: the competition "
+                  "gets no default harness (run this again after you register it)")
 
         # ---- Competition ----
         comp = s.exec(
@@ -147,7 +147,7 @@ def seed(problems_yaml: Path) -> None:
                 description=_COMPETITION_DESC,
                 kind="custom",
                 status="active",
-                harness_id=harness.id,
+                harness_id=harness.id if harness is not None else None,
                 # Left null — CLBG's correctness signal is `make validate`'s
                 # diff against a reference output, which the arena-local
                 # harness handler runs alongside measurement. No separate
@@ -161,7 +161,8 @@ def seed(problems_yaml: Path) -> None:
             comp.description = _COMPETITION_DESC
             comp.kind = "custom"
             comp.status = "active"
-            comp.harness_id = harness.id
+            if harness is not None:
+                comp.harness_id = harness.id
             s.add(comp)
             print(f"  [~] updated competition {_COMPETITION_SLUG!r} "
                   f"(id={comp.id})")

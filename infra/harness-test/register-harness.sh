@@ -9,7 +9,12 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 COMPOSE=(docker compose --project-directory . -f infra/docker-compose.local.yml)
 
-"${COMPOSE[@]}" exec -T backend python - <<'PY'
+# The runner's token (compose passes PERFARENA_RUNNER_TOKEN to it): from the
+# environment, else from the root .env. Empty = an open runner (dev default).
+[ -n "${PERFARENA_RUNNER_TOKEN:-}" ] || PERFARENA_RUNNER_TOKEN=$(sed -n 's/^PERFARENA_RUNNER_TOKEN=//p' .env 2>/dev/null | tail -1 | tr -d "\"'")
+
+"${COMPOSE[@]}" exec -T -e PERFARENA_RUNNER_TOKEN="${PERFARENA_RUNNER_TOKEN:-}" backend python - <<'PY'
+import os
 from sqlmodel import Session, select
 from app.db import engine
 from app.models import Harness, CorrectnessOracle
@@ -22,6 +27,8 @@ ENDPOINT = "http://harness:8787"     # compose service name, not localhost
 # is separately capped at 300s in arena_local_runner, so this large value only
 # affects /measure.)
 CONFIG = {"endpoint": ENDPOINT, "timeout_s": 1380}
+if os.environ.get("PERFARENA_RUNNER_TOKEN"):
+    CONFIG["auth_token"] = os.environ["PERFARENA_RUNNER_TOKEN"]
 with Session(engine) as s:
     for Model, name in ((Harness, "Local Docker runner (perf)"),
                         (CorrectnessOracle, "Local Docker runner (correctness)")):
@@ -35,5 +42,6 @@ with Session(engine) as s:
             row.status = "active"
         s.add(row)
     s.commit()
-    print("OK: registered arena-local Harness + CorrectnessOracle ->", ENDPOINT)
+    print("OK: registered arena-local Harness + CorrectnessOracle ->", ENDPOINT,
+          "(with the runner token)" if "auth_token" in CONFIG else "(no token: open runner)")
 PY

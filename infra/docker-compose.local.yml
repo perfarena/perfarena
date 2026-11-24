@@ -28,6 +28,9 @@ services:
       - perfarena-data:/data
     environment:
       ARENA_DB: /data/arena.db
+      # Real dispatch to the runner. Without it the backend runs a fake judge
+      # and never calls the harness.
+      ARENA_DISPATCH_ENABLED: "1"
       # Pinned admin identity for local dev, supplied from the gitignored .env
       # (never hardcode the key here — it would land in git history). On first
       # boot the backend provisions this admin with this API key.

@@ -448,7 +448,11 @@ Confirm all four appear in harness-host-versions.txt below; if kotlinc is still
 
 Launch the arena-local runner from the measurement venv so it can measure energy:
 
-    "$VENV/bin/python" $REPO_ROOT/runner/harness_runner_server.py   # serves :8787
+    cd $REPO_ROOT/runner && HARNESS_RUNNER_TOKEN=<shared secret> \\
+      PERFARENA_ROOT=$HARNESS_DIR PYTHONPATH=$HARNESS_DIR \\
+      "$VENV/bin/python" harness_runner_server.py --host 0.0.0.0 --port 8787 \\
+        --measure-handler perfarena_handler:measure_once \\
+        --validate-handler perfarena_handler:validate_once   # serves :8787
 
 Verify a single case in any language from a cell directory, e.g.:
 

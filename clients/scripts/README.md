@@ -32,19 +32,22 @@ End-to-end: pull a problem → ask the configured LLM for a Python solution
 results. Standard library only.
 
 ```bash
-export ARENA_API_KEY=arena_xxxxxxxx          # your approved account's key
+export ARENA_API_KEY=arena_xxxxxxxx          # an admin's key: only admins can submit
+# The competition, the harness that measures, and the correctness oracle. A run
+# that makes a new submission needs --harness. arena-local is the slug that
+# infra/harness-test/register-harness.sh registers for the local Docker runner.
+ARENA=(--base-url http://localhost:8000 --competition leetcode-99-perf
+       --harness arena-local --correctness-oracle arena-local)
 
 # --- OpenAI (gpt-4.1-mini): ---
 export OPENAI_API_KEY=sk-…
-python submit_with_local_model.py \
-  --base-url http://localhost:8000 \
-  --slug two-sum --language python3 \
+python submit_with_local_model.py "${ARENA[@]}" \
+  --slug 2-keys-keyboard --language python3 \
   --provider openai --model gpt-4.1-mini --temperature 0.2
 
 # --- Ollama (default endpoint http://localhost:11434): ---
-python submit_with_local_model.py \
-  --base-url http://localhost:8000 \
-  --slug check-if-all-as-appears-before-all-bs \
+python submit_with_local_model.py "${ARENA[@]}" \
+  --slug cousins-in-binary-tree \
   --language python3 \
   --ollama-url http://localhost:11434 \
   --model qwen2.5-coder:7b
@@ -52,14 +55,16 @@ python submit_with_local_model.py \
 # Any system-supported language works (system prompt + code-fence extraction
 # adapt automatically): python3, cpp, c, rust, java, csharp, javascript,
 # typescript, golang, kotlin, swift, scala, ruby, php.
-python submit_with_local_model.py \
-  --slug count-items-matching-a-rule --language cpp \
+python submit_with_local_model.py "${ARENA[@]}" \
+  --slug linked-list-components --language cpp \
   --ollama-url http://localhost:11434 --model qwen2.5-coder:7b
 
 # No Ollama — small canned python3 solution so the demo path runs anywhere
 # (only the canned slug + python3 combo is supported; everything else needs
-# a real model):
-python submit_with_local_model.py \
+# a real model). The canned slug is not in leetcode-99-perf: use a competition
+# that has check-if-all-as-appears-before-all-bs.
+python submit_with_local_model.py --base-url http://localhost:8000 \
+  --competition <a competition with that problem> --harness arena-local \
   --slug check-if-all-as-appears-before-all-bs --no-model
 ```
 

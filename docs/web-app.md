@@ -20,7 +20,7 @@ frontend/       (submodule) Vite + React + TypeScript PWA. Public rankings; gate
 | Rankings (model × language × problem)    |   ✓    |      |
 | Submission summaries (model, params, submitter, scores) | ✓ |    |
 | Register request                         |   ✓    |      |
-| Submit a batch of solutions              |        |  ✓   |
+| Submit a batch of solutions              |        |  admin |
 | Inspect own submission runs              |        |  ✓   |
 | Approve / reject registrations           |        |  admin |
 
@@ -53,7 +53,7 @@ See `backend/README.md` and `frontend/README.md` for details.
 
 ## Static snapshot on GitHub Pages
 
-The live arena runs in the container. GitHub Pages can also serve a read-only copy of its public pages at https://perfarena.github.io/perfarena/. The copy reads every ranking, submission, problem, and comparison from JSON files instead of the API. It has no accounts, no submissions, and no admin pages. The banner shows the date of the snapshot.
+The live arena runs in the container. GitHub Pages can also serve a read-only copy of its public pages at https://perfarena.net/ (the custom domain of https://perfarena.github.io/perfarena/). The copy reads every ranking, submission, problem, and comparison from JSON files instead of the API. It has no accounts, no submissions, and no admin pages. The banner shows the date of the snapshot.
 
 ### Before the first snapshot
 
@@ -93,7 +93,7 @@ git remote add perfarena git@github.com:perfarena/perfarena.git    # the public 
 
    The script never changes the database file. For a 60 MB database it takes about 6 minutes and makes about 220 MB of files. At the end, it prints the size, the commit, and a preview command.
 
-3. **Look at the preview.** Run the preview command that the script printed, then open http://localhost:8080/perfarena/. Open the other pages by clicking. A reload on a deeper page shows "not found" only in this preview. GitHub Pages loads the app for these pages.
+3. **Look at the preview.** Run the preview command that the script printed, then open http://localhost:8080/. Open the other pages by clicking. A reload on a deeper page shows "not found" only in this preview. GitHub Pages loads the app for these pages.
 
 4. **Publish.**
 
@@ -123,4 +123,4 @@ To update the snapshot, do steps 1 to 4 again.
 2. The script builds the frontend with `VITE_STATIC=1`. In this mode, `frontend/src/lib/staticMode.ts` reads `data/` instead of `/api`.
 3. It commits the site to the local `gh-pages` branch. It does not push.
 
-The export can also run in the container, if its image has `app/static_export.py`: `python -m app.static_export --db /data/arena.db --out /data/pages-export`. Then copy the `pages-export` folder out and give it to `publish_pages.sh` in place of the database. The second argument of the script sets the address path, which is `/perfarena/` by default. Use `/` for a custom domain.
+The export can also run in the container, if its image has `app/static_export.py`: `python -m app.static_export --db /data/arena.db --out /data/pages-export`. Then copy the `pages-export` folder out and give it to `publish_pages.sh` in place of the database. The second argument of the script sets the address path, which is `/` by default, for the custom domain perfarena.net. Use `/perfarena/` to serve it at https://perfarena.github.io/perfarena/ instead.

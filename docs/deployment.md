@@ -98,7 +98,7 @@ docker run -d --name perfarena-backend \
 
 **`ARENA_DISPATCH_ENABLED=1` is REQUIRED for real dispatch.** Without it the backend runs a built-in fake judge: it synthesizes plausible runs (real-looking `avg_rt`, Accepted/WA/TLE with no detail) and never contacts the runner or LeetCode. If your sweep produces verdicts but the runner log stays empty, this flag is missing.
 
-With `--network host` the app listens on `0.0.0.0:8000` directly on the host (drop `-p`; it's ignored). Keep it off the LAN with `sudo ufw deny 8000` — loopback (your reverse proxy / ngrok tunnel) still reaches it. Register the harness/oracle endpoint as `http://127.0.0.1:8787`. Verify the link: `docker exec perfarena-backend curl -sS -m5 http://127.0.0.1:8787/healthz`.
+With `--network host` the app listens on `0.0.0.0:8000` directly on the host (drop `-p`; it's ignored). Keep it off the LAN with `sudo ufw deny 8000` — loopback (your reverse proxy / ngrok tunnel) still reaches it. Register the harness/oracle endpoint as `http://127.0.0.1:8787`. Verify the link (the image has no curl): `docker exec perfarena-backend python -c "import urllib.request as u; print(u.urlopen('http://127.0.0.1:8787/healthz', timeout=5).status)"`.
 
 Bridge-networking alternative (only if you can't use host networking): keep `-p 127.0.0.1:8000:8000`, then open the bridge→host path with `sudo ufw allow in on docker0 to any port 8787 proto tcp` and register the endpoint as `http://172.17.0.1:8787` (the docker0 gateway).
 
@@ -109,8 +109,9 @@ Leave `ARENA_ENABLE_DOCS` unset so `/docs` and `/openapi.json` return 404.
 Provision toolchains + venv once, then run the runner as a dedicated non-root user with no access to secrets and no outbound network.
 
 ```bash
-# one-time: toolchains + codecarbon venv
-cd ~/bench/perfarena-leetcode && bash runner/setup-harness-host.sh --skip-energy
+# one-time: toolchains, the codecarbon venv, and read access to the RAPL energy
+# counters (with --skip-energy, energy falls back to CodeCarbon's ~12 W estimate)
+cd ~/bench/perfarena-leetcode && bash runner/setup-harness-host.sh
 
 # one-time: non-root user + lock secrets away from it
 sudo useradd -r -s /usr/sbin/nologin perfrunner
@@ -122,7 +123,7 @@ sudo chmod 600 .env data/leetcode_accounts.json      # readable by the backend u
 sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -o lo -j ACCEPT
 sudo iptables -A OUTPUT -m owner --uid-owner perfrunner -j REJECT
 
-# start the runner (localhost-only, token-protected, no npx download)
+# start the runner (token-protected; see the bind address below)
 cd runner
 sudo -u perfrunner env \
   PERFARENA_ROOT="$PWD/../Energy-Languages" \
@@ -147,7 +148,7 @@ If the runner binds `127.0.0.1` but the harness endpoint is a non-loopback addre
 
 Measurement ceilings: a CLBG measure may run 20 min (`PERFARENA_HANDLER_TIMEOUT_S=1200`) and a LeetCode measure 7 min (`PERFARENA_LC_MEASURE_TIMEOUT_S=420`); either overrun is reported as Time Limit Exceeded, never averaged into "Accepted". `--request-timeout 1320` is the global backstop above both.
 
-Register it in the backend (Harnesses page or `register-harness.sh`) with the endpoint matching the bind above. The harness `config.auth_token` MUST equal the runner's `--auth-token`, or dispatch gets 401. Set the harness `config.timeout_s` above the watchdog (e.g. `1380` for a `1320` watchdog); otherwise the backend gives up at its 300 s default and marks attempts "dispatch failed" while the runner is still measuring. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` uses the image/host-installed compiler so no cell downloads TypeScript at build time (needed under the egress ban).
+Register it in the backend (Harnesses page or `register-harness.sh`) with the endpoint matching the bind above. The harness `config.auth_token` MUST equal the runner's `--auth-token`, or dispatch gets 401. Set the harness `config.timeout_s` above the watchdog (e.g. `1380` for a `1320` watchdog); otherwise the backend gives up at its default (1800 s, `ARENA_DISPATCH_DEFAULT_TIMEOUT_S`) and marks attempts "dispatch failed" while the runner is still measuring. The `perfrunner` user must read/write the `Energy-Languages` tree (for compiles) but not `.env` / `leetcode_accounts.json`. `TSC=tsc` makes the LeetCode TypeScript cells use the installed `tsc`. The CLBG TypeScript cells ignore it: `Energy-Languages/perfarena.mk` runs `npx --yes -p typescript@$(TS_VERSION) tsc`, which downloads TypeScript the first time, so under the egress ban fill the npx cache once before you block egress.
 
 Runtime knobs (repeats, TLE retries, correctness-gate retries, per-account gap) are also editable live from the admin **Variables** tab (`/admin/settings`) without an env change or restart — an override there wins over the env var. The same tab shows live health of every registered harness.
 
@@ -180,24 +181,26 @@ implementation that the SDK is parity-tested against.
 ### Submit one solution from a local LLM
 
 ```bash
-export ARENA_API_KEY=arena_…
+export ARENA_API_KEY=arena_…      # an admin's key: only admins can submit
 python clients/scripts/submit_with_local_model.py \
   --base-url http://localhost:8000 \
-  --slug two-sum --language python3 \
+  --competition leetcode-99-perf --harness arena-local --correctness-oracle arena-local \
+  --slug 2-keys-keyboard --language python3 \
   --ollama-url http://localhost:11434 --model qwen2.5-coder:7b
 ```
 
 ### Sweep many (prompt × language × problem) tuples
 
 ```bash
-export ARENA_API_KEY=arena_…
+export ARENA_API_KEY=arena_…      # an admin's key: only admins can submit
 python clients/scripts/matrix_sweep.py \
   --base-url http://localhost:8000 \
   --ollama-url http://localhost:11434 \
   --models qwen2.5-coder:7b,deepseek-coder:6.7b \
+  --competition leetcode-99-perf --harness arena-local --correctness-oracle arena-local \
   --languages python3,cpp \
-  --slugs two-sum,merge-intervals \
-  --prompts baseline-2025q4,baseline-with-shape \
+  --slugs 2-keys-keyboard,cousins-in-binary-tree \
+  --prompts experiment-system,experiment-system-with-shape \
   --inter-problem-delay 60 --inter-tuple-delay 5
 ```
 
@@ -208,8 +211,9 @@ The sweep is **resumable** — kill it and re-run; the progress log skips comple
 ### Run a population batch from the legacy one-shot path
 
 ```bash
-python backend/leetbot.py two-sum python3 data/test_submissions/two-sum.py
-# → appends a line to data/runs.jsonl
+python backend/leetbot.py maximum-depth-of-binary-tree python3 \
+  data/test_submissions/maximum-depth-of-binary-tree.py --log data/runs.jsonl
+# → with --log, appends a line to data/runs.jsonl
 ```
 
 This bypasses the platform; useful for smoke-testing LeetCode auth.
@@ -239,9 +243,9 @@ This bypasses the platform; useful for smoke-testing LeetCode auth.
 | var | default | purpose |
 |-----|---------|---------|
 | `ARENA_DISPATCH_ENABLED` | `0` | `1` → real LeetCode; else fake judge |
-| `ARENA_DISPATCH_INTER_DELAY` | `12` | Seconds between LC submits within one batch (±20% jitter) |
-| `ARENA_DISPATCH_MAX_RETRIES` | `4` | Retries with exponential backoff on 429 |
-| `ARENA_DISPATCH_SUBPROC_TIMEOUT` | `180` | Per-attempt subprocess timeout |
+| `ARENA_DISPATCH_INTER_DELAY` | `120` | Seconds between LC submits within one batch (±20% jitter) |
+| `ARENA_DISPATCH_MAX_RETRIES` | `3` | Retries with exponential backoff on 429 |
+| `ARENA_DISPATCH_SUBPROC_TIMEOUT` | `1200` | Per-attempt subprocess timeout |
 | `LEETCODE_COOKIE_HEADER` | — | Full `Cookie:` header (required for real dispatch) |
 | `LEETCODE_SESSION` + `LEETCODE_CSRF_TOKEN` | — | Alternative to the header |
 | `LEETCODE_HOST` | `https://leetcode.com` | Set to `https://leetcode.cn` for the China site |
@@ -276,7 +280,8 @@ Backend reads `backend/.env` at startup via `python-dotenv`.
 
 ```bash
 cd backend
-pytest                              # 152+ tests; runs offline (fake judge)
+pip install -r requirements-dev.txt   # pytest
+pytest                              # runs offline (fake judge)
 pytest -k ip_ratelimit              # one module
 pytest -k iterative_refine -vv      # verbose, single module
 ```

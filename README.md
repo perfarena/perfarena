@@ -70,11 +70,14 @@ The main files in `data/`:
 
 [`docs/deployment.md`](docs/deployment.md) tells how to install the arena. Run the commands below in `backend`, with its virtual environment.
 
-**1. Load the problems.** The app makes the `leetcode-99-perf` competition at its first start. Then:
+**1. Load the problems.** The order matters. At its first start, the app makes the `leetcode-99-perf` competition with every problem that the database holds at that time. So load the 99 problems into an empty database first, start the app once, and then add the rest. Run these commands from a clone of the repo: the container image does not hold `Energy-Languages`. `ARENA_DB` selects the database file (default `backend/arena.db`).
 
 ```bash
 python -m app.seed                                   # the 99 problems of data/sampled_problems.json
-python -m app.fetch_code_snippets --sampled-only --force
+uvicorn app.main:app                                 # start once, then stop it: it makes leetcode-99-perf with
+                                                     # these 99, the leetcode harness and oracle, and an admin
+python -m app.leetcode_accounts --add NAME --cookie '<the Cookie header of a signed-in LeetCode session>'
+python -m app.fetch_code_snippets --sampled-only --force   # needs that LeetCode account
 python -m app.seed_leetcode_hard_competition
 python -m app.replace_excluded_problems --dataset LeetCodeDataset-v0.1.0-train.jsonl
 python -m app.seed_clbg_competition --problems-yaml ../Energy-Languages/perfarena/configs/problems.yaml

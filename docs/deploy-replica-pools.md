@@ -6,7 +6,7 @@ upgrade itself needs no new configuration. With the defaults, every oracle
 keeps its single endpoint and dispatch runs exactly as before. Sections 3 to 5
 are optional: they turn the new features on.
 
-The commands assume the production layout of the README ("Deployment
+The commands assume the production layout of `docs/deployment.md` ("Deployment
 (hardened)"): the backend container `perfarena-backend` with `--network host`,
 the database in the `perfarena-data` volume at `/data/arena.db`, and the runner
 on the measurement host (bicho).
@@ -25,7 +25,7 @@ on the measurement host (bicho).
    ```
 
 2. Note the current container's environment, then build the new image and
-   replace the container with the same flags (README section 2):
+   replace the container with the same flags (`docs/deployment.md`, section 2):
 
    ```bash
    docker inspect perfarena-backend --format '{{range .Config.Env}}{{println .}}{{end}}' \
@@ -84,7 +84,7 @@ which bicho already has).
 A correctness verdict does not depend on the machine, so no calibration is
 needed.
 
-1. Set up the new runner host as in README section 3 (toolchains, the
+1. Set up the new runner host as in `docs/deployment.md`, section 3 (toolchains, the
    `perfrunner` user, the egress rule, `--auth-token`). Bind an address the
    backend can reach.
 2. Register it:
